@@ -13,6 +13,7 @@ things in it are not negotiable: no stored coordinates (§4), server-enforced in
 | --- | --- |
 | `supabase/migrations/` | Postgres schema, RLS, seeds. Applied in filename order. |
 | docs/decisions.md | Product and architecture decisions that amend the technical brief. Read before designing a table. |
+| docs/migration-0002-plan.md | Proposed design for the core schema migration. Not yet applied. |
 
 The Expo app, edge functions, and the moderation console are added in later build steps.
 
