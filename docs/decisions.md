@@ -30,6 +30,9 @@ commitment and the build follows it.
 | 14 | Free-text tags | Chips only in v1. Users pick up to three from the campus list. |
 | 15 | Hi's tab in v1 | A minimal hi's tab: a list of received hi's with hi back and dismiss. |
 | 16 | Private card contents | The card holds into, safer sex, kinks, and hard nos only. Pronouns and orientation belong to the profile layer behind the existing "show on my profile" toggle, off by default, and are never part of the card. The Profile-Details screen changes. |
+| 17 | Re-signup during the 30-day soft-delete window | Purge the old account immediately and allow the signup. The purge job and the inline path share one function. |
+| 18 | Which campuses accept signups | `live` and `coming_soon`. `waitlist` campuses capture the address only. CLC is `coming_soon` until launch. |
+| 19 | Identity and private-card edge function | Built in the same step as migration 0002, since profiles show pronouns when public. |
 
 ## Consequences for the next migration
 

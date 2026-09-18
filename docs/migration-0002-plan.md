@@ -354,7 +354,7 @@ conversation exists.
    `expired`; `conversations` `awaiting_reply` older than 7 days becomes `expired`. Silent.
 2. Presence staleness: no job. `is_grid_visible` compares `tier_computed_at` to
    `now() - 24h`. A job flipping `is_visible` would conflate staleness with the pause flag.
-3. `purge_deleted_users`, daily at 03:00 UTC, for each `users_private` with `deleted_at <
+3. `purge_deleted_users`, daily at 03:00 UTC, calls `private.purge_user(user_id)` for each `users_private` with `deleted_at <
    now() - 30 days and purged_at is null`, in this order:
    1. collect the user's conversation ids;
    2. delete `message_reads`, then `messages`, then `conversations` for those ids (both
@@ -477,12 +477,17 @@ Acceptance criteria:
 14. `cron.schedule` for the two jobs.
 15. CLC tag seed.
 
-## 15. Open questions
+## 15. Resolved questions
 
-1. Re-signup within the 30-day soft-delete window hits the unique email. Recommended: refuse
-   with the generic "check your email" flow until purge, so existence is not revealed.
-2. `coming_soon` campuses admit signups in this plan so the CLC test cohort can onboard
-   before launch. Confirm, or add an `accepting_signups` flag to `campuses`.
-3. The identity edge function is on the critical path for the profile screen (pronouns when
-   public). Confirm it is built in the same step as this migration, or the profile shows
-   no pronouns until it exists.
+1. **Re-signup inside the 30-day window purges immediately.** When a sign-in arrives for an
+   email whose `users_private` row has `deleted_at` set, the `profiles_from_auth()` path calls
+   `private.purge_user(user_id)` inline (the same function the daily job runs per user), then
+   proceeds as a fresh signup. The purge job and the inline path share one function so the
+   deletion list never diverges. The tombstone `profiles` row from the old account stays
+   for reports; the new account gets a new `auth.users` id and a new `profiles` row.
+2. **`coming_soon` campuses accept signups.** `profiles_from_auth()` admits `live` and
+   `coming_soon`; `waitlist` campuses are refused and the address is captured in `waitlist`.
+   CLC flips to `live` at launch.
+3. **The identity and private-card edge function ships with this migration.** It holds the
+   Vault key, performs encrypt and decrypt, enforces `is_public` for identity reads and
+   `share_is_active` for card reads, and maintains `fields_filled` in the same transaction.
