@@ -1,0 +1,52 @@
+# Decisions that amend the technical brief
+
+Taken 18 September 2026 by Izaac Lopez after the pre-build review of the v1 technical brief
+and the 23 screens. Where a row conflicts with the brief, this file wins. Where the live legal
+copy on sayohhi.com conflicts with the brief, the live copy was treated as the published
+commitment and the build follows it.
+
+## Structure
+
+| # | Decision | Answer |
+|---|----------|--------|
+| 1 | App code and migrations | Separate repo (`ohhi-app`). The marketing site stays in `ohhi`. |
+| 2 | Waitlist and campus config | Supabase is the source of truth. The site dual-writes waitlist signups to Sanity and Supabase during transition. |
+| 3 | Moderation console | Separate app on an admin subdomain, never on the marketing domain. |
+| 4 | Legal copy conflicts | Site copy is updated to match the build, flagged for attorney review. |
+
+## Product and architecture
+
+| # | Decision | Answer |
+|---|----------|--------|
+| 5 | Where the location tier is computed | On the phone. The app holds the campus centroid, radii, and county polygon and sends only the tier word. No server ever receives a coordinate. Brief §4 is amended; the live safety page already says this. |
+| 6 | Repeat-hi rule | A hi to a person can never be repeated until it is answered. Dismissed or expired hi's cannot be re-sent. Matches the live safety page and supersedes brief rule 2's 24-hour window. |
+| 7 | County tier geometry | A county polygon on the campus row (`campuses.county_boundary`). |
+| 8 | Ban durability | Vendor-side duplicate detection. We store the vendor's stable account reference; a re-verification of a banned identity is refused by the vendor. |
+| 9 | Report reasons | Seven: fake profile, harassment, threats or danger, spam or selling, photos aren't them, someone under 18, something else. P0 keys on the `threat` and `minor` categories. The Report sheet gains two rows. |
+| 10 | Main photo pending moderation | Hidden from the grid until approved, per the brief. Requires a review SLA and a reviewer available on launch day. |
+| 11 | Presence staleness | A tier older than 24 hours makes the user not visible. |
+| 12 | Messages from a blocked user | Shadow-accepted: stored, never delivered, never shown to the blocker. The blocked user's thread looks unchanged. |
+| 13 | Deleted account's conversations | The whole thread disappears for both parties. No placeholders. |
+| 14 | Free-text tags | Chips only in v1. Users pick up to three from the campus list. |
+| 15 | Hi's tab in v1 | A minimal hi's tab: a list of received hi's with hi back and dismiss. |
+| 16 | Private card contents | The card holds into, safer sex, kinks, and hard nos only. Pronouns and orientation belong to the profile layer behind the existing "show on my profile" toggle, off by default, and are never part of the card. The Profile-Details screen changes. |
+
+## Consequences for the next migration
+
+- No tiering edge function. `user_presence.tier` is written by the client through an RPC
+  that validates the enum and refreshes `tier_computed_at`. The geometry columns on
+  `campuses` become readable by authenticated users; migration 0001's column grants must be
+  widened for `center_point`, the radii, and `county_boundary`.
+- `his`: a unique partial index on `(from_user_id, to_user_id) where state = 'sent'`, and a
+  trigger that rejects a new hi when any earlier hi to that recipient is `dismissed` or
+  `expired`.
+- `reports.category` includes `minor` and `threat`; a trigger sets severity P0 on insert for
+  those two.
+- `user_identity` stays in the profile domain with `is_public`. `user_private_card` has no
+  pronoun or orientation columns.
+- `users.status` gains a terminal `closed_age` value; `verification_status` gains
+  `manual_review`.
+- The purge job deletes conversations and messages by pair, not only the deleted user's rows,
+  and scrubs the `users` row to a tombstone so reports keep their subject.
+- Grid visibility is one SQL function: active, verified, presence not stale, not paused,
+  approved main photo, tier not away, no block either way.
