@@ -44,3 +44,25 @@ the hosted migration history matches this folder.
   geometry in the database belongs to campuses.
 - Business rules from brief §5 live in constraints, triggers, or security-definer functions,
   never only in the app.
+
+### Running the CLI from automation
+
+The CLI is already linked to the project (`supabase/.temp/` holds the link info and is
+gitignored). In a non-interactive shell, commands like `migration list` and `migration repair`
+will hang waiting for the database password unless `SUPABASE_ACCESS_TOKEN` and
+`SUPABASE_DB_PASSWORD` are set. Copy `.env.example` to `.env`, fill in the two values, then load
+it before running CLI commands. `.env` is gitignored and never committed.
+
+Git Bash:
+
+```bash
+set -a; . ./.env; set +a
+supabase migration list
+```
+
+PowerShell 5.1:
+
+```powershell
+Get-Content .env | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' } | ForEach-Object { $name, $value = $_.Split('=', 2); Set-Item "env:$name" $value }
+supabase migration list
+```
