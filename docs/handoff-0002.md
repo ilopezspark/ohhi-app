@@ -43,17 +43,27 @@ edge function and the verification webhook handler) remain.
   reads as a destructive/irreversible action against a hosted project); a subagent invoking the
   same tool call is not gated the same way and can run it. Route down-script applies through a
   subagent if the orchestrating session is refused.
+- The Supabase CLI is installed globally (v2.117.0) and linked (`supabase/.temp/`, gitignored).
+  `supabase/config.toml` is committed.
+- The CLI reads `.env` from the repo root by itself (dotenvx), so `SUPABASE_ACCESS_TOKEN` and
+  `SUPABASE_DB_PASSWORD` in `.env` apply to every CLI command without exporting them.
+  `.env.example` is the template; `.env` is gitignored.
+- When `SUPABASE_DB_PASSWORD` is set, the CLI connects as `postgres.<ref>` through the pooler.
+  With the value present on 18 September that connection was refused ("Connection terminated
+  unexpectedly"), which points at the stored password being wrong; the DB password should be
+  checked or reset in the dashboard. Without a password the CLI uses its own temporary login
+  role, which needs only the access token and worked for `migration list` and `migration
+  repair`. Workaround used: export the token, move `.env` aside for the command, move it back.
+- In a non-TTY shell (Claude sessions), any CLI command that would prompt for the password hangs
+  silently; `supabase login` refuses to run and needs a real terminal or `--token`.
 
-## Open decision
+## Migration history
 
-- The hosted project's migration history now has 12 rows for what is logically one migration:
-  `20260918000001_...` plus repeated down/re-apply pairs left over from each fix pass on 0002
-  (`core_schema_down_for_fix` / the real migration name, several times over, plus the
-  short-lived `tmp_test_run` entries that the always-raise pattern was specifically designed to
-  avoid leaving — those did not accumulate, but the down/re-apply pairs did). Whether to prune
-  the stale rows (and how, given Supabase's migration history is itself a ledger) is not
-  decided; flagging it for whoever picks up step 7 so it is a deliberate choice, not an
-  oversight discovered later.
+- Resolved on 18 September 2026: the hosted migration history was repaired with the Supabase
+  CLI (`supabase migration repair --status reverted` on the 12 stale timestamped versions, then
+  `--status applied 20260918000001 20260918000002`). `supabase migration list` now shows the
+  two file versions with local = remote, and `supabase_migrations.schema_migrations` holds
+  exactly those two rows.
 
 ## Defects identified, to verify in the file
 
