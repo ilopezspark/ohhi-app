@@ -1,6 +1,6 @@
 # Migration 0002 plan: core schema, RLS, and rule enforcement
 
-Status: proposed, awaiting approval. Nothing in this file is applied yet.
+Status: implemented in `supabase/migrations/20260918000002_core_schema.sql` and applied to the Sayohhi project on 18 September 2026.
 
 ## Context
 
@@ -483,8 +483,7 @@ Acceptance criteria:
    email whose `users_private` row has `deleted_at` set, the `profiles_from_auth()` path calls
    `private.purge_user(user_id)` inline (the same function the daily job runs per user), then
    proceeds as a fresh signup. The purge job and the inline path share one function so the
-   deletion list never diverges. The tombstone `profiles` row from the old account stays
-   for reports; the new account gets a new `auth.users` id and a new `profiles` row.
+   deletion list never diverges. A re-signup revives the same tombstone `profiles` row after the inline purge, so reports keep pointing at the same id for the same human; the client calls `begin_signup()` rather than inserting into `profiles`.
 2. **`coming_soon` campuses accept signups.** `profiles_from_auth()` admits `live` and
    `coming_soon`; `waitlist` campuses are refused and the address is captured in `waitlist`.
    CLC flips to `live` at launch.

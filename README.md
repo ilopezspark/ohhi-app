@@ -13,7 +13,7 @@ things in it are not negotiable: no stored coordinates (§4), server-enforced in
 | --- | --- |
 | `supabase/migrations/` | Postgres schema, RLS, seeds. Applied in filename order. |
 | docs/decisions.md | Product and architecture decisions that amend the technical brief. Read before designing a table. |
-| docs/migration-0002-plan.md | Proposed design for the core schema migration. Not yet applied. |
+| docs/migration-0002-plan.md | Design for the core schema migration, implemented in `20260918000002_core_schema.sql`. |
 
 The Expo app, edge functions, and the moderation console are added in later build steps.
 
@@ -31,6 +31,7 @@ the hosted migration history matches this folder.
 | File | Contents |
 | --- | --- |
 | `20260918000001_campuses_and_waitlist.sql` | `campuses` (with tiering geometry, column-level read grants that hide it), `waitlist` (service role only), CLC seed. |
+| `20260918000002_core_schema.sql` | The 24 core tables (profiles through notification_prefs), RLS and column grants, `private` schema helpers, triggers enforcing the brief's interaction rules, the `begin_signup`/`me`/`complete_onboarding`/`grid_for_me`/`profile_card_for`/`hi_back`/`start_conversation`/etc. RPCs, realtime and storage wiring, the two pg_cron jobs, and the CLC tag seed. |
 
 ### Conventions
 
