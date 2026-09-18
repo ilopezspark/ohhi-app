@@ -6,95 +6,10 @@
 
 create extension if not exists pgtap with schema public;
 
--- =============================================================================
--- DEFECT WORKAROUND (in-transaction only, rolled back with everything else;
--- the real migration file on disk is untouched). profiles_from_auth() and
--- begin_signup() both call private.campus_id_for_email(v_email) where
--- v_email is plain `text` (from auth.users.email) but the function's
--- parameter is `citext`. text -> citext is an ASSIGNMENT cast, not an
--- IMPLICIT one, so Postgres's function-argument resolution refuses the
--- call with "function ... does not exist" -- confirmed by reproduction
--- against the live database. Every real signup is broken as a result. See
--- the report for exact line numbers in the migration file. These two
--- CREATE OR REPLACE calls only patch the copies inside this disposable,
--- rolled-back transaction so the rest of the acceptance tests can run.
--- =============================================================================
-
-create or replace function public.profiles_from_auth()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $fix$
-declare
-  v_email public.citext; -- FIX: was text (see report)
-  v_campus uuid;
-begin
-  select email into v_email from auth.users where id = new.id;
-  v_campus := private.campus_id_for_email(v_email);
-  if v_campus is null then
-    raise exception 'no campus accepts signups for this email domain';
-  end if;
-  new.campus_id := v_campus;
-  new.verification_status := 'email_verified';
-  return new;
-end;
-$fix$;
-
-create or replace function public.begin_signup()
-returns public.profiles
-language plpgsql
-security definer
-set search_path = ''
-as $fix$
-declare
-  v_uid uuid := auth.uid();
-  v_email public.citext; -- FIX: was text (see report)
-  v_campus uuid;
-  v_row public.profiles;
-begin
-  if v_uid is null then
-    raise exception 'not authenticated';
-  end if;
-
-  select * into v_row from public.profiles where id = v_uid;
-
-  if v_row.id is null then
-    insert into public.profiles (id) values (v_uid) returning * into v_row;
-    select email into v_email from auth.users where id = v_uid;
-    insert into public.users_private (user_id, school_email) values (v_uid, v_email);
-    return v_row;
-  end if;
-
-  if v_row.status = 'deleted' then
-    perform private.purge_user(v_uid);
-    select email into v_email from auth.users where id = v_uid;
-    v_campus := private.campus_id_for_email(v_email);
-    if v_campus is null then
-      raise exception 'no campus accepts signups for this email domain';
-    end if;
-    perform set_config('app.bypass_profiles_guard', 'on', true);
-    update public.profiles
-       set status = 'onboarding',
-           verification_status = 'email_verified',
-           campus_id = v_campus,
-           first_name = null,
-           grad_year = null,
-           status_line = null,
-           here_now_until = null
-     where id = v_uid
-     returning * into v_row;
-    update public.users_private
-       set school_email = v_email,
-           deleted_at = null,
-           purged_at = null
-     where user_id = v_uid;
-    return v_row;
-  end if;
-
-  return v_row;
-end;
-$fix$;
+-- Defect A is fixed in the migration on disk (private.campus_id_for_email
+-- takes text, so no citext cast is needed under the empty search_path), so
+-- this runner redefines nothing. Group 28 below (mirroring the pgTAP file's
+-- defect-A group) exercises the real, on-disk functions directly.
 
 do $outer$
 declare
@@ -250,20 +165,28 @@ begin
      where user_a_id = least('f00d0000-0000-0000-0000-000000000001'::uuid,'f00d0000-0000-0000-0000-000000000006'::uuid)
        and user_b_id = greatest('f00d0000-0000-0000-0000-000000000001'::uuid,'f00d0000-0000-0000-0000-000000000006'::uuid);
   insert into public.albums (owner_id, name) values (auth.uid(), 'Fay Trip');
-  insert into public.album_photos (album_id, storage_path, moderation_state)
-    select id, 'fay/trip/1.jpg', 'ok' from public.albums where owner_id = auth.uid() and name = 'Fay Trip';
+  -- Defect C fix: moderation_state is out of the insert column grant, and
+  -- album_photos_guard() forces it to 'pending' on any client insert anyway;
+  -- approved directly as postgres below, same convention as user_photos.
+  insert into public.album_photos (album_id, storage_path)
+    select id, 'fay/trip/1.jpg' from public.albums where owner_id = auth.uid() and name = 'Fay Trip';
   insert into public.shares (owner_id, viewer_id, subject_type, subject_id)
     select auth.uid(), 'f00d0000-0000-0000-0000-000000000001', 'album', id from public.albums where owner_id = auth.uid() and name = 'Fay Trip';
   execute 'reset role';
+  update public.album_photos set moderation_state = 'ok'
+   where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000006' and name = 'Fay Trip');
 
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated';
   insert into public.albums (owner_id, name) values (auth.uid(), 'Ann Trip');
-  insert into public.album_photos (album_id, storage_path, moderation_state)
-    select id, 'ann/trip/1.jpg', 'ok' from public.albums where owner_id = auth.uid() and name = 'Ann Trip';
+  -- Defect C fix: see the note on Fay Trip above.
+  insert into public.album_photos (album_id, storage_path)
+    select id, 'ann/trip/1.jpg' from public.albums where owner_id = auth.uid() and name = 'Ann Trip';
   insert into public.shares (owner_id, viewer_id, subject_type, subject_id)
     select auth.uid(), 'f00d0000-0000-0000-0000-000000000006', 'album', id from public.albums where owner_id = auth.uid() and name = 'Ann Trip';
   insert into public.blocks (blocker_id, blocked_id) values (auth.uid(), 'f00d0000-0000-0000-0000-000000000006');
   execute 'reset role';
+  update public.album_photos set moderation_state = 'ok'
+   where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000001' and name = 'Ann Trip');
 
   -- ===========================================================================
   -- Fixtures: independent hi/conversation pairs for tests 6, 7, 9, 10
@@ -327,10 +250,16 @@ begin
        and subject_id = 'f00d0000-0000-0000-0000-000000000015'
        and category = 'harassment';
 
+  -- Defect B fixture: a storage.objects row under pat's profile-photos
+  -- prefix, so the purge assertions below can prove private.purge_user()
+  -- enqueues it in private.storage_purge_queue instead of deleting it.
+  insert into storage.objects (bucket_id, name)
+  values ('profile-photos', 'f00d0000-0000-0000-0000-000000000015/0.jpg');
+
   -- ===========================================================================
   -- Assertions
   -- ===========================================================================
-  select plan(60) into v_line; out := out || v_line || E'\n';
+  select plan(98) into v_line; out := out || v_line || E'\n';
 
   -- 1-3 schema
   select is_empty($$select table_schema, table_name, column_name from information_schema.columns
@@ -449,6 +378,13 @@ begin
   execute 'reset role';
 
   -- 13
+  select ok(exists (
+      select 1 from public.shares
+       where owner_id='f00d0000-0000-0000-0000-000000000001'
+         and viewer_id='f00d0000-0000-0000-0000-000000000006'
+         and subject_type='album'
+         and revoked_at is null
+    ), 'rule 7 (setup check): ann''s share to fay is still a live row') into v_line; out := out || v_line || E'\n';
   select ok(not private.share_is_active('f00d0000-0000-0000-0000-000000000001','f00d0000-0000-0000-0000-000000000006','album',
       (select id from public.albums where owner_id='f00d0000-0000-0000-0000-000000000001' and name='Ann Trip')),
     'rule 7: share_is_active is false across a block even with a live share row') into v_line; out := out || v_line || E'\n';
@@ -464,7 +400,8 @@ begin
   -- 15
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated';
   perform public.start_conversation('f00d0000-0000-0000-0000-000000000002');
-  insert into public.albums (owner_id, name) values (auth.uid(), 'Ann Bea Album');
+  select lives_ok($$insert into public.albums (owner_id, name) values ('f00d0000-0000-0000-0000-000000000001', 'Ann Bea Album')$$,
+    'rule 9 (setup): ann can create her own album regardless of sharing state') into v_line; out := out || v_line || E'\n';
   select throws_like($$insert into public.shares (owner_id, viewer_id, subject_type, subject_id)
       select 'f00d0000-0000-0000-0000-000000000001','f00d0000-0000-0000-0000-000000000002','album', id
         from public.albums where owner_id='f00d0000-0000-0000-0000-000000000001' and name='Ann Bea Album'$$,
@@ -494,9 +431,12 @@ begin
       select 'f00d0000-0000-0000-0000-000000000001','f00d0000-0000-0000-0000-000000000002','album', id
         from public.albums where owner_id='f00d0000-0000-0000-0000-000000000001' and name='Ann Bea Album'$$,
     'rule 9: share insert succeeds once both sides have sent a message') into v_line; out := out || v_line || E'\n';
-  insert into public.album_photos (album_id, storage_path, moderation_state)
-    select id, 'ann/bea-album/1.jpg', 'ok' from public.albums where owner_id=auth.uid() and name='Ann Bea Album';
+  -- Defect C fix: see the note on Fay Trip/Ann Trip above.
+  insert into public.album_photos (album_id, storage_path)
+    select id, 'ann/bea-album/1.jpg' from public.albums where owner_id=auth.uid() and name='Ann Bea Album';
   execute 'reset role';
+  update public.album_photos set moderation_state = 'ok'
+   where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000001' and name = 'Ann Bea Album');
 
   -- 16
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000002', true); execute 'set local role authenticated';
@@ -659,12 +599,13 @@ begin
   select is(public.complete_onboarding()::text, 'active', 'acceptance 26: a pending main photo still allows onboarding to succeed') into v_line; out := out || v_line || E'\n';
   execute 'reset role';
 
-  -- 27. purge_user() calls `delete from storage.objects ...` directly.
-  -- Supabase installs a protective trigger (storage.protect_delete) that
-  -- rejects ANY direct delete on storage.objects, even matching zero rows,
-  -- so this call always raises on a real hosted project. Caught here (which
-  -- rolls back just this statement via the implicit savepoint) so the rest
-  -- of the suite still runs; recorded as three failures, matching the plan.
+  -- 27. Defect B fix: purge_user() now enqueues the purged user's
+  -- storage.objects paths in private.storage_purge_queue instead of
+  -- deleting them directly, so it no longer trips
+  -- storage.protect_delete() and this block should run to completion
+  -- (the success branch below). The exception handler stays as a defensive
+  -- fallback so an unrelated failure here still reports five clear
+  -- failures instead of aborting the whole suite.
   begin
     perform private.purge_user('f00d0000-0000-0000-0000-000000000015');
     select ok(exists (select 1 from public.reports where subject_id='f00d0000-0000-0000-0000-000000000015'),
@@ -673,11 +614,214 @@ begin
       'acceptance 27: the purge leaves the moderation_actions row against the purged user intact') into v_line; out := out || v_line || E'\n';
     select ok((select status::text='deleted' and first_name='deleted' from public.profiles where id='f00d0000-0000-0000-0000-000000000015'),
       'acceptance 27: the profiles row survives the purge as a tombstone') into v_line; out := out || v_line || E'\n';
+    -- Defect B: purge_user() enqueues the purged user's storage.objects
+    -- paths in private.storage_purge_queue instead of deleting them
+    -- directly, so this call should now succeed outright (this branch runs)
+    -- rather than being caught below.
+    select ok(exists (
+        select 1 from private.storage_purge_queue
+         where bucket_id = 'profile-photos'
+           and object_name = 'f00d0000-0000-0000-0000-000000000015/0.jpg'
+      ), 'defect B: purge_user() enqueues the purged user''s storage path in private.storage_purge_queue') into v_line; out := out || v_line || E'\n';
+    select ok(true, 'defect B: purge_user() no longer issues a direct storage.objects delete, so it raises nothing') into v_line; out := out || v_line || E'\n';
+    select is(coalesce(current_setting('app.bypass_profiles_guard', true), 'off'), 'off',
+      'purge_user() restores app.bypass_profiles_guard on the way out, so later guarded writes in the same transaction are not silently privileged') into v_line; out := out || v_line || E'
+';
   exception when others then
     select fail('acceptance 27: the purge leaves the reports row against the purged user intact -- private.purge_user() raised: ' || sqlerrm) into v_line; out := out || v_line || E'\n';
     select fail('acceptance 27: the purge leaves the moderation_actions row against the purged user intact -- private.purge_user() raised: ' || sqlerrm) into v_line; out := out || v_line || E'\n';
     select fail('acceptance 27: the profiles row survives the purge as a tombstone -- private.purge_user() raised: ' || sqlerrm) into v_line; out := out || v_line || E'\n';
+    select fail('defect B: purge_user() enqueues the purged user''s storage path in private.storage_purge_queue -- private.purge_user() raised: ' || sqlerrm) into v_line; out := out || v_line || E'\n';
+    select fail('defect B: purge_user() no longer issues a direct storage.objects delete, so it raises nothing -- private.purge_user() raised: ' || sqlerrm) into v_line; out := out || v_line || E'\n';
+    select fail('purge_user() restores app.bypass_profiles_guard on the way out -- private.purge_user() raised: ' || sqlerrm) into v_line; out := out || v_line || E'
+';
   end;
+
+  -- ===========================================================================
+  -- 28: defect A - begin_signup() resolves a mixed-case email domain through
+  -- private.campus_id_for_email(text) and lands on the clc campus.
+  -- ===========================================================================
+
+  insert into auth.users
+    (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+     created_at, updated_at, raw_app_meta_data, raw_user_meta_data)
+  values
+    ('f00d0000-0000-0000-0000-000000000013', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'Zoe@ClcIllinois.EDU', '', now(), now(), now(), '{"provider":"email","providers":["email"]}', '{}');
+
+  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000013', true); execute 'set local role authenticated';
+  begin
+    perform public.begin_signup();
+    select ok(true, 'defect A: begin_signup() succeeds for a mixed-case email domain (text parameter on campus_id_for_email)') into v_line; out := out || v_line || E'\n';
+    select is((select campus_id from public.profiles where id='f00d0000-0000-0000-0000-000000000013'),
+      (select id from public.campuses where slug='clc'),
+      'defect A: the mixed-case signup lands on the clc campus') into v_line; out := out || v_line || E'\n';
+  exception when others then
+    select fail('defect A: begin_signup() succeeds for a mixed-case email domain (text parameter on campus_id_for_email) -- MIGRATION DEFECT: raised ' || sqlerrm) into v_line; out := out || v_line || E'\n';
+    select fail('defect A: the mixed-case signup lands on the clc campus -- no profile was created because begin_signup() raised: ' || sqlerrm) into v_line; out := out || v_line || E'\n';
+  end;
+  execute 'reset role';
+
+  -- ===========================================================================
+  -- 29: defect C - moderation_state is excluded from the owner's column
+  -- grants on user_photos/album_photos; the guard triggers also force
+  -- 'pending' on any client insert.
+  -- ===========================================================================
+  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000002', true); execute 'set local role authenticated';
+  select throws_ok($$update public.user_photos set moderation_state = 'ok' where user_id = 'f00d0000-0000-0000-0000-000000000002' and position = 0$$,
+    '42501') into v_line; out := out || v_line || E'\n';
+  execute 'reset role';
+
+  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000006', true); execute 'set local role authenticated';
+  select throws_ok($$update public.album_photos set moderation_state = 'pending'
+      where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000006' and name = 'Fay Trip')$$,
+    '42501') into v_line; out := out || v_line || E'\n';
+  execute 'reset role';
+
+  select is((select moderation_state::text from public.user_photos where user_id='f00d0000-0000-0000-0000-000000000001' and position=1),
+    'pending', 'defect C: user_photos_guard() left ann''s never-approved position-1 photo at pending') into v_line; out := out || v_line || E'\n';
+
+  -- ===========================================================================
+  -- 30: defect D - his_update_guard() pins every column but state, and only
+  -- allows sent -> dismissed for a client. jon -> kay's hi (still 'sent'
+  -- from group 9) is reused here.
+  -- ===========================================================================
+  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000010', true); execute 'set local role authenticated';
+  select throws_like($$update public.his set state = 'dismissed', to_user_id = 'f00d0000-0000-0000-0000-00000000000a'
+      where from_user_id = 'f00d0000-0000-0000-0000-00000000000f' and to_user_id = 'f00d0000-0000-0000-0000-000000000010'$$,
+    '%only state may be updated on his%', 'defect D: recipient cannot change to_user_id even while moving sent -> dismissed') into v_line; out := out || v_line || E'\n';
+  select throws_like($$update public.his set state = 'answered'
+      where from_user_id = 'f00d0000-0000-0000-0000-00000000000f' and to_user_id = 'f00d0000-0000-0000-0000-000000000010'$$,
+    '%client may only move a hi from sent to dismissed%', 'defect D: recipient cannot move a hi directly from sent to answered') into v_line; out := out || v_line || E'\n';
+  select lives_ok($$update public.his set state = 'dismissed'
+      where from_user_id = 'f00d0000-0000-0000-0000-00000000000f' and to_user_id = 'f00d0000-0000-0000-0000-000000000010'$$,
+    'defect D: recipient dismissing sent -> dismissed with no other column change succeeds') into v_line; out := out || v_line || E'\n';
+  execute 'reset role';
+
+  -- ===========================================================================
+  -- 31: defect E - profiles select requires owner, or same campus + not
+  -- blocked + account_readable. gus is moved to a second campus to prove
+  -- the campus clause; ann/fay reuse the existing block.
+  -- ===========================================================================
+  insert into public.campuses (name, slug, city, state, email_domains, status, launch_date, center_point, county_label)
+  values (
+    'Other Campus', 'other-campus', 'Elsewhere', 'IL', array['other.edu'], 'coming_soon', date '2027-01-01',
+    st_setsrid(st_makepoint(-88.0, 42.0), 4326)::geography, 'other co.'
+  );
+  perform set_config('app.bypass_profiles_guard', 'on', true);
+  update public.profiles set campus_id = (select id from public.campuses where slug = 'other-campus')
+   where id = 'f00d0000-0000-0000-0000-000000000007';
+  perform set_config('app.bypass_profiles_guard', 'off', true);
+
+  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated';
+  select is_empty($$select id from public.profiles where id = 'f00d0000-0000-0000-0000-000000000007'$$,
+    'defect E: an account_readable, non-blocked profile on a different campus is not selectable') into v_line; out := out || v_line || E'\n';
+  select is_empty($$select id from public.profiles where id = 'f00d0000-0000-0000-0000-000000000006'$$,
+    'defect E: a blocked profile is not selectable even on the same campus') into v_line; out := out || v_line || E'\n';
+  execute 'reset role';
+
+  -- ===========================================================================
+  -- 32: defect F - the caller is excluded from their own grid_for_me() and
+  -- profile_card_for(self).
+  -- ===========================================================================
+  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated';
+  select ok(not exists (select 1 from public.grid_for_me() where user_id='f00d0000-0000-0000-0000-000000000001'),
+    'defect F: the caller does not appear in their own grid_for_me()') into v_line; out := out || v_line || E'\n';
+  select is_empty($$select * from public.profile_card_for('f00d0000-0000-0000-0000-000000000001')$$,
+    'defect F: profile_card_for(self) returns zero rows') into v_line; out := out || v_line || E'\n';
+  execute 'reset role';
+
+  -- ===========================================================================
+  -- 33: defect G - execute on private.* is limited to is_blocked,
+  -- account_readable, share_is_active, can_read_conversation (plus the
+  -- deliberate is_active deviation); is_verified is no longer reachable.
+  -- ===========================================================================
+  select ok(not has_function_privilege('authenticated', 'private.is_verified(uuid)', 'execute'),
+    'defect G: private.is_verified(uuid) has no execute grant for authenticated') into v_line; out := out || v_line || E'\n';
+  select ok(has_function_privilege('authenticated', 'private.is_blocked(uuid,uuid)', 'execute'),
+    'defect G: private.is_blocked(uuid,uuid) is still executable by authenticated') into v_line; out := out || v_line || E'\n';
+  select ok(has_function_privilege('authenticated', 'private.account_readable(uuid)', 'execute'),
+    'defect G: private.account_readable(uuid) is still executable by authenticated') into v_line; out := out || v_line || E'\n';
+  select ok(has_function_privilege('authenticated', 'private.share_is_active(uuid,uuid,public.share_subject_type,uuid)', 'execute'),
+    'defect G: private.share_is_active(...) is still executable by authenticated') into v_line; out := out || v_line || E'\n';
+  select ok(has_function_privilege('authenticated', 'private.can_read_conversation(uuid,uuid)', 'execute'),
+    'defect G: private.can_read_conversation(uuid,uuid) is still executable by authenticated') into v_line; out := out || v_line || E'\n';
+  select ok(has_function_privilege('authenticated', 'private.is_active(uuid)', 'execute'),
+    'defect G: private.is_active(uuid) is still executable by authenticated (deliberate deviation for the reports insert check)') into v_line; out := out || v_line || E'\n';
+
+  -- ===========================================================================
+  -- 34: defect H - enforce_hi_rules(), enforce_share_rules(), and
+  -- start_conversation() all raise the same generic 'not allowed' / 42501.
+  -- ===========================================================================
+  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000006', true); execute 'set local role authenticated';
+  select throws_ok($$insert into public.his (from_user_id, to_user_id) values ('f00d0000-0000-0000-0000-000000000006','f00d0000-0000-0000-0000-000000000001')$$,
+    '42501') into v_line; out := out || v_line || E'\n';
+  execute 'reset role';
+
+  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated';
+  insert into public.albums (owner_id, name) values (auth.uid(), 'Ann Blocked Share Test');
+  select throws_ok($$insert into public.shares (owner_id, viewer_id, subject_type, subject_id)
+      select 'f00d0000-0000-0000-0000-000000000001','f00d0000-0000-0000-0000-000000000006','album', id
+        from public.albums where owner_id='f00d0000-0000-0000-0000-000000000001' and name='Ann Blocked Share Test'$$,
+    '42501') into v_line; out := out || v_line || E'\n';
+  execute 'reset role';
+
+  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000006', true); execute 'set local role authenticated';
+  select throws_ok($$select public.start_conversation('f00d0000-0000-0000-0000-000000000001')$$,
+    '42501') into v_line; out := out || v_line || E'\n';
+  execute 'reset role';
+
+  -- ===========================================================================
+  -- 35: defect I - reports insert is column-limited.
+  -- ===========================================================================
+  select ok(has_column_privilege('authenticated', 'public.reports', 'category', 'insert'),
+    'defect I: reports insert grant includes category') into v_line; out := out || v_line || E'\n';
+  select ok(not has_column_privilege('authenticated', 'public.reports', 'severity', 'insert'),
+    'defect I: reports insert grant excludes severity') into v_line; out := out || v_line || E'\n';
+  select ok(not has_column_privilege('authenticated', 'public.reports', 'state', 'insert'),
+    'defect I: reports insert grant excludes state') into v_line; out := out || v_line || E'\n';
+  select ok(not has_column_privilege('authenticated', 'public.reports', 'resolved_at', 'insert'),
+    'defect I: reports insert grant excludes resolved_at') into v_line; out := out || v_line || E'\n';
+  select ok(not has_column_privilege('authenticated', 'public.reports', 'action_taken', 'insert'),
+    'defect I: reports insert grant excludes action_taken') into v_line; out := out || v_line || E'\n';
+
+  -- ===========================================================================
+  -- 36: defect J - albums owner update is limited to name.
+  -- ===========================================================================
+  select ok(has_column_privilege('authenticated', 'public.albums', 'name', 'update'),
+    'defect J: albums update grant includes name') into v_line; out := out || v_line || E'\n';
+  select ok(not has_column_privilege('authenticated', 'public.albums', 'photo_count', 'update'),
+    'defect J: albums update grant excludes photo_count') into v_line; out := out || v_line || E'\n';
+
+  -- ===========================================================================
+  -- 37: defect K - here_now_until/last_active_at are out of the owner's
+  -- profiles update grant; touch_activity() is the only write path for
+  -- last_active_at.
+  -- ===========================================================================
+  select ok(not has_column_privilege('authenticated', 'public.profiles', 'here_now_until', 'update'),
+    'defect K: profiles update grant excludes here_now_until') into v_line; out := out || v_line || E'\n';
+  select ok(not has_column_privilege('authenticated', 'public.profiles', 'last_active_at', 'update'),
+    'defect K: profiles update grant excludes last_active_at') into v_line; out := out || v_line || E'\n';
+
+  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated';
+  select throws_ok($$update public.profiles set here_now_until = now() + interval '2 hours' where id = 'f00d0000-0000-0000-0000-000000000001'$$,
+    '42501') into v_line; out := out || v_line || E'\n';
+  execute 'reset role';
+
+  update public.profiles set last_active_at = now() - interval '1 day' where id = 'f00d0000-0000-0000-0000-000000000001';
+  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated';
+  perform public.touch_activity();
+  execute 'reset role';
+  select ok((select last_active_at from public.profiles where id='f00d0000-0000-0000-0000-000000000001') > now() - interval '1 hour',
+    'defect K: touch_activity() bumps last_active_at back to (transaction) now()') into v_line; out := out || v_line || E'\n';
+
+  -- ===========================================================================
+  -- 38: defect L - a malformed storage.objects path is refused by the RLS
+  -- policy (42501), not a ::uuid cast error (22P02).
+  -- ===========================================================================
+  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated';
+  select throws_ok($$insert into storage.objects (bucket_id, name) values ('chat-media', 'not-a-uuid/foo.jpg')$$,
+    '42501') into v_line; out := out || v_line || E'\n';
+  execute 'reset role';
 
   select string_agg(l, E'\n') into v_line from finish() as l; out := out || coalesce(v_line, '') || E'\n';
 

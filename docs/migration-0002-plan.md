@@ -82,6 +82,15 @@ sign-in already proved the address.
 `before update` trigger `profiles_guard()`: `status` may move to `active` only through
 `complete_onboarding()` (checked by a session flag the RPC sets); `verification_status` is
 written only by the verification webhook (service role); `campus_id` never changes from a client.
+The session flag is `app.bypass_profiles_guard`, a transaction-local `set_config` that
+`profiles_guard()`, `dob_write_once()`, and `his_update_guard()` all read as "the caller is a
+privileged, definer-scoped path, not a raw client write". Every function that turns it on
+(`purge_user`, `close_threads_on_delete`, `denylist_on_ban`, `begin_signup`,
+`complete_onboarding`, `hi_back`, `delete_my_account`) must save the incoming value into a
+local variable first and restore it before returning, on every exit path — not just set it to
+`off`, because a privileged caller can invoke a second privileged function inside the same
+transaction (e.g. `delete_my_account()` calling `close_threads_on_delete()`) and an unconditional
+reset would disarm the outer guard early. See defect O in `docs/handoff-0002.md`.
 
 ### `users_private`
 
@@ -112,7 +121,10 @@ definer. Owner update grant limited to `tier, is_visible`; a trigger stamps
 `tint text` (hex, computed at upload for the placeholder), `unique (user_id, position)`.
 
 Select: owner always; others when `moderation_state = 'ok'`, the owner is readable (see
-`account_readable`), and not blocked. Owner insert, update, delete. Trigger: replacing
+`account_readable`), and not blocked. Owner insert, update, delete, but `moderation_state` is
+service-role-only: it is excluded from the owner's column grants, and the `user_photos_guard()`
+before-insert/before-update trigger forces it to `pending` on every client write regardless of
+what the client sends (a client can never set `ok` or `removed`). Trigger also: replacing
 `storage_path` resets `moderation_state` to `pending`; a `removed` photo may not be moved to
 position 0.
 
@@ -215,7 +227,9 @@ read receipt the brief forbids. A trigger verifies the writer is a participant.
 `moderation_state default 'pending'`.
 
 Select: owner, or viewer with `share_is_active(owner_id, auth.uid(), 'album', album_id)`;
-non-owners also need `moderation_state = 'ok'` on photos. Owner writes.
+non-owners also need `moderation_state = 'ok'` on photos. Owner writes, same rule as
+`user_photos`: `moderation_state` is service-role-only, excluded from the owner's column
+grants, and the `album_photos_guard()` trigger forces it to `pending` on client writes.
 
 ### `shares`
 
@@ -285,14 +299,21 @@ grant select (center_point, on_campus_radius_m, nearby_radius_m, county_boundary
 | `is_blocked(a, b)` | A block row exists in either direction. |
 | `account_readable(uid)` | `profiles.status in ('active', 'paused')`. Paused users stay readable so their chats keep working. |
 | `is_verified(uid)` | `verification_status = 'verified'`. |
+| `is_active(uid)` | `profiles.status = 'active'`. Addition beyond this table's original list: `reports` insert needs an "active" gate in its `with check`, and `status` is never column-granted, so the check has to live in a security-definer function rather than a bare policy expression. |
+| `campus_of(uid)` | The caller's own `campus_id`, read outside RLS. Addition for defect N: lets the `profiles` select policy compare the target row's `campus_id` to the caller's without the policy subselecting `profiles` from inside the `profiles` select policy (Postgres rejects that as infinite recursion, 42P17, on any RLS-scoped access to the table, including the owner updating their own row). |
+| `campus_id_for_email(email text)` | Suffix-matches an email's domain against `campuses.email_domains` for `live`/`coming_soon` campuses (decision 18); lowercases both sides itself. Shared by `profiles_from_auth()` (insert path) and `begin_signup()` (revival path) so the two never diverge. Takes `text`, not `citext` — see defect M. |
 | `conversation_is_mutual(conversation_id)` | Both participants have at least one message. |
 | `share_is_active(owner, viewer, subject_type, subject_id)` | Share row exists, `revoked_at is null`, not blocked. |
 | `can_read_conversation(conversation_id, viewer)` | Viewer is a participant, and `state <> 'closed_block' or viewer <> blocked_by`. |
 | `is_grid_visible(target, viewer)` | `status = 'active'`, verified, `tier_computed_at > now() - 24h`, `tier <> 'away'`, `is_visible`, an `ok` photo at position 0, not blocked against viewer. The verified check is hard-coded; there is no parameter that relaxes it. |
 | `get_or_create_conversation(a, b, opener, via)` | Concurrency-safe creation, see §8. |
 
-Each is granted execute to `authenticated` so policy expressions can call them, but the
-schema is not exposed through PostgREST.
+Execute is granted to `authenticated` only for the helpers a policy or `with check` expression
+calls directly, as the querying role: `is_blocked`, `account_readable`, `share_is_active`,
+`can_read_conversation`, `is_active`, `campus_of` (defect G narrowed this from a blanket grant
+across all of `private.*`). Every other helper here is called only from inside a
+`security definer` RPC or trigger function and is granted to `service_role` only. None of the
+schema is exposed through PostgREST either way.
 
 ## 6. RPCs (`public`, execute revoked from `public` and `anon`, granted to `authenticated`)
 
@@ -302,8 +323,9 @@ schema is not exposed through PostgREST.
 | `complete_onboarding()` | definer | Checks: `date_of_birth` set and age ≥ 18 in the campus timezone (else sets `status = 'closed_age'` and returns that), `first_name`, at least one `user_goals` row, an `ok` or `pending` photo at position 0. Sets `status = 'active'` and creates `user_presence`. |
 | `grid_for_me()` | definer | One call: up to 61 rows ordered `tier asc, here_now desc, last_active_at desc` from every profile in the caller's campus where `is_grid_visible(profile, caller)`, joined to the position-0 photo, the two lowest tags, goals; plus `visible_count` and `here_now_count` over the same set, repeated on each row. 61 so the client can tell "that's everyone". |
 | `profile_card_for(target)` | definer | Zero rows when `is_grid_visible(target, caller)` is false. Otherwise: first name, grad year, status line, tier, here_now, all `ok` photos in order, all tags, goals, `my_hi_state` (`sent`, `answered`, or null), `conversation_id` if one exists. Pronouns and orientation are not here; the client asks the identity edge function, which returns them only when `is_public` or owner. |
-| `set_my_tier(tier)` | invoker | Writes `tier`; if `here_now_until` is in the future, extends it to `now() + 2h`. Never turns here-now on. |
-| `set_here_now(bool)` | invoker | Sets `here_now_until` to `now() + 2h` or null. |
+| `set_my_tier(tier)` | **definer** | Writes `tier`; if `here_now_until` is in the future, extends it to `now() + 2h`. Never turns here-now on. Defect K fix: `here_now_until` and `last_active_at` are out of the owner's `profiles` update column grant, so this can no longer run invoker-scoped and must be `security definer`. |
+| `set_here_now(bool)` | **definer** | Sets `here_now_until` to `now() + 2h` or null. Same defect K reasoning as `set_my_tier`. |
+| `touch_activity()` | definer | Defect K addition: the only write path left for `last_active_at` now that it is out of the owner's column grant. `update profiles set last_active_at = now() where id = auth.uid()`. |
 | `hi_back(hi_id)` | definer | Locks the hi, requires recipient and `state = 'sent'` and caller verified; sets `answered`; calls `get_or_create_conversation(from, to, from, 'hi_back')`. The original hi sender is the opener and must send the first message. |
 | `start_conversation(recipient)` | definer | Caller verified, not blocked, no existing conversation; calls `get_or_create_conversation(caller, recipient, caller, 'first_message')`. The opener text is then a normal `messages` insert so the 240-char rule lives in one trigger. |
 | `pause_grid(bool)` | invoker | Sets `user_presence.is_visible`. |
@@ -361,8 +383,9 @@ conversation exists.
       parties lose the thread, decision 13);
    3. delete `his` in either direction;
    4. delete `shares` in either direction;
-   5. delete `album_photos`, `albums`, and the `storage.objects` under the user's
-      `album-photos/` and `profile-photos/` prefixes;
+   5. delete `album_photos`, `albums`, and enqueue the `storage.objects` paths under the
+      user's `album-photos/` and `profile-photos/` prefixes into `private.storage_purge_queue`
+      (defect B fix — see below) rather than deleting them directly;
    6. delete `user_photos`, `user_tags`, `user_goals`, `user_presence`, `devices`,
       `notification_prefs`, `consents`;
    7. delete `user_identity` and `user_private_card`;
@@ -375,6 +398,14 @@ conversation exists.
 
    Never touched: `reports`, `moderation_actions`, `verification_denylist`,
    `verifications`.
+
+   `private.storage_purge_queue` (`id`, `bucket_id`, `object_name`, `enqueued_at`,
+   `processed_at`), service-role only, RLS enabled with no client-facing policies. Defect B:
+   the original design had `purge_user()` call `delete from storage.objects` directly, but
+   Supabase's `storage.protect_delete()` refuses every such direct delete, so every purge
+   failed. `purge_user()` now enqueues `(bucket_id, object_name)` rows here instead; a
+   storage-cleanup edge function (not yet built) drains the queue through the Storage API and
+   sets `processed_at`.
 
 ## 10. Realtime
 
@@ -410,6 +441,16 @@ Twelve CLC tags from the status screen: majors nursing, cs, business, bio; place
 gym; interests coffee, soccer, art, esports, transfer, night classes.
 
 ## 13. pgTAP tests
+
+`supabase/tests/0002_rules.test.sql` is `plan(98)`, 38 groups: groups 1-27 below (62
+assertions) plus groups 28-38, added during the fix pass, one per defect A-O in
+`docs/handoff-0002.md` (36 assertions). Run with `supabase test db`. A second runner,
+`supabase/tests/hosted/0002_hosted_run.sql`, mirrors the same fixtures and assertions as a
+single `DO` block that always raises at the end so the hosted project's writes roll back; it is
+applied via the Supabase MCP `apply_migration` tool and its pass/fail output comes back in the
+raised error text. `supabase/tests/hosted/0002_down.sql` drops everything this migration
+creates, in reverse order, so the hosted project can be re-tested from a clean slate without
+re-provisioning.
 
 Schema-level:
 1. No column outside `campuses` has type geography, geometry, or point.

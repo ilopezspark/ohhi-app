@@ -12,8 +12,11 @@ things in it are not negotiable: no stored coordinates (§4), server-enforced in
 | Path | What it is |
 | --- | --- |
 | `supabase/migrations/` | Postgres schema, RLS, seeds. Applied in filename order. |
+| `supabase/tests/` | pgTAP acceptance tests for the migrations, run with `supabase test db`. |
+| `supabase/tests/hosted/` | The hosted test runner (a DO block that always rolls back) and the down-script used to re-apply a migration against the hosted project during a fix pass. |
 | docs/decisions.md | Product and architecture decisions that amend the technical brief. Read before designing a table. |
 | docs/migration-0002-plan.md | Design for the core schema migration, implemented in `20260918000002_core_schema.sql`. |
+| docs/handoff-0002.md | State and remaining work for the migration 0002 fix pass. |
 
 The Expo app, edge functions, and the moderation console are added in later build steps.
 

@@ -574,6 +574,22 @@ comment on function private.account_readable(uuid) is 'Paused users stay readabl
 revoke execute on function private.account_readable(uuid) from public;
 grant execute on function private.account_readable(uuid) to authenticated, service_role;
 
+-- The profiles select policy needs the caller's campus, but a policy on
+-- profiles cannot select from profiles (42P17, infinite recursion). This
+-- definer helper reads it outside RLS, the same way account_readable() does.
+create function private.campus_of(p_uid uuid)
+returns uuid
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select campus_id from public.profiles where id = p_uid;
+$$;
+comment on function private.campus_of(uuid) is 'Campus of a user, read outside RLS for the profiles select policy.';
+revoke execute on function private.campus_of(uuid) from public;
+grant execute on function private.campus_of(uuid) to authenticated, service_role;
+
 create function private.is_verified(p_uid uuid)
 returns boolean
 language sql
@@ -733,7 +749,10 @@ grant execute on function private.get_or_create_conversation(uuid, uuid, uuid, p
 -- deviations in this migration (re-signup, and the two pg_cron job bodies).
 -- -----------------------------------------------------------------------------
 
-create function private.campus_id_for_email(p_email citext)
+-- The parameter is text, not citext: the domain match lowercases both sides
+-- itself, and an unqualified citext would not resolve under the empty
+-- search_path these functions run with (defect A).
+create function private.campus_id_for_email(p_email text)
 returns uuid
 language sql
 stable
@@ -746,17 +765,17 @@ as $$
     and exists (
       select 1
       from unnest(c.email_domains) as d(domain)
-      where lower(split_part(p_email::text, '@', 2)) = lower(d.domain)
-         or lower(split_part(p_email::text, '@', 2)) like ('%.' || lower(d.domain))
+      where lower(split_part(p_email, '@', 2)) = lower(d.domain)
+         or lower(split_part(p_email, '@', 2)) like ('%.' || lower(d.domain))
     )
   order by (c.status = 'live') desc
   limit 1;
 $$;
-comment on function private.campus_id_for_email(citext) is 'Suffix-matches the email domain against campuses.email_domains for live/coming_soon campuses (decision 18). Shared by profiles_from_auth() (insert path) and begin_signup() (revival path) so the two never diverge.';
-revoke execute on function private.campus_id_for_email(citext) from public;
+comment on function private.campus_id_for_email(text) is 'Suffix-matches the email domain against campuses.email_domains for live/coming_soon campuses (decision 18). Shared by profiles_from_auth() (insert path) and begin_signup() (revival path) so the two never diverge.';
+revoke execute on function private.campus_id_for_email(text) from public;
 -- Defect G fix: only called from profiles_from_auth() and begin_signup(),
 -- both security definer.
-grant execute on function private.campus_id_for_email(citext) to service_role;
+grant execute on function private.campus_id_for_email(text) to service_role;
 
 create table private.storage_purge_queue (
   id           uuid primary key default gen_random_uuid(),
@@ -778,9 +797,12 @@ set search_path = ''
 as $$
 declare
   v_conv_ids uuid[];
+  v_prev_bypass text := coalesce(current_setting('app.bypass_profiles_guard', true), 'off');
 begin
   -- Lets this function write columns that profiles_guard() and
-  -- dob_write_once() otherwise lock down for every role.
+  -- dob_write_once() otherwise lock down for every role. The flag is
+  -- transaction-local, so it is restored on the way out rather than left
+  -- on for whatever runs next in the same transaction.
   perform set_config('app.bypass_profiles_guard', 'on', true);
 
   -- 1. collect the user's conversation ids
@@ -857,6 +879,7 @@ begin
   --
   -- Never touched, by design: reports, moderation_actions,
   -- verification_denylist, verifications.
+  perform set_config('app.bypass_profiles_guard', v_prev_bypass, true);
 end;
 $$;
 revoke execute on function private.purge_user(uuid) from public;
@@ -935,9 +958,7 @@ declare
   v_campus uuid;
 begin
   select email into v_email from auth.users where id = new.id;
-  -- text -> citext is only an assignment cast, not an implicit one, so the
-  -- call below needs an explicit cast (defect A).
-  v_campus := private.campus_id_for_email(v_email::citext);
+  v_campus := private.campus_id_for_email(v_email);
   if v_campus is null then
     raise exception 'no campus accepts signups for this email domain';
   end if;
@@ -1035,6 +1056,8 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_prev_bypass text := coalesce(current_setting('app.bypass_profiles_guard', true), 'off');
 begin
   if new.deleted_at is not null and old.deleted_at is null then
     update public.conversations
@@ -1046,6 +1069,7 @@ begin
     update public.profiles
        set status = 'deleted'
      where id = new.user_id;
+    perform set_config('app.bypass_profiles_guard', v_prev_bypass, true);
   end if;
   return new;
 end;
@@ -1530,6 +1554,7 @@ as $$
 declare
   v_provider text;
   v_ref text;
+  v_prev_bypass text := coalesce(current_setting('app.bypass_profiles_guard', true), 'off');
 begin
   if new.action = 'ban' then
     select provider, provider_account_reference into v_provider, v_ref
@@ -1549,6 +1574,7 @@ begin
     update public.profiles
        set status = 'banned'
      where id = new.subject_id;
+    perform set_config('app.bypass_profiles_guard', v_prev_bypass, true);
   end if;
   return new;
 end;
@@ -1658,7 +1684,7 @@ create policy "profiles are readable by owner, or same-campus and not blocked"
     or (
       private.account_readable(id)
       and not private.is_blocked(id, auth.uid())
-      and campus_id = (select p.campus_id from public.profiles p where p.id = auth.uid())
+      and campus_id = private.campus_of(auth.uid())
     )
   );
 
@@ -2232,6 +2258,7 @@ declare
   v_email text;
   v_campus uuid;
   v_row public.profiles;
+  v_prev_bypass text := coalesce(current_setting('app.bypass_profiles_guard', true), 'off');
 begin
   if v_uid is null then
     raise exception 'not authenticated';
@@ -2258,9 +2285,7 @@ begin
     perform private.purge_user(v_uid);
 
     select email into v_email from auth.users where id = v_uid;
-    -- text -> citext is only an assignment cast, not an implicit one, so the
-    -- call below needs an explicit cast (defect A).
-    v_campus := private.campus_id_for_email(v_email::citext);
+    v_campus := private.campus_id_for_email(v_email);
     if v_campus is null then
       raise exception 'no campus accepts signups for this email domain';
     end if;
@@ -2282,6 +2307,7 @@ begin
            deleted_at = null,
            purged_at = null
      where user_id = v_uid;
+    perform set_config('app.bypass_profiles_guard', v_prev_bypass, true);
 
     return v_row;
   end if;
@@ -2354,6 +2380,7 @@ declare
   v_dob date;
   v_tz text;
   v_status public.user_status;
+  v_prev_bypass text := coalesce(current_setting('app.bypass_profiles_guard', true), 'off');
 begin
   if v_uid is null then
     raise exception 'not authenticated';
@@ -2377,6 +2404,7 @@ begin
   if v_dob > ((now() at time zone v_tz)::date - interval '18 years')::date then
     perform set_config('app.bypass_profiles_guard', 'on', true);
     update public.profiles set status = 'closed_age' where id = v_uid returning status into v_status;
+    perform set_config('app.bypass_profiles_guard', v_prev_bypass, true);
     return v_status;
   end if;
 
@@ -2399,6 +2427,7 @@ begin
 
   perform set_config('app.bypass_profiles_guard', 'on', true);
   update public.profiles set status = 'active' where id = v_uid returning status into v_status;
+  perform set_config('app.bypass_profiles_guard', v_prev_bypass, true);
 
   insert into public.user_presence (user_id, campus_id)
   select v_uid, campus_id from public.profiles where id = v_uid
@@ -2638,6 +2667,7 @@ as $$
 declare
   v_hi public.his;
   v_conv_id uuid;
+  v_prev_bypass text := coalesce(current_setting('app.bypass_profiles_guard', true), 'off');
 begin
   select * into v_hi from public.his where id = p_hi_id for update;
   if v_hi.id is null then
@@ -2658,6 +2688,7 @@ begin
   -- answered needs the bypass flag.
   perform set_config('app.bypass_profiles_guard', 'on', true);
   update public.his set state = 'answered' where id = p_hi_id;
+  perform set_config('app.bypass_profiles_guard', v_prev_bypass, true);
 
   -- The original hi sender is the opener and must send the first message.
   v_conv_id := private.get_or_create_conversation(
@@ -2732,9 +2763,12 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_prev_bypass text := coalesce(current_setting('app.bypass_profiles_guard', true), 'off');
 begin
   perform set_config('app.bypass_profiles_guard', 'on', true);
   update public.users_private set deleted_at = now() where user_id = auth.uid();
+  perform set_config('app.bypass_profiles_guard', v_prev_bypass, true);
 end;
 $$;
 comment on function public.delete_my_account() is 'The trigger (close_threads_on_delete) closes threads and sets status = deleted.';

@@ -1,7 +1,10 @@
 -- OhHi migration 0002 acceptance tests (pgTAP)
 --
--- One test group per item in docs/migration-0002-plan.md section 13 (27
--- groups, 60 counted assertions total). Run with `supabase test db`.
+-- One test group per item in docs/migration-0002-plan.md section 13, plus
+-- groups 28-38 added for the fix-pass defects A-L from docs/handoff-0002.md
+-- (38 groups, 97 counted assertions total -- mechanically recounted; the
+-- original groups 1-27 actually emit 62 assertions, not the 60 the previous
+-- header claimed, plus 35 new ones for A-L). Run with `supabase test db`.
 --
 -- Fixtures create auth.users rows directly, then always act through the
 -- app's own RPCs and RLS-scoped statements (never a shortcut around the
@@ -244,16 +247,26 @@ select pg_temp._run_as('f00d0000-0000-0000-0000-000000000006', $$insert into pub
 
 -- ann owns an album, shares it with fay (mutual exchange above satisfies rule 9).
 select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$insert into public.albums (owner_id, name) values (auth.uid(), 'Ann Trip')$$);
-select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$insert into public.album_photos (album_id, storage_path, moderation_state)
-  select id, 'ann/trip/1.jpg', 'ok' from public.albums where owner_id = auth.uid() and name = 'Ann Trip'$$);
+-- Defect C fix: album_photos.moderation_state is no longer in the owner's
+-- insert column grant (album_photos_guard() also forces it to 'pending' on
+-- any client insert regardless), so the insert can no longer set it
+-- directly -- approved the way the real moderation service would, as
+-- postgres, same convention as user_photos above.
+select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$insert into public.album_photos (album_id, storage_path)
+  select id, 'ann/trip/1.jpg' from public.albums where owner_id = auth.uid() and name = 'Ann Trip'$$);
+update public.album_photos set moderation_state = 'ok'
+ where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000001' and name = 'Ann Trip');
 select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$insert into public.shares (owner_id, viewer_id, subject_type, subject_id)
   select auth.uid(), 'f00d0000-0000-0000-0000-000000000006', 'album', id from public.albums where owner_id = auth.uid() and name = 'Ann Trip'$$);
 
 -- fay owns an album, shares it with ann, so test 22 can show the block
 -- taking access away in the other direction too.
 select pg_temp._run_as('f00d0000-0000-0000-0000-000000000006', $$insert into public.albums (owner_id, name) values (auth.uid(), 'Fay Trip')$$);
-select pg_temp._run_as('f00d0000-0000-0000-0000-000000000006', $$insert into public.album_photos (album_id, storage_path, moderation_state)
-  select id, 'fay/trip/1.jpg', 'ok' from public.albums where owner_id = auth.uid() and name = 'Fay Trip'$$);
+-- Defect C fix: see the same note on Ann Trip above.
+select pg_temp._run_as('f00d0000-0000-0000-0000-000000000006', $$insert into public.album_photos (album_id, storage_path)
+  select id, 'fay/trip/1.jpg' from public.albums where owner_id = auth.uid() and name = 'Fay Trip'$$);
+update public.album_photos set moderation_state = 'ok'
+ where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000006' and name = 'Fay Trip');
 select pg_temp._run_as('f00d0000-0000-0000-0000-000000000006', $$insert into public.shares (owner_id, viewer_id, subject_type, subject_id)
   select auth.uid(), 'f00d0000-0000-0000-0000-000000000001', 'album', id from public.albums where owner_id = auth.uid() and name = 'Fay Trip'$$);
 
@@ -327,11 +340,18 @@ select 'f00d0000-0000-0000-0000-000000000015', null, 'warn', id, 'test fixture'
    and subject_id = 'f00d0000-0000-0000-0000-000000000015'
    and category = 'harassment';
 
+-- Defect B fixture: a storage.objects row under pat's profile-photos prefix,
+-- inserted directly as postgres (table owner bypasses RLS), so test 27 can
+-- prove private.purge_user() enqueues it in private.storage_purge_queue
+-- instead of deleting it directly.
+insert into storage.objects (bucket_id, name)
+values ('profile-photos', 'f00d0000-0000-0000-0000-000000000015/0.jpg');
+
 -- =============================================================================
 -- Assertions
 -- =============================================================================
 
-select plan(60);
+select plan(98);
 
 -- -----------------------------------------------------------------------------
 -- 1-3: schema-level guarantees
@@ -609,9 +629,8 @@ select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$select public.s
 
 select pg_temp._as('f00d0000-0000-0000-0000-000000000001');
 set local role authenticated;
-select throws_like(
+select lives_ok(
   $$insert into public.albums (owner_id, name) values ('f00d0000-0000-0000-0000-000000000001', 'Ann Bea Album')$$,
-  '%',
   'rule 9 (setup): ann can create her own album regardless of sharing state'
 );
 select throws_like(
@@ -654,8 +673,11 @@ select lives_ok(
 );
 reset role;
 
-select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$insert into public.album_photos (album_id, storage_path, moderation_state)
-  select id, 'ann/bea-album/1.jpg', 'ok' from public.albums where owner_id = auth.uid() and name = 'Ann Bea Album'$$);
+-- Defect C fix: see the same note on Ann Trip above.
+select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$insert into public.album_photos (album_id, storage_path)
+  select id, 'ann/bea-album/1.jpg' from public.albums where owner_id = auth.uid() and name = 'Ann Bea Album'$$);
+update public.album_photos set moderation_state = 'ok'
+ where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000001' and name = 'Ann Bea Album');
 
 -- -----------------------------------------------------------------------------
 -- 16: rule 10 - after revocation, share_is_active is false and the album
@@ -963,13 +985,13 @@ select is(
 -- intact and the profiles row present as a tombstone.
 -- -----------------------------------------------------------------------------
 
--- private.purge_user() issues a direct `delete from storage.objects ...`
--- (migration line ~783). Supabase installs a protective trigger
--- (storage.protect_delete) that rejects ANY direct delete on
--- storage.objects, matching rows or not, so this call always raises on a
--- real hosted project (confirmed against yvmxyynxpheudnyoveqx). Caught here
--- via a savepoint so it does not abort the rest of the suite; still
--- reported as three failures below, matching the plan count.
+-- Defect B fix: private.purge_user() now enqueues the purged user's
+-- storage.objects paths in private.storage_purge_queue instead of deleting
+-- them directly, so it no longer trips storage.protect_delete() and this
+-- call is expected to succeed (the "ok" branches below, plus the two
+-- defect-B assertions further down). The savepoint wrapper stays as a
+-- defensive fallback so an unrelated failure here still reports clean
+-- failures instead of aborting the rest of the suite.
 create or replace function pg_temp._purge_user_safe(uid uuid) returns text
 language plpgsql as $$
 begin
@@ -1010,6 +1032,307 @@ select case when current_setting('pgtap.purge_error', true) = '' then
 else
   fail('acceptance 27: the profiles row survives the purge as a tombstone -- private.purge_user() raised: ' || current_setting('pgtap.purge_error', true))
 end;
+
+-- Defect B: purge_user() enqueues the purged user's storage.objects paths in
+-- private.storage_purge_queue instead of issuing a direct delete, so this
+-- call should now succeed outright (current_setting('pgtap.purge_error')
+-- empty) rather than being caught by the savepoint above.
+select case when current_setting('pgtap.purge_error', true) = '' then
+  ok(
+    exists (
+      select 1 from private.storage_purge_queue
+       where bucket_id = 'profile-photos'
+         and object_name = 'f00d0000-0000-0000-0000-000000000015/0.jpg'
+    ),
+    'defect B: purge_user() enqueues the purged user''s storage path in private.storage_purge_queue'
+  )
+else
+  fail('defect B: purge_user() enqueues the purged user''s storage path in private.storage_purge_queue -- private.purge_user() raised: ' || current_setting('pgtap.purge_error', true))
+end;
+select is(
+  current_setting('pgtap.purge_error', true),
+  '',
+  'defect B: purge_user() no longer issues a direct storage.objects delete, so it raises nothing'
+);
+select is(
+  coalesce(current_setting('app.bypass_profiles_guard', true), 'off'),
+  'off',
+  'purge_user() restores app.bypass_profiles_guard on the way out, so later guarded writes in the same transaction are not silently privileged'
+);
+
+-- -----------------------------------------------------------------------------
+-- 28: defect A - begin_signup() resolves a mixed-case email domain through
+-- private.campus_id_for_email(text) and lands the new profile on the right
+-- (clc) campus.
+-- -----------------------------------------------------------------------------
+
+insert into auth.users
+  (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+   created_at, updated_at, raw_app_meta_data, raw_user_meta_data)
+values
+  ('f00d0000-0000-0000-0000-000000000013', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'Zoe@ClcIllinois.EDU', '', now(), now(), now(), '{"provider":"email","providers":["email"]}', '{}');
+
+select pg_temp._as('f00d0000-0000-0000-0000-000000000013');
+set local role authenticated;
+select lives_ok(
+  $$select public.begin_signup()$$,
+  'defect A: begin_signup() succeeds for a mixed-case email domain (text parameter on campus_id_for_email)'
+);
+reset role;
+
+select is(
+  (select campus_id from public.profiles where id = 'f00d0000-0000-0000-0000-000000000013'),
+  (select id from public.campuses where slug = 'clc'),
+  'defect A: the mixed-case signup lands on the clc campus'
+);
+
+-- -----------------------------------------------------------------------------
+-- 29: defect C - user_photos and album_photos: moderation_state is excluded
+-- from the owner's column grants, and the guard triggers force 'pending' on
+-- any client insert regardless.
+-- -----------------------------------------------------------------------------
+
+select pg_temp._as('f00d0000-0000-0000-0000-000000000002'); -- bea, owns her own user_photos row
+set local role authenticated;
+select throws_ok(
+  $$update public.user_photos set moderation_state = 'ok' where user_id = 'f00d0000-0000-0000-0000-000000000002' and position = 0$$,
+  '42501'
+);
+reset role;
+
+select pg_temp._as('f00d0000-0000-0000-0000-000000000006'); -- fay, owns Fay Trip's album_photos row
+set local role authenticated;
+select throws_ok(
+  $$update public.album_photos set moderation_state = 'pending'
+      where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000006' and name = 'Fay Trip')$$,
+  '42501'
+);
+reset role;
+
+select is(
+  (select moderation_state::text from public.user_photos where user_id = 'f00d0000-0000-0000-0000-000000000001' and position = 1),
+  'pending',
+  'defect C: user_photos_guard() left ann''s never-approved position-1 photo at pending (the client-insert default)'
+);
+
+-- -----------------------------------------------------------------------------
+-- 30: defect D - his_update_guard() pins every column but state, and only
+-- allows a client to move sent -> dismissed. jon -> kay's hi (still 'sent'
+-- from test 9) is reused here since nothing else has touched it since.
+-- -----------------------------------------------------------------------------
+
+select pg_temp._as('f00d0000-0000-0000-0000-000000000010'); -- kay, the recipient
+set local role authenticated;
+select throws_like(
+  $$update public.his set state = 'dismissed', to_user_id = 'f00d0000-0000-0000-0000-00000000000a'
+      where from_user_id = 'f00d0000-0000-0000-0000-00000000000f' and to_user_id = 'f00d0000-0000-0000-0000-000000000010'$$,
+  '%only state may be updated on his%',
+  'defect D: recipient cannot change to_user_id even while moving sent -> dismissed'
+);
+select throws_like(
+  $$update public.his set state = 'answered'
+      where from_user_id = 'f00d0000-0000-0000-0000-00000000000f' and to_user_id = 'f00d0000-0000-0000-0000-000000000010'$$,
+  '%client may only move a hi from sent to dismissed%',
+  'defect D: recipient cannot move a hi directly from sent to answered'
+);
+select lives_ok(
+  $$update public.his set state = 'dismissed'
+      where from_user_id = 'f00d0000-0000-0000-0000-00000000000f' and to_user_id = 'f00d0000-0000-0000-0000-000000000010'$$,
+  'defect D: recipient dismissing sent -> dismissed with no other column change succeeds'
+);
+reset role;
+
+-- -----------------------------------------------------------------------------
+-- 31: defect E - profiles select requires owner, or same campus + not
+-- blocked + account_readable. gus is moved to a second campus to prove the
+-- campus clause; ann/fay reuse the existing block.
+-- -----------------------------------------------------------------------------
+
+insert into public.campuses (name, slug, city, state, email_domains, status, launch_date, center_point, county_label)
+values (
+  'Other Campus', 'other-campus', 'Elsewhere', 'IL', array['other.edu'], 'coming_soon', date '2027-01-01',
+  st_setsrid(st_makepoint(-88.0, 42.0), 4326)::geography, 'other co.'
+);
+select pg_temp._bypass_guard($$update public.profiles set campus_id = (select id from public.campuses where slug = 'other-campus')
+  where id = 'f00d0000-0000-0000-0000-000000000007'$$); -- gus, moved off-campus
+
+select pg_temp._as('f00d0000-0000-0000-0000-000000000001'); -- ann
+set local role authenticated;
+select is_empty(
+  $$select id from public.profiles where id = 'f00d0000-0000-0000-0000-000000000007'$$,
+  'defect E: an account_readable, non-blocked profile on a different campus is not selectable'
+);
+select is_empty(
+  $$select id from public.profiles where id = 'f00d0000-0000-0000-0000-000000000006'$$,
+  'defect E: a blocked profile is not selectable even on the same campus'
+);
+reset role;
+
+-- -----------------------------------------------------------------------------
+-- 32: defect F - the caller is excluded from their own grid_for_me() and
+-- profile_card_for(self) (is_grid_visible() requires target <> viewer).
+-- -----------------------------------------------------------------------------
+
+select pg_temp._as('f00d0000-0000-0000-0000-000000000001'); -- ann
+set local role authenticated;
+select ok(
+  not exists (select 1 from public.grid_for_me() where user_id = 'f00d0000-0000-0000-0000-000000000001'),
+  'defect F: the caller does not appear in their own grid_for_me()'
+);
+select is_empty(
+  $$select * from public.profile_card_for('f00d0000-0000-0000-0000-000000000001')$$,
+  'defect F: profile_card_for(self) returns zero rows'
+);
+reset role;
+
+-- -----------------------------------------------------------------------------
+-- 33: defect G - execute on private.* is limited to is_blocked,
+-- account_readable, share_is_active, can_read_conversation (plus the
+-- deliberate is_active deviation); is_verified is no longer reachable
+-- from authenticated.
+-- -----------------------------------------------------------------------------
+
+select ok(
+  not has_function_privilege('authenticated', 'private.is_verified(uuid)', 'execute'),
+  'defect G: private.is_verified(uuid) has no execute grant for authenticated'
+);
+select ok(
+  has_function_privilege('authenticated', 'private.is_blocked(uuid,uuid)', 'execute'),
+  'defect G: private.is_blocked(uuid,uuid) is still executable by authenticated'
+);
+select ok(
+  has_function_privilege('authenticated', 'private.account_readable(uuid)', 'execute'),
+  'defect G: private.account_readable(uuid) is still executable by authenticated'
+);
+select ok(
+  has_function_privilege('authenticated', 'private.share_is_active(uuid,uuid,public.share_subject_type,uuid)', 'execute'),
+  'defect G: private.share_is_active(...) is still executable by authenticated'
+);
+select ok(
+  has_function_privilege('authenticated', 'private.can_read_conversation(uuid,uuid)', 'execute'),
+  'defect G: private.can_read_conversation(uuid,uuid) is still executable by authenticated'
+);
+select ok(
+  has_function_privilege('authenticated', 'private.is_active(uuid)', 'execute'),
+  'defect G: private.is_active(uuid) is still executable by authenticated (deliberate deviation for the reports insert check)'
+);
+
+-- -----------------------------------------------------------------------------
+-- 34: defect H - enforce_hi_rules(), enforce_share_rules(), and
+-- start_conversation() all raise the same generic 'not allowed' / 42501 on a
+-- block, not a distinguishable message.
+-- -----------------------------------------------------------------------------
+
+select pg_temp._as('f00d0000-0000-0000-0000-000000000006'); -- fay, blocked by ann
+set local role authenticated;
+select throws_ok(
+  $$insert into public.his (from_user_id, to_user_id) values ('f00d0000-0000-0000-0000-000000000006', 'f00d0000-0000-0000-0000-000000000001')$$,
+  '42501'
+);
+reset role;
+
+select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$insert into public.albums (owner_id, name) values (auth.uid(), 'Ann Blocked Share Test')$$);
+select pg_temp._as('f00d0000-0000-0000-0000-000000000001'); -- ann
+set local role authenticated;
+select throws_ok(
+  $$insert into public.shares (owner_id, viewer_id, subject_type, subject_id)
+      select 'f00d0000-0000-0000-0000-000000000001', 'f00d0000-0000-0000-0000-000000000006', 'album', id
+        from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000001' and name = 'Ann Blocked Share Test'$$,
+  '42501'
+);
+reset role;
+
+select pg_temp._as('f00d0000-0000-0000-0000-000000000006'); -- fay
+set local role authenticated;
+select throws_ok(
+  $$select public.start_conversation('f00d0000-0000-0000-0000-000000000001')$$,
+  '42501'
+);
+reset role;
+
+-- -----------------------------------------------------------------------------
+-- 35: defect I - reports insert is column-limited; no state, severity,
+-- resolved_at, or action_taken.
+-- -----------------------------------------------------------------------------
+
+select ok(
+  has_column_privilege('authenticated', 'public.reports', 'category', 'insert'),
+  'defect I: reports insert grant includes category'
+);
+select ok(
+  not has_column_privilege('authenticated', 'public.reports', 'severity', 'insert'),
+  'defect I: reports insert grant excludes severity'
+);
+select ok(
+  not has_column_privilege('authenticated', 'public.reports', 'state', 'insert'),
+  'defect I: reports insert grant excludes state'
+);
+select ok(
+  not has_column_privilege('authenticated', 'public.reports', 'resolved_at', 'insert'),
+  'defect I: reports insert grant excludes resolved_at'
+);
+select ok(
+  not has_column_privilege('authenticated', 'public.reports', 'action_taken', 'insert'),
+  'defect I: reports insert grant excludes action_taken'
+);
+
+-- -----------------------------------------------------------------------------
+-- 36: defect J - albums owner update is limited to name; photo_count stays
+-- trigger-only.
+-- -----------------------------------------------------------------------------
+
+select ok(
+  has_column_privilege('authenticated', 'public.albums', 'name', 'update'),
+  'defect J: albums update grant includes name'
+);
+select ok(
+  not has_column_privilege('authenticated', 'public.albums', 'photo_count', 'update'),
+  'defect J: albums update grant excludes photo_count'
+);
+
+-- -----------------------------------------------------------------------------
+-- 37: defect K - here_now_until/last_active_at are out of the owner's
+-- profiles update grant; touch_activity() is the only write path for
+-- last_active_at.
+-- -----------------------------------------------------------------------------
+
+select ok(
+  not has_column_privilege('authenticated', 'public.profiles', 'here_now_until', 'update'),
+  'defect K: profiles update grant excludes here_now_until'
+);
+select ok(
+  not has_column_privilege('authenticated', 'public.profiles', 'last_active_at', 'update'),
+  'defect K: profiles update grant excludes last_active_at'
+);
+
+select pg_temp._as('f00d0000-0000-0000-0000-000000000001'); -- ann
+set local role authenticated;
+select throws_ok(
+  $$update public.profiles set here_now_until = now() + interval '2 hours' where id = 'f00d0000-0000-0000-0000-000000000001'$$,
+  '42501'
+);
+reset role;
+
+update public.profiles set last_active_at = now() - interval '1 day' where id = 'f00d0000-0000-0000-0000-000000000001';
+select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$select public.touch_activity()$$);
+select ok(
+  (select last_active_at from public.profiles where id = 'f00d0000-0000-0000-0000-000000000001') > now() - interval '1 hour',
+  'defect K: touch_activity() bumps last_active_at back to (transaction) now()'
+);
+
+-- -----------------------------------------------------------------------------
+-- 38: defect L - a malformed storage.objects path is refused by the RLS
+-- policy (42501), not a ::uuid cast error (22P02), because the regex guard
+-- runs inside a `case when ... else false end` ahead of the cast.
+-- -----------------------------------------------------------------------------
+
+select pg_temp._as('f00d0000-0000-0000-0000-000000000001'); -- ann
+set local role authenticated;
+select throws_ok(
+  $$insert into storage.objects (bucket_id, name) values ('chat-media', 'not-a-uuid/foo.jpg')$$,
+  '42501'
+);
+reset role;
 
 select * from finish();
 
