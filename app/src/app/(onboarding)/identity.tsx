@@ -9,10 +9,9 @@ import { supabase } from '../../api/client';
 import { mapSupabaseError } from '../../api/errors';
 import { stepToPath } from '../../onboarding/stepResolver';
 import { PRONOUN_OPTIONS, PRONOUN_MAX_LENGTH, ORIENTATION_CHIPS, ORIENTATION_MAX_ITEMS } from '../../settings/vocab';
-import { Banner, Button, Chip, Input, Text } from '../../ui';
+import { Banner, Button, Chip, Input, Text, Toggle } from '../../ui';
 import { colors, radii, spacing } from '../../theme/tokens';
 import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
-import { Toggle } from '../../onboarding/components/Toggle';
 
 /**
  * `Onb-Identity.html` ("about you") — new onboarding step, decision 20 /

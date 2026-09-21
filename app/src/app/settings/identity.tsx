@@ -9,9 +9,8 @@ import { putIdentity } from '../../api/identityWrite';
 import { mapSupabaseError } from '../../api/errors';
 import { supabase } from '../../api/client';
 import { ChipPicker } from '../../settings/ChipPicker';
-import { Toggle } from '../../settings/components/Toggle';
 import { ORIENTATION_CHIPS, ORIENTATION_MAX_ITEMS, PRONOUN_MAX_LENGTH, PRONOUN_OPTIONS } from '../../settings/vocab';
-import { Button, Chip, Header, Input, Text } from '../../ui';
+import { Button, Chip, Header, Input, Text, Toggle } from '../../ui';
 import { colors, spacing } from '../../theme/tokens';
 
 /**

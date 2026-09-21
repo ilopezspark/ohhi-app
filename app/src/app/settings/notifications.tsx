@@ -8,8 +8,7 @@ import {
   type NotificationPrefsRow,
 } from '../../api/notificationPrefs';
 import { mapSupabaseError } from '../../api/errors';
-import { Header, ListRow, Text } from '../../ui';
-import { Toggle } from '../../settings/components/Toggle';
+import { Header, ListRow, Text, Toggle } from '../../ui';
 import { colors, spacing } from '../../theme/tokens';
 
 type ToggleKey = 'hi_received' | 'hi_back' | 'new_message' | 'someone_new_nearby';

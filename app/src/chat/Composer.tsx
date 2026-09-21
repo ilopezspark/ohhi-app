@@ -11,6 +11,14 @@ interface Props {
   onSend: (body: string) => void;
   /** Plus button — opens the share tray (`ShareSheet`), not a direct picker anymore (`Chat-Share.html`). */
   onOpenShare: () => void;
+  /**
+   * Seeds the input once, e.g. `chat/[id].tsx`'s `draft` route param — the
+   * message-opener sheet (`card/MessageSheet.tsx`) falls back to this when
+   * its own `sendMessage` fails after `startConversation` already succeeded,
+   * so the typed draft isn't lost. Read only on mount; changing it later has
+   * no effect (this isn't a controlled value).
+   */
+  initialText?: string;
 }
 
 /**
@@ -27,8 +35,8 @@ interface Props {
  * picker — `Chat-Share.html`'s "a photo" row inside that sheet is what
  * triggers the picker.
  */
-export function Composer({ state, sending, onSend, onOpenShare }: Props) {
-  const [text, setText] = useState('');
+export function Composer({ state, sending, onSend, onOpenShare, initialText }: Props) {
+  const [text, setText] = useState(initialText ?? '');
 
   if (!state.canSend) {
     return (

@@ -107,6 +107,7 @@ in `app/src/app/_layout.tsx`, with a splash-screen hold until they resolve.
 | `Icon` (+ 16 named glyphs) | `ui/icons/Icon.tsx` | Every hand-drawn line icon ported from `docs/design/screens/*.html` via `react-native-svg` (decision 52) — `back`, `more`, `person`, `plus`, `send`, `grid`, `his`, `chat`, `camera`, `album`, `bell`, `search`, `check`, `lock`, `settings`, `pin` |
 | `Header` / `BackButton` | `ui/Header.tsx` | `.back` + `.h1` row every non-tab screen opens with |
 | `EmptyState` | `ui/EmptyState.tsx` | `Grid-Empty.html`'s centred icon/headline/helper/action stack |
+| `Toggle` | `ui/Toggle.tsx` | The `width:44px;height:26px;border-radius:999px` pill switch — `Onb-Identity.html`'s "show these on my profile" row (off track only), `Me.html`'s "here now" status card (the one screen that shows an *on* state, `#FF5A1F`/`colors.signal`). Previously two duplicate local copies (`onboarding/components/Toggle.tsx`, `settings/components/Toggle.tsx`); promoted here as the one implementation. |
 
 ## Screen -> app route map
 

@@ -7,6 +7,7 @@ import { getProfileCard } from '../../api/profileCard';
 import { getIdentity } from '../../api/identity';
 import { sendHi } from '../../api/his';
 import { startConversation } from '../../api/conversations';
+import { sendMessage } from '../../api/messages';
 import { signedPhotoUrls } from '../../api/photos';
 import { GOAL_OPTIONS } from '../../api/goals';
 import { PhotoCarousel } from '../../card/PhotoCarousel';
@@ -22,6 +23,23 @@ import { BackIcon, Badge, CheckIcon, PinIcon, Text } from '../../ui';
 import { colors, layout, radii, shadows, spacing } from '../../theme/tokens';
 
 const GOAL_LABELS: Record<string, string> = Object.fromEntries(GOAL_OPTIONS.map((o) => [o.value, o.label]));
+
+/**
+ * Thrown by `messageMutation` when `startConversation` succeeds but the
+ * follow-up `sendMessage` fails — the conversation now exists (a second tap
+ * would hit `start_conversation`'s own idempotent re-select, not create a
+ * duplicate), so the right recovery is to land in the thread with the draft
+ * still in the composer, not to show a profile-level error as if nothing
+ * happened.
+ */
+class ConversationCreatedSendFailedError extends Error {
+  constructor(
+    public readonly conversationId: string,
+    public readonly draft: string
+  ) {
+    super("Started the conversation, but the message didn't send.");
+  }
+}
 
 /**
  * The profile card (`Profile.html`, `docs/app-social-plan.md` §1) — a
@@ -87,19 +105,44 @@ export default function ProfileScreen() {
   });
 
   // Decision 49: Hi and Message are two equal openers. With no conversation yet
-  // (`hi_and_message`/`message_opener`) it has to create one first; with a
-  // conversation already known (`message`) it just navigates. A refusal here
-  // is mapped through `mapSupabaseError` already (never "blocked" —
-  // `api/conversations.ts`'s `startConversation`) — the one thing this
-  // screen adds is a single refetch, since the likeliest refusal
+  // (`hi_and_message`/`message_opener`) it has to create one first, then send
+  // the sheet's draft as the opener's first message — `startConversation`
+  // creates the row with **no** message (`api/conversations.ts`'s own doc
+  // comment: "treat RPC + first insert as one compose-and-send action"), so
+  // dropping the draft after the RPC would silently discard what the person
+  // typed. With a conversation already known (`message`) it just navigates,
+  // no send involved. A refusal from `startConversation` itself is mapped
+  // through `mapSupabaseError` already (never "blocked") — the one thing
+  // this screen adds is a single refetch, since the likeliest refusal
   // ("a conversation already exists for this pair") means the card's read
   // was stale and a fresh one will resolve straight to `message`.
+  //
+  // If `sendMessage` is what fails (the conversation now exists), refetching
+  // the card would be wrong — there is no "try again" affordance on this
+  // screen once the thread exists. Instead `onError` below routes into the
+  // thread itself, draft preserved via a route param, so the generic error
+  // and the retry both happen where the composer already lives.
   const messageMutation = useMutation({
-    mutationFn: () => startConversation(targetId),
+    mutationFn: async (draft: string) => {
+      const conversationId = await startConversation(targetId);
+      try {
+        await sendMessage({ conversationId, body: draft });
+      } catch {
+        throw new ConversationCreatedSendFailedError(conversationId, draft);
+      }
+      return conversationId;
+    },
     onSuccess: (conversationId) => {
       router.push(`/chat/${conversationId}` as never);
     },
-    onError: () => {
+    onError: (err) => {
+      if (err instanceof ConversationCreatedSendFailedError) {
+        router.push({
+          pathname: '/chat/[id]',
+          params: { id: err.conversationId, draft: err.draft },
+        } as never);
+        return;
+      }
       void cardQuery.refetch();
     },
   });
@@ -119,9 +162,9 @@ export default function ProfileScreen() {
     }
   }
 
-  function onSendMessage() {
+  function onSendMessage(draft: string) {
     setMessageSheetOpen(false);
-    messageMutation.mutate();
+    messageMutation.mutate(draft);
   }
 
   if (cardQuery.isPending) {

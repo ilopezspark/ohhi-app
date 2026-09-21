@@ -52,7 +52,7 @@ type FeedItem =
   | { kind: 'share'; key: string; createdAt: string; share: ShareFeedItem };
 
 export default function ChatThreadScreen() {
-  const { id: conversationId } = useLocalSearchParams<{ id: string }>();
+  const { id: conversationId, draft: initialDraft } = useLocalSearchParams<{ id: string; draft?: string }>();
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const [sending, setSending] = useState(false);
@@ -577,7 +577,13 @@ export default function ChatThreadScreen() {
         }
       />
 
-      <Composer state={composer} sending={sending} onSend={onSend} onOpenShare={openShareSheet} />
+      <Composer
+        state={composer}
+        sending={sending}
+        onSend={onSend}
+        onOpenShare={openShareSheet}
+        initialText={initialDraft}
+      />
 
       <ShareSheet
         visible={shareSheetOpen}

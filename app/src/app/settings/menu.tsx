@@ -9,8 +9,7 @@ import { listBlockedUsers, unblockUser, type BlockedUserRow } from '../../api/bl
 import { mapSupabaseError } from '../../api/errors';
 import { supabase } from '../../api/client';
 import { usePresenceStore } from '../../presence/store';
-import { Button, Header, ListRow, Text } from '../../ui';
-import { Toggle } from '../../settings/components/Toggle';
+import { Button, Header, ListRow, Text, Toggle } from '../../ui';
 import { signOutAndReset } from '../../settings/signOut';
 import { colors, spacing } from '../../theme/tokens';
 

@@ -12,10 +12,9 @@ import { getIdentity } from '../../api/identity';
 import { getFirstName, getStatusLine, updateProfile } from '../../api/profile';
 import { tintForPhoto } from '../../photos/tint';
 import { usePresenceStore } from '../../presence/store';
-import { Badge, Header, Input, ListRow, Surface, Text } from '../../ui';
+import { Badge, Header, Input, ListRow, Surface, Text, Toggle } from '../../ui';
 import { SettingsIcon } from '../../ui/icons';
 import { PhotoTile } from '../../settings/components/PhotoTile';
-import { Toggle } from '../../settings/components/Toggle';
 import { colors, spacing } from '../../theme/tokens';
 
 const VERIFICATION_COPY: Record<string, string> = {

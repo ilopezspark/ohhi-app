@@ -10,6 +10,7 @@ jest.mock('../api/profileCard', () => ({ getProfileCard: jest.fn() }));
 jest.mock('../api/identity', () => ({ getIdentity: jest.fn() }));
 jest.mock('../api/his', () => ({ sendHi: jest.fn() }));
 jest.mock('../api/conversations', () => ({ startConversation: jest.fn() }));
+jest.mock('../api/messages', () => ({ sendMessage: jest.fn() }));
 jest.mock('../api/photos', () => ({ signedPhotoUrls: jest.fn() }));
 
 import { router, useLocalSearchParams } from 'expo-router';
@@ -17,6 +18,7 @@ import { getProfileCard } from '../api/profileCard';
 import { getIdentity } from '../api/identity';
 import { sendHi } from '../api/his';
 import { startConversation } from '../api/conversations';
+import { sendMessage } from '../api/messages';
 import { signedPhotoUrls } from '../api/photos';
 import ProfileScreen from '../app/profile/[id]';
 
@@ -132,18 +134,75 @@ describe('ProfileScreen', () => {
     expect(startConversation).not.toHaveBeenCalled();
   });
 
-  it('calls startConversation and navigates to the new thread once the sheet\'s send is tapped', async () => {
+  it('calls startConversation, then sendMessage with the typed draft, then navigates to the new thread, in that order', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: null, conversation_id: null }));
     (startConversation as jest.Mock).mockResolvedValue('conv-new');
+    (sendMessage as jest.Mock).mockResolvedValue({ id: 'msg-1' });
     const { findByTestId } = await renderScreen();
     const cta = await findByTestId('profile-cta-message');
     await fireEvent.press(cta);
+
+    const input = await findByTestId('profile-message-sheet-input');
+    await fireEvent.changeText(input, 'hey, saw you at orientation');
 
     const send = await findByTestId('profile-message-sheet-send');
     await fireEvent.press(send);
 
     await waitFor(() => expect(startConversation).toHaveBeenCalledWith(TARGET));
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith({
+        conversationId: 'conv-new',
+        body: 'hey, saw you at orientation',
+      })
+    );
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/chat/conv-new'));
+
+    const startOrder = (startConversation as jest.Mock).mock.invocationCallOrder[0];
+    const sendOrder = (sendMessage as jest.Mock).mock.invocationCallOrder[0];
+    const pushOrder = (router.push as jest.Mock).mock.invocationCallOrder.find(
+      (order, i) => (router.push as jest.Mock).mock.calls[i]?.[0] === '/chat/conv-new'
+    );
+    expect(startOrder).toBeLessThan(sendOrder);
+    expect(sendOrder).toBeLessThan(pushOrder as number);
+  });
+
+  it('keeps the sheet\'s send disabled until a draft is typed', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: null, conversation_id: null }));
+    const { findByTestId } = await renderScreen();
+    const cta = await findByTestId('profile-cta-message');
+    await fireEvent.press(cta);
+
+    const send = await findByTestId('profile-message-sheet-send');
+    expect(send.props.accessibilityState?.disabled).toBe(true);
+
+    const input = await findByTestId('profile-message-sheet-input');
+    await fireEvent.changeText(input, 'hi!');
+    expect(send.props.accessibilityState?.disabled).toBe(false);
+  });
+
+  it('navigates to the thread with the draft preserved when sendMessage fails after the conversation was created', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: null, conversation_id: null }));
+    (startConversation as jest.Mock).mockResolvedValue('conv-new');
+    (sendMessage as jest.Mock).mockRejectedValue(new Error("That didn't work."));
+    const { findByTestId } = await renderScreen();
+    const cta = await findByTestId('profile-cta-message');
+    await fireEvent.press(cta);
+
+    const input = await findByTestId('profile-message-sheet-input');
+    await fireEvent.changeText(input, 'hey there');
+
+    const send = await findByTestId('profile-message-sheet-send');
+    await fireEvent.press(send);
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(router.push).toHaveBeenCalledWith({
+        pathname: '/chat/[id]',
+        params: { id: 'conv-new', draft: 'hey there' },
+      })
+    );
+    // Not the generic refetch-and-show-error path — the conversation exists now.
+    expect(getProfileCard).toHaveBeenCalledTimes(1);
   });
 
   it('shows a disabled "Hi sent" CTA with no Message button when my_hi_state is sent — locked out of both openers', async () => {
@@ -157,11 +216,15 @@ describe('ProfileScreen', () => {
   it('shows Message only (no Hi) for a dismissed hi with no conversation, opening the one-message sheet', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: 'dismissed', conversation_id: null }));
     (startConversation as jest.Mock).mockResolvedValue('conv-new');
+    (sendMessage as jest.Mock).mockResolvedValue({ id: 'msg-1' });
     const { findByTestId, queryByTestId } = await renderScreen();
     await findByTestId('profile-screen');
     expect(queryByTestId('profile-cta-hi')).toBeNull();
     const cta = await findByTestId('profile-cta-message');
     await fireEvent.press(cta);
+
+    const input = await findByTestId('profile-message-sheet-input');
+    await fireEvent.changeText(input, 'hi there');
 
     const send = await findByTestId('profile-message-sheet-send');
     await fireEvent.press(send);
@@ -195,11 +258,15 @@ describe('ProfileScreen', () => {
     const cta = await findByTestId('profile-cta-message');
     await fireEvent.press(cta);
 
+    const input = await findByTestId('profile-message-sheet-input');
+    await fireEvent.changeText(input, 'hi there');
+
     const send = await findByTestId('profile-message-sheet-send');
     await fireEvent.press(send);
 
     await waitFor(() => expect(getProfileCard).toHaveBeenCalledTimes(2));
     await findByTestId('profile-message-error');
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('navigates to the block route with context=profile from the overflow menu', async () => {
