@@ -35,6 +35,7 @@ the hosted migration history matches this folder.
 | --- | --- |
 | `20260918000001_campuses_and_waitlist.sql` | `campuses` (with tiering geometry, column-level read grants that hide it), `waitlist` (service role only), CLC seed. |
 | `20260918000002_core_schema.sql` | The 24 core tables (profiles through notification_prefs), RLS and column grants, `private` schema helpers, triggers enforcing the brief's interaction rules, the `begin_signup`/`me`/`complete_onboarding`/`grid_for_me`/`profile_card_for`/`hi_back`/`start_conversation`/etc. RPCs, realtime and storage wiring, the two pg_cron jobs, and the CLC tag seed. |
+| `20260918000003_edge_support.sql` | SQL support for the three edge functions: `private.write_identity`/`write_card` plus the `fields_filled_range` checks; `private.verification_webhook_events`, `verification_start_rate_limit`, `is_denylisted`, `start_verification_attempt`, `apply_verification_result`; the `attempts`/`last_error`/`next_attempt_at` lease columns on `private.storage_purge_queue`, `private.purge_runs`, `claim_purge_batch`, `pg_net`, `invoke_purge_drain`, and the `purge-drain` pg_cron job. |
 
 ### Conventions
 

@@ -34,6 +34,34 @@ commitment and the build follows it.
 | 18 | Which campuses accept signups | `live` and `coming_soon`. `waitlist` campuses capture the address only. CLC is `coming_soon` until launch. |
 | 19 | Identity and private-card edge function | Built in the same step as migration 0002, since profiles show pronouns when public. |
 
+## Identity / private-card edge function defaults
+
+| # | Decision | Answer |
+|---|----------|--------|
+| 20 | Pronoun and orientation vocabulary | A short fixed pronoun list (she/her, he/him, they/them, ask me) plus a free-text opt-out; orientation stays chips only, up to three, per decision 14. |
+| 21 | Private-card chip vocabularies | Each of `into`/`safer_sex`/`kinks`/`hard_nos` holds 0-8 chips, each up to 40 characters, drawn from a function-side constant list until product defines the real taxonomy. |
+| 22 | Identity/card function rate limit | 30 requests per minute per authenticated user, enforced in the function. |
+| 23 | Vault key rotation | Manual, ops-triggered: add the new Vault secret, bump the current-version-to-write constant, and run a one-off backfill that re-encrypts rows still on the old `key_version`. No automatic schedule. |
+| 24 | Unauthorized non-owner reads | Return 404 for both "no such user" and "not authorized," matching the generic-refusal convention already used for blocks and shares. |
+
+## Verification webhook defaults
+
+| # | Decision | Answer |
+|---|----------|--------|
+| 25 | Verification provider | Persona, for its documented reviewer queue, which fits the existing photo-moderation precedent better than Stripe Identity or Veriff. |
+| 26 | DOB mismatch handling | A disagreement between the self-declared DOB and the provider's document DOB routes the row to `manual_review`; the stored DOB is never auto-overwritten. |
+| 27 | Fourth verification attempt | A 4th attempt is a permanent block with a support-contact escalation path, matching decision 8's ban-durability posture. |
+| 28 | Manual-review queue | Verification manual review shares the same moderation console (decision 3) and reviewer pool as photo moderation. |
+| 29 | Verification rate-limit storage | A lightweight Postgres counter table backs the `/verification/start` rate limit (5 requests/hour per user); no Redis is added for this alone. |
+
+## Purge-drain defaults
+
+| # | Decision | Answer |
+|---|----------|--------|
+| 30 | Auth identity scrub window | The `auth.users` identity is scrubbed on the first `purge-drain` run after `purged_at` (0 days after, no separate waiting period). |
+| 31 | Auth deletion method | Scrub-and-ban via `auth.admin.updateUserById` (randomized email/phone, cleared metadata and identities, banned id) is accepted as the permanent-deletion mechanism, not a literal `auth.users` row delete. |
+| 32 | Purge-drain batch size and cadence | 200 objects per run, scheduled daily at 03:15 UTC (15 minutes after `purge-deleted-users`); backoff handles backlog. |
+
 ## Consequences for the next migration
 
 - No tiering edge function. `user_presence.tier` is written by the client through an RPC
@@ -53,3 +81,21 @@ commitment and the build follows it.
   and scrubs the `users` row to a tombstone so reports keep their subject.
 - Grid visibility is one SQL function: active, verified, presence not stale, not paused,
   approved main photo, tier not away, no block either way.
+
+## Consequences for migration 0003 and the edge functions
+
+Migration 0003 adds: `private.write_identity` and `private.write_card` (service-role-only
+upsert RPCs) plus `fields_filled_range` checks on `user_identity` and `user_private_card`;
+`private.verification_webhook_events` (replay guard), `private.apply_verification_result`, and
+`private.start_verification_attempt` for the verification webhook pair; and
+`attempts`/`last_error`/`next_attempt_at` columns on `private.storage_purge_queue` alongside
+`private.purge_runs` and `private.claim_purge_batch()` for the purge drain. It also enables the
+`pg_net` extension and adds four Vault secrets: `ohhi_identity_key_v1`, `ohhi_card_key_v1`, the
+verification provider's webhook signing secret, and the purge-drain invocation secret. Three new
+edge functions ship on top: `identity` (four routes: identity/card read and write), the
+`verification-start`/`verification-webhook` pair, and `purge-drain`. The verification provider
+adapter is Persona-first per decision 25, written against a provider-agnostic interface. Purged
+accounts keep their `auth.users` row — it is scrubbed (randomized email/phone, cleared
+`user_metadata`/`app_metadata` and identities, id banned) rather than deleted, so the
+`profiles.id -> auth.users(id) on delete restrict` FK and the permanent tombstone `profiles` row
+(decision 13/§9) stay intact.

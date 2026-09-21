@@ -149,4 +149,8 @@ and in the hosted project; the hosted runner is 98/98 green as of 18 September 2
    migration-history rows).
 7. Commit and merge to `main`.
 8. Next deliverables after that: the identity/private-card edge function and the
-   verification webhook handler (decisions 19 and 8).
+   verification webhook handler (decisions 19 and 8). Migration 0003
+   (`20260918000003_edge_support.sql`) now exists and is applied to the hosted project
+   (history version `20260918000003 after the CLI history repair`, hosted runner 41/41 green); it builds the SQL half of
+   all three edge functions, so only the Deno functions themselves, the four Vault secrets,
+   and their deploys remain.
