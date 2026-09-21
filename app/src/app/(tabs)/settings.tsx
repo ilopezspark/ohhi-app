@@ -15,7 +15,7 @@ import { usePresenceStore } from '../../presence/store';
 import { Badge, Header, Input, ListRow, Surface, Text, Toggle } from '../../ui';
 import { SettingsIcon } from '../../ui/icons';
 import { PhotoTile } from '../../settings/components/PhotoTile';
-import { colors, spacing } from '../../theme/tokens';
+import { colors, shadows, spacing } from '../../theme/tokens';
 
 const VERIFICATION_COPY: Record<string, string> = {
   unverified: 'get verified',
@@ -161,14 +161,16 @@ export default function MeScreen() {
               </Text>
             </Surface>
             {/*
-              Deviation: `Me.html`'s "edit photos & tags" chip has no app
-              route yet — post-onboarding photo/tag re-editing isn't built
-              anywhere in this codebase (`(onboarding)/photo.tsx` and
-              `tags.tsx` are onboarding-only steps, read-only for this pass
-              and out of scope to turn into a settings flow here). Rendered
-              disabled rather than invented or silently dropped.
+              `Me.html`'s "edit photos & tags" chip -> `/settings/profile-edit`
+              (added in the profile-edit build; previously rendered disabled
+              here since no route existed yet — see that screen's own doc
+              comment for the three-section editor it opens).
             */}
-            <Pressable testID="me-edit-photos" style={styles.editPhotosChip} disabled>
+            <Pressable
+              testID="me-edit-photos"
+              style={styles.editPhotosChip}
+              onPress={() => router.push('/settings/profile-edit' as never)}
+            >
               <Text variant="caption" color={colors.ink}>
                 edit photos &amp; tags
               </Text>
@@ -248,7 +250,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: 9999,
     paddingVertical: spacing.smMd,
-    opacity: 0.6,
+    ...shadows.sm,
   },
   gridHelper: { fontSize: 12, textAlign: 'center' },
 });

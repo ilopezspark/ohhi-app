@@ -1193,3 +1193,97 @@ added locally per the task brief:
 - `npx tsc --noEmit` — clean.
 - `npx expo export --platform web` — succeeds.
 <!-- END: Onboarding design -->
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Edit photos & tags section below — the post-onboarding photo/tag/status -->
+<!-- editor. Please keep further additions after this point in their own    -->
+<!-- clearly delimited section.                                             -->
+<!-- ---------------------------------------------------------------------- -->
+
+<!-- BEGIN: Edit photos & tags -->
+## Edit photos & tags
+
+`/settings/profile-edit` (`app/src/app/settings/profile-edit.tsx`) — `Me.html`'s "edit photos &
+tags" chip, previously rendered disabled on `(tabs)/settings.tsx` with a doc comment noting no
+route existed yet (`docs/design/system.md`'s screen→route map still lists no dedicated mockup
+for the detail screen itself, only the chip entry point). The chip is now enabled and pushes
+here; back returns to the me tab.
+
+No mockup covers this screen 1:1, so it's assembled from the closest existing patterns per the
+task brief: `Onb-Photos.html`'s three-slot grid (`(onboarding)/photo.tsx`), `Onb-Status.html`'s
+tag-chip field (`(onboarding)/tags.tsx`, `ChipPicker` from `settings/card.tsx`) and status-line
+field (`(onboarding)/status.tsx`), and grad year (`(onboarding)/name.tsx`) — restyled onto the
+shared kit, three independently-saved sections (matching `settings/card.tsx`'s own per-section
+save pattern rather than one combined submit).
+
+### Photos
+
+Three tiles, positions 0-2. Each shows the current photo or a `TintedPlaceholder`
+(`src/photos/TintedPlaceholder.tsx`), plus a `Badge` for its `moderation_state` ("under review" /
+"visible" / "removed") when a row exists. Tapping a tile opens an action sheet (`ui/Sheet`):
+choose from library, take a photo, or remove (remove only offered when the slot has a photo).
+
+- **Replace**: picker → `uploadProfilePhoto({ position, uri, width, height })`
+  (`api/photos.ts`, unchanged). Per `user_photos_guard()` and `private.is_grid_visible()`
+  (`supabase/migrations/20260918000002_core_schema.sql`) — any `storage_path` change resets
+  `moderation_state` to `pending` server-side, and the grid requires an `ok` photo at position
+  0 — replacing an *existing* position-0 photo shows a confirm sheet
+  (`profile-edit-confirm-sheet`) stating plainly that the caller goes off the grid until
+  re-approved, before the upload runs. A first-ever position-0 upload (no row yet) skips the
+  sheet — nothing to warn about, the caller is already off the grid. Positions 1-2 never gate
+  `is_grid_visible`, so they upload immediately, no sheet.
+- **Remove**: `deleteProfilePhoto(position)`, added to `api/photos.ts` for this screen —
+  deletes the `profile-photos` storage object at `{userId}/{position}.jpg` first
+  (`storage.remove`, tolerant of an already-missing object — Storage's own `remove()` doesn't
+  error on a not-found key, and even if it did, that failure is only logged in dev, never
+  thrown, so it can't block the row delete), then the `user_photos` row
+  (`.delete().eq('user_id', …).eq('position', …)`, the "user_photos owner delete" policy).
+  Optimistic on the screen: the tile clears immediately, rolling back to the previous row on
+  failure with the generic refusal copy (`mapSupabaseError`).
+- **No reordering.** `position` is part of `user_photos`' own `unique (user_id, position)` key
+  and there is no swap RPC — a drag-to-reorder needs two sequential updates through a spare
+  temp position with no server-side atomicity of its own, which is a real feature, not a
+  simple wiring job. Skipped per the task brief's own "skip and say so unless simple"
+  instruction.
+
+### Tags
+
+`ChipPicker` (`src/settings/ChipPicker.tsx`, the same component `settings/card.tsx`/
+`settings/identity.tsx` use), 0-3, `listTagsForCampus(campus_id)` + `getUserTags()` to load,
+`setUserTags(selected)` to save — identical shape to `(onboarding)/tags.tsx`, just with its own
+Save button rather than a Continue/Skip footer.
+
+### Status & grad year
+
+Two `Input`s (status line, ≤140 chars via `validateStatusLine`; grad year, numeric via
+`validateGradYear`) saved together through one `updateProfile({ status_line, grad_year })` call.
+`getStatusLine()` already existed (`api/profile.ts`); `getGradYear()` is new there, added for the
+same reason `getStatusLine`/`getFirstName` exist — `me()` doesn't report it and no other read
+path did either, since onboarding's own name step only ever writes it.
+
+### Deviations
+
+- No packages added; `package.json` untouched.
+- The action sheet (library / camera / remove) and the off-the-grid confirm sheet are both
+  built from `ui/Sheet`'s existing static chrome — no new sheet primitive.
+- Every save button's error text goes through `mapSupabaseError` a second time over an
+  already-mapped API error, matching `settings/card.tsx`/`settings/identity.tsx`'s own
+  established (if slightly redundant) convention exactly, rather than introducing a different
+  error-rendering path for this screen alone.
+
+### Tests
+
+`settings-profile-edit.test.tsx` — each slot's rendered state (ok/pending/empty), the
+position-0 replace warning (shown only when a photo already exists there, skipped for a first
+upload), remove calling `deleteProfilePhoto` and rolling back on failure, tags save payload
+(selection order, 0-3), and status/grad-year save payload (trimmed status, parsed grad year,
+validation blocking save). `photos-api.test.ts` gained a `deleteProfilePhoto` suite: storage
+remove before row delete (asserted by call order), tolerant of a missing storage object, throws
+on a row-delete failure, and throws instead of deleting with no signed-in user.
+
+### Tests / typecheck / export
+
+- `npx jest` — 73 suites / 630 tests, all pass.
+- `npx tsc --noEmit` — clean.
+- `npx expo export --platform web` — succeeds.
+<!-- END: Edit photos & tags -->

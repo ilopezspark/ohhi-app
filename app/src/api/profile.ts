@@ -34,6 +34,19 @@ export async function getStatusLine(): Promise<string | null> {
 }
 
 /**
+ * Same "owner or same-campus" select policy as `getFirstName` — see its
+ * comment. Not reported by `me()` either (only counts), and onboarding's
+ * name step never reads it back — the profile-edit screen is the first
+ * caller that needs the current value rather than just writing a new one.
+ */
+export async function getGradYear(): Promise<number | null> {
+  const uid = await currentUserId();
+  const { data, error } = await supabase.from('profiles').select('grad_year').eq('id', uid).maybeSingle();
+  if (error) throw mapSupabaseError(error);
+  return data?.grad_year ?? null;
+}
+
+/**
  * `first_name`, `grad_year`, `status_line` are the only columns granted to
  * the owner's `update` on `profiles` (migration 0002 §10) — `status` and
  * `verification_status` are never client-writable, not even by the owner.

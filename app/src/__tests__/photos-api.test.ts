@@ -1,14 +1,18 @@
 const mockGetSession = jest.fn();
 const mockGetUser = jest.fn();
 const mockUpload = jest.fn();
+const mockRemove = jest.fn();
 const mockSingle = jest.fn();
 const mockSelect = jest.fn((..._args: unknown[]) => ({ single: mockSingle }));
 const mockUpsert = jest.fn((..._args: unknown[]) => ({ select: mockSelect }));
 const mockOrder = jest.fn();
 const mockEqList = jest.fn((..._args: unknown[]) => ({ order: mockOrder }));
 const mockListSelect = jest.fn((..._args: unknown[]) => ({ eq: mockEqList }));
-const mockFrom = jest.fn((..._args: unknown[]) => ({ upsert: mockUpsert, select: mockListSelect }));
-const mockStorageFrom = jest.fn((..._args: unknown[]) => ({ upload: mockUpload }));
+const mockDeleteEqPosition = jest.fn();
+const mockDeleteEqUser = jest.fn((..._args: unknown[]) => ({ eq: mockDeleteEqPosition }));
+const mockDelete = jest.fn((..._args: unknown[]) => ({ eq: mockDeleteEqUser }));
+const mockFrom = jest.fn((..._args: unknown[]) => ({ upsert: mockUpsert, select: mockListSelect, delete: mockDelete }));
+const mockStorageFrom = jest.fn((..._args: unknown[]) => ({ upload: mockUpload, remove: mockRemove }));
 
 jest.mock('../api/client', () => ({
   supabase: {
@@ -29,7 +33,7 @@ jest.mock('../photos/tint', () => ({
   tintForPhoto: jest.fn(),
 }));
 
-import { uploadProfilePhoto, listMyPhotos } from '../api/photos';
+import { uploadProfilePhoto, listMyPhotos, deleteProfilePhoto } from '../api/photos';
 import { resizeForUpload } from '../photos/resize';
 import { tintForPhoto } from '../photos/tint';
 
@@ -138,6 +142,57 @@ describe('listMyPhotos', () => {
     mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
 
     await expect(listMyPhotos()).rejects.toThrow('Not signed in.');
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+});
+
+describe('deleteProfilePhoto', () => {
+  const callOrder: string[] = [];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    callOrder.length = 0;
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } }, error: null });
+    mockRemove.mockImplementation(async () => {
+      callOrder.push('storage_remove');
+      return { error: null };
+    });
+    mockDeleteEqPosition.mockImplementation(async () => {
+      callOrder.push('row_delete');
+      return { error: null };
+    });
+  });
+
+  it('removes the storage object at {userId}/{position}.jpg, then deletes the user_photos row for that position — in that order', async () => {
+    await deleteProfilePhoto(1);
+
+    expect(mockStorageFrom).toHaveBeenCalledWith('profile-photos');
+    expect(mockRemove).toHaveBeenCalledWith([`${USER_ID}/1.jpg`]);
+    expect(mockFrom).toHaveBeenCalledWith('user_photos');
+    expect(mockDeleteEqUser).toHaveBeenCalledWith('user_id', USER_ID);
+    expect(mockDeleteEqPosition).toHaveBeenCalledWith('position', 1);
+    expect(callOrder).toEqual(['storage_remove', 'row_delete']);
+  });
+
+  it('still deletes the row when the storage object is already missing (tolerant of a missing object)', async () => {
+    mockRemove.mockResolvedValue({ error: { message: 'Object not found' } });
+
+    await expect(deleteProfilePhoto(0)).resolves.toBeUndefined();
+
+    expect(mockDeleteEqPosition).toHaveBeenCalledWith('position', 0);
+  });
+
+  it('throws when the row delete itself fails', async () => {
+    mockDeleteEqPosition.mockResolvedValue({ error: { code: '42501', message: 'not allowed' } });
+
+    await expect(deleteProfilePhoto(0)).rejects.toThrow();
+  });
+
+  it('throws instead of deleting when there is no signed-in user', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+
+    await expect(deleteProfilePhoto(0)).rejects.toThrow('Not signed in.');
+    expect(mockRemove).not.toHaveBeenCalled();
     expect(mockFrom).not.toHaveBeenCalled();
   });
 });

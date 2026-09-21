@@ -70,6 +70,41 @@ export async function uploadProfilePhoto({ position, uri, width, height }: Uploa
 }
 
 /**
+ * Deletes one of the caller's own photo slots — the settings profile editor's
+ * "remove" action (`docs/app-social-plan.md` §4-§9's post-onboarding editors
+ * don't cover photos; this is the profile-edit build's own addition, same
+ * module as the rest of the photo pipeline).
+ *
+ * Storage object first, then the `user_photos` row — the mirror image of
+ * `uploadProfilePhoto`'s own "never leave a row pointing at a missing
+ * object" ordering. The storage remove is tolerant of an already-missing
+ * object: Supabase Storage's `remove()` doesn't error on a not-found key,
+ * but even if a bucket/policy quirk did surface one, it must never block
+ * the row delete below (the alternative — a `user_photos` row the owner can
+ * see but can never clear — is worse than a storage object that outlives
+ * its row, which the purge-queue sweep already tolerates for other paths,
+ * decision 37). Only the row delete's own failure is thrown, mapped through
+ * `mapSupabaseError` same as every other write here.
+ *
+ * `profile-photos owner delete`'s storage policy only requires the path's
+ * folder segment to equal `auth.uid()::text`, satisfied by
+ * `profilePhotoPath` the same way `uploadProfilePhoto` relies on it.
+ */
+export async function deleteProfilePhoto(position: ProfilePhotoPosition): Promise<void> {
+  const userId = await currentUserId();
+  const path = profilePhotoPath(userId, position);
+
+  const { error: removeError } = await supabase.storage.from('profile-photos').remove([path]);
+  if (removeError && __DEV__) {
+    // Best-effort only — see the doc comment above for why this never blocks the row delete.
+    console.error('[api/photos] storage remove failed', removeError);
+  }
+
+  const { error } = await supabase.from('user_photos').delete().eq('user_id', userId).eq('position', position);
+  if (error) throw mapSupabaseError(error);
+}
+
+/**
  * The caller's own photos, all positions, regardless of `moderation_state`
  * — the owner's own reads are never filtered to `ok` (onboarding-grid plan
  * §2 step 5 / §3's pending-moderation UX contract).
