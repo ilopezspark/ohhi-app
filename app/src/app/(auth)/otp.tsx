@@ -11,7 +11,8 @@ export default function OtpScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const isValid = code.trim().length === 6 && !!email;
+  // Supabase issues 6 to 10 digits depending on the project's OTP length setting.
+  const isValid = /^d{6,10}$/.test(code.trim()) && !!email;
   const submitDisabled = !isValid || submitting;
 
   async function handleSubmit() {
@@ -43,9 +44,9 @@ export default function OtpScreen() {
       <TextInput
         testID="otp-input"
         style={styles.input}
-        placeholder="123456"
+        placeholder="Code from your email"
         keyboardType="number-pad"
-        maxLength={6}
+        maxLength={10}
         value={code}
         onChangeText={setCode}
       />
