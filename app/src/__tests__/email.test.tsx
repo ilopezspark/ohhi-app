@@ -4,7 +4,7 @@ jest.mock('expo-router', () => ({
   router: { push: jest.fn(), replace: jest.fn() },
 }));
 
-jest.mock('../../api/client', () => ({
+jest.mock('../api/client', () => ({
   supabase: {
     auth: {
       signInWithOtp: jest.fn().mockResolvedValue({ error: null }),
@@ -12,8 +12,8 @@ jest.mock('../../api/client', () => ({
   },
 }));
 
-jest.mock('../../api/campuses', () => {
-  const actual = jest.requireActual('../../api/campuses');
+jest.mock('../api/campuses', () => {
+  const actual = jest.requireActual('../api/campuses');
   return {
     ...actual,
     listCampuses: jest.fn().mockResolvedValue([
@@ -29,8 +29,8 @@ jest.mock('../../api/campuses', () => {
 });
 
 import { router } from 'expo-router';
-import { supabase } from '../../api/client';
-import EmailScreen from './email';
+import { supabase } from '../api/client';
+import EmailScreen from '../app/(auth)/email';
 
 describe('EmailScreen', () => {
   beforeEach(() => {

@@ -5,6 +5,10 @@ logic at `src/api/` and `src/routing/`, per `docs/app-architecture-plan.md`. Thi
 top-level `app/` folder the architecture plan describes as "a new top-level Expo project" —
 see "Layout note" below for the one deviation from its file tree.
 
+Nothing but routes goes under `src/app/` — Expo Router bundles every file in that tree as a
+screen. Tests live in `src/__tests__/`, or next to the non-route module they cover (e.g.
+`src/api/client.test.ts`).
+
 ## Run it
 
 ```bash
@@ -37,11 +41,11 @@ those exist only as edge-function/Vault secrets (architecture plan §8).
 npm test
 ```
 
-Jest + `jest-expo` + React Native Testing Library. 3 suites / 19 tests as of this skeleton:
-`src/api/errors.test.ts` (the 42501/'not allowed' error mapper), `src/routing/
-stateToRoute.test.ts` (the pure `me()`-status -> route function, every branch), and
-`src/app/(auth)/email.test.tsx` (campus-domain hint, submit disabled until valid, OTP send +
-navigation).
+Jest + `jest-expo` + React Native Testing Library. `src/api/errors.test.ts` (the
+42501/'not allowed' error mapper), `src/routing/stateToRoute.test.ts` (the pure
+`me()`-status -> route function, every branch), `src/api/client.test.ts` (the web vs.
+native auth-storage adapter selection), and `src/__tests__/email.test.tsx` (campus-domain
+hint, submit disabled until valid, OTP send + navigation, for `src/app/(auth)/email.tsx`).
 
 Note: `@testing-library/react-native` 14.x made `render()` and `fireEvent.*` return Promises
 (React 19 concurrent rendering support) — every call in the test suite is `await`ed.
