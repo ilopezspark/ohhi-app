@@ -1,5 +1,7 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
+import { parseMultiPolygonEwkbHex, parsePointEwkbHex } from '../geo/wkb';
+import type { CampusGeometry } from '../geo/tier';
 import type { Database } from '../types/database';
 
 export type Campus = Pick<
@@ -45,4 +47,42 @@ export function campusForEmail(email: string, campuses: Campus[]): Campus | null
         )
     ) ?? null
   );
+}
+
+/**
+ * The four geometry columns migration 0002 §2 widened the `authenticated`
+ * grant to, plus `county_label` (granted since 0001) for the `county` tier
+ * word. This is the whole input to on-device tiering — decision 5/38: the
+ * client holds the centroid, the radii and the county polygon, computes the
+ * tier itself, and sends only the tier word back.
+ *
+ * `campuses.timezone` is deliberately NOT selected: the column exists but is
+ * not in any client role's column grant, so asking for it fails the whole
+ * request. (A concurrent migration is adding the grant; nothing here depends
+ * on it.)
+ *
+ * PostgREST returns both geometry columns as hex EWKB strings — see
+ * `src/geo/wkb.ts` for the confirmed wire format — so they arrive typed as
+ * `unknown` from the generated types and are decoded here, once, at the api
+ * boundary. Nothing above this layer ever sees an encoded geometry.
+ */
+export async function fetchCampusGeometry(campusId: string): Promise<CampusGeometry> {
+  const { data, error } = await supabase
+    .from('campuses')
+    .select('center_point, on_campus_radius_m, nearby_radius_m, county_boundary, county_label')
+    .eq('id', campusId)
+    .single();
+  if (error) throw mapSupabaseError(error);
+
+  return {
+    centerPoint: parsePointEwkbHex(String(data.center_point)),
+    onCampusRadiusM: data.on_campus_radius_m,
+    nearbyRadiusM: data.nearby_radius_m,
+    countyBoundary: parseMultiPolygonEwkbHex(
+      data.county_boundary === null || data.county_boundary === undefined
+        ? null
+        : String(data.county_boundary)
+    ),
+    countyLabel: data.county_label,
+  };
 }

@@ -113,6 +113,11 @@ role; the server's own campus-timezone check in `complete_onboarding()` is the r
 
 ## What it does not do yet
 
+*(Written at build step 1; presence, realtime, the full grid and `api/verification.ts` have
+since landed — see "Presence, tiering and the grid" below. Still outstanding: hi's/chat/me
+tabs, the real profile card, `api/identity.ts`, push, and EAS build profiles beyond the
+placeholder `eas.json`.)*
+
 Everything past architecture plan §11 build step 1 that this pass didn't add:
 presence/tiering (`src/presence/`, on-device tier compute,
 `set_my_tier`/`set_here_now`/`pause_grid`), realtime (`src/realtime/`), hi's/chat/me tabs,
@@ -136,11 +141,9 @@ placeholder `eas.json`. `api/` now also has `profile.ts`, `onboarding.ts`, `tags
   `(onboarding)`, but §10 open question 3's own recommended default is "one shared
   'account restricted' screen with state-specific copy" for closed_age/suspended/banned —
   this skeleton follows that default so there's one implementation, not two.
-- **No Zustand store yet.** Architecture plan §1 calls for "one small store" for
-  auth-bootstrap/permission/tier state, but nothing in build step 1's scope (§11) needs
-  client-only state beyond what's already local to each screen — it's deferred to the
-  presence-module build step (§11 step 3), where tier state actually needs somewhere to
-  live outside React Query's server-state cache.
+- ~~**No Zustand store yet.**~~ *Superseded by the presence build (see "Presence, tiering
+  and the grid" below): `src/presence/store.ts` is the small Zustand store architecture plan
+  §1 asked for and §11 step 3 deferred to that step.*
 - **`web.output` is `single`, not `static`.** `static` (server-side prerendering) fails at
   export time — `expo-secure-store`'s web shim isn't Node-prerender-safe
   (`getValueWithKeyAsync is not a function` during SSR). The architecture plan doesn't target
@@ -216,3 +219,196 @@ Tests: `src/__tests__/photos-path.test.ts` (storage policy regex conformance),
 row upsert; asserts `moderation_state` is never in the upsert payload), and
 `src/__tests__/photos-screen.test.tsx` (component test for the picker/preview/uploading/
 pending/error states).
+
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Presence / grid section below — added for the grid + on-device tiering -->
+<!-- build. Please keep further additions after this point in their own      -->
+<!-- clearly delimited section.                                             -->
+<!-- ---------------------------------------------------------------------- -->
+
+## Presence, tiering and the grid
+
+`docs/app-onboarding-grid-plan.md` §3–§5 and `docs/app-architecture-plan.md` §5–§6.
+
+### The rule that shapes this whole module: no coordinate leaves the device
+
+Decision 5, restated by the architecture note as a hard rule with no exceptions: **no
+coordinate, geohash or raw location object is ever logged, sent in an analytics payload,
+attached to a crash breadcrumb, or passed to any RPC.** The only thing the server ever
+learns about where you are is one of four words — `on_campus`, `nearby`, `county`, `away` —
+written through `set_my_tier()`.
+
+It is enforced structurally, not by convention:
+
+- **`src/presence/sample.ts` is the only file in the app that imports `expo-location` or
+  touches `coords`.** It reads one fix and hands it straight to `tierFor`, which returns a
+  tier word. The fix is never assigned to anything that outlives that call.
+- **`src/geo/tier.ts`'s `tierFor` is the only consumer of a location sample**, anywhere.
+- **`src/presence/index.ts` re-exports nothing that returns a coordinate** — not
+  `sampleTier`, not a distance, not a last-known fix. The public surface is four scalars
+  (`tier`, `permission`, `hereNow`, `paused`) and four callbacks.
+- **The Zustand store has no positional field**, and no function in `src/api/` takes a
+  parameter that could hold one — every presence RPC wrapper takes a single enum or boolean.
+- **Nothing in `src/presence/` logs.** `PresenceController` swallows failures without
+  inspecting them (an `expo-location` error object can carry provider detail).
+- **No background location**: foreground permission only, no `startLocationUpdatesAsync`, no
+  `requestBackgroundPermissionsAsync`, and `app.config.ts` sets only
+  `locationWhenInUsePermission` so the "Always" strings never reach Info.plist.
+
+`src/__tests__/presence-no-coordinates.test.ts` asserts every bullet above by reading the
+source tree (comments and string literals stripped first), so an edit that reintroduces a
+coordinate outside `sample.ts` fails the suite rather than a code review.
+
+### `src/geo/` — EWKB and tiering (pure, no native deps)
+
+- **`wkb.ts`** — the client-side PostGIS parser decision 38 chose over a schema change.
+  PostgREST does not transform PostGIS columns; it serialises them with the type's own text
+  output, which is **uppercase hex EWKB**. Confirmed against the hosted project: `select
+  center_point::text from public.campuses where slug = 'clc'` returns
+  `0101000020E6100000D49AE61DA70056C0BC749318042E4540`, byte-identical to
+  `upper(encode(st_asewkb(center_point::geometry), 'hex'))` — `01` little-endian, type dword
+  `0x20000001` (`wkbPoint` | SRID flag), SRID `4326`, then X (**longitude**) and Y
+  (latitude) as float64. Two details the parser has to get right: the SRID flag is on the
+  **outer header only** (a MultiPolygon's child polygons start `0103000000`, no SRID), and
+  byte order is re-declared per nested geometry. It handles Point/Polygon/MultiPolygon, both
+  byte orders, Z/M ordinates, and refuses malformed input without echoing the raw hex.
+- **`tier.ts`** — `tierFor(sample, campus)`: haversine distance to `center_point`
+  &le; `on_campus_radius_m` gives `on_campus`; &le; `nearby_radius_m` gives `nearby`;
+  ray-cast point-in-polygon against `county_boundary` (MultiPolygon-aware, holes handled by
+  XOR across a polygon's rings) gives `county`; else `away`. Radius comparisons are
+  inclusive and run before the polygon check. **Antimeridian wrapping is explicitly not
+  handled** — the haversine is fine across it but `crossesRing` is not, and no campus in the
+  v1 footprint is near 180 degrees; a campus that straddles the seam needs its polygon split
+  first.
+- **`src/api/campuses.ts` / `fetchCampusGeometry(campusId)`** decodes both geometry columns
+  at the api boundary, so nothing above it ever sees an encoded geometry. It deliberately
+  does **not** select `campuses.timezone` — that column exists but is not in any client
+  role's grant yet, and asking for it fails the whole request.
+
+### `src/presence/`
+
+| File | What it is |
+|---|---|
+| `sample.ts` | The one location read; permission helpers. Returns tier words only. |
+| `../geo/tier.ts` | The pure compute. |
+| `store.ts` | Zustand: `tier`, `permission`, `hereNow`, `paused`. |
+| `controller.ts` | `PresenceController` — lifecycle, timers, write policy. |
+| `usePresence.ts` | `usePresence(campusId)` — the React surface. |
+| `index.ts` | The public barrel, plus the permission explainer copy. |
+
+`PresenceController` behaviour:
+
+- **Sampling**: ~5 minutes while foregrounded (`SAMPLE_INTERVAL_MS`, decision 45),
+  `Location.getCurrentPositionAsync` at `Accuracy.Balanced`. Foregrounding re-samples
+  immediately; backgrounding clears every timer; `stop()` clears them and detaches the
+  `AppState` listener, so nothing outlives the screen.
+- **Writes**: `set_my_tier()` only when the computed tier **changes**, or every 20 minutes
+  (`TIER_HEARTBEAT_MS`) — the floor that keeps `tier_computed_at` inside `is_grid_visible`'s
+  24-hour staleness cutoff (decision 11) for a user who has not moved. Always the RPC, never
+  a raw `user_presence.tier` update: `set_my_tier` is `security definer` because it also
+  extends `here_now_until` when already set, which a table update would silently skip.
+- **`touch_activity()`** on foreground and on each tick — the only write path for
+  `profiles.last_active_at`, the grid's sort tiebreaker.
+- **Permission denied** (decision 43): write `set_my_tier('away')` **once**, stop sampling,
+  and leave the grid fully browsable — `grid_for_me()` never depends on the caller's own
+  tier. `undetermined` is not a denial: nothing is written until the user answers.
+- **`setHereNow` / `setPaused`** flip the store optimistically and revert if the RPC
+  refuses. Note `setPaused(true)` calls `pause_grid(false)` — the RPC argument is
+  `p_visible`.
+
+**Web**: `expo-location` is implemented over the browser Geolocation API, so the same flow
+works in a browser — see "Testing on web" below.
+
+### `src/realtime/`
+
+One manager, one topic: `presence:campus:<campus_id>`, subscribed as a **private** channel
+(`realtime.send(..., true)` server-side), with `realtime.setAuth()` called before the join
+so the `campus presence topic` policy can evaluate `auth.uid()`. The trigger is
+`broadcast_here_now`, `after update of here_now_until on public.profiles`, and its payload
+is `{ user_id, here_now }` — never a tier, never a coordinate. `parseHereNowPayload`
+unwraps both payload shapes supabase-js has shipped and returns `null` for anything
+malformed. `onInvalidate` fires on every successful (re)subscribe and on `reconnect()` at
+foreground — the grid refetches rather than trusting the socket to have caught up.
+
+### Grid routes
+
+- **`(tabs)/grid`** — `grid_for_me()` via React Query (`queryKey: ['grid_for_me']`),
+  rendered **in the RPC's own order** (`tier asc, here_now desc, last_active_at desc`),
+  never re-sorted. Tiles show first name, grad year, the two lowest-position tags (already
+  truncated and ordered by the RPC), the tier word (`campuses.county_label` for `county`), a
+  here-now indicator, and the main photo via a 60s signed URL
+  (`api/photos.ts`, `signedPhotoUrls`), falling back to `TintedPlaceholder`. Note §3's
+  correction: a *pending* photo can never reach someone else's tile, so that placeholder is
+  strictly the unsignable/broken-image fallback and never carries the "under review" badge.
+  - **Refresh**: pull-to-refresh, focus, a 75s poll (tier changes are **not** broadcast), on
+    a computed-tier change, and on the realtime invalidation signal.
+  - **Here-now broadcast** merges into the held rows in place and **drops any `user_id` not
+    already present** — that is what stops the broadcast becoming a side channel between a
+    blocked pair, since neither is ever in the other's grid.
+  - **Header controls**: here-now toggle and pause toggle (no separate settings route — §3
+    puts the paused banner and its Resume action on the grid itself).
+  - **Banners**: the paused banner, and one "you're not visible because..." banner derived
+    client-side from `me()` plus owner reads of `user_presence` and `user_photos`, in §3.1's
+    priority order (verification, photo, paused, away/denied, stale, status). The paused
+    reason is suppressed when the paused banner is already showing, per §3.1's own note. A
+    denial gets its own copy and a Settings deep link, distinct from "actually far away".
+- **`profile/[id]`** — a placeholder that shows the id. The real profile card
+  (`profile_card_for`, `identity`, hi/message compose) is the social slice's.
+
+### Verification gate
+
+`api/verification.ts` posts to `${SUPABASE_URL}/functions/v1/verification/start` with the
+user's JWT (plain `fetch`, never a body `user_id`) and opens the returned `session_url` with
+`expo-web-browser`'s `openBrowserAsync` — an SFSafariViewController / Custom Tab, so the
+provider flow gets its own cookie jar and a visible URL bar. The result arrives via the
+provider's server-to-server webhook, so the screen re-reads `me()` on dismiss rather than
+trusting a redirect. 401/403 collapse into the same generic `RefusedError` as every other
+refusal (decision 24); 422 becomes the terminal `VerificationAttemptsExhaustedError` (the
+3-attempt cap, decision 27) and shows no retry; 404 means the function is not deployed yet.
+`id_pending` / `manual_review` / `id_failed` each get their own banner copy from `me()`.
+
+### Testing on web (browser geolocation prompt)
+
+```bash
+npx expo start --web
+```
+
+`expo-location` maps onto `navigator.geolocation` in the browser, so the flow is the same
+one a phone runs:
+
+1. Sign in and reach the grid. With permission still `undetermined` you get the in-app
+   explainer banner first — the OS/browser prompt is never sprung without it.
+2. Tap **Turn on location**, which triggers Chrome/Safari's own location prompt. Allow it,
+   and within a moment the tier is computed and `set_my_tier` is written once.
+3. To exercise the tiers without travelling: Chrome DevTools, then the three-dot menu, More
+   tools, **Sensors**, Location, "Other...", and enter a lat/lng. CLC's centroid is
+   `42.3595, -88.0102`; anything within 800 m is `on_campus`, within 8 km is `nearby`, and —
+   because the seeded CLC row has a **null `county_boundary`** — everything beyond that is
+   `away`, never `county`, until a county polygon is loaded. Reload after changing the
+   sensor value, or wait for the next 5-minute sample.
+4. Deny the prompt instead to check decision 43: the grid stays fully browsable, one
+   `set_my_tier('away')` is written, and the banner offers "Turn on location".
+
+Note that browsers refuse `navigator.geolocation` on a plain-HTTP LAN address, so use
+`http://localhost:8081` rather than the tunnel/LAN URL when testing this.
+
+Packages added: `expo-location`, `expo-web-browser`, `zustand` (via `npx expo install`), and
+`@types/node` as a dev dependency (the no-coordinates test reads the source tree with
+`fs`/`path`; `tsconfig.json`'s `types` gained `"node"` alongside `"jest"`).
+
+Tests: `geo-wkb.test.ts` (fixtures captured from the hosted DB — see
+`src/geo/__fixtures__/ewkb.ts` for the exact SQL used, including the recorded first 40
+characters of the live `center_point` string — both byte orders, SRID and no-SRID, nested
+MultiPolygon headers, malformed input), `geo-tier.test.ts` (radius boundaries exactly on the
+line via an inverse-haversine helper, one metre either side, the county polygon, a hole, a
+null boundary, equal radii), `presence-controller.test.ts` (fake timers: change-only writes,
+the 20-minute heartbeat, the permission-denied path, timers cleared on background and on
+stop, optimistic here-now/pause with revert, and an assertion that no argument passed to any
+api function is a number pair or carries a coordinate-shaped key),
+`presence-no-coordinates.test.ts` (the structural source-tree check described above),
+`realtime.test.ts` (private-channel subscribe, payload unwrapping, invalidation signals,
+resubscribe and teardown), `grid-visibility.test.ts` (every §3.1 priority branch and the
+copy rules), and `grid-screen.test.tsx` (tiles, tier words, here-now, tags, signed URL vs
+placeholder, empty state, paused state, one case per banner reason, the broadcast merge and
+its unknown-`user_id` drop, all against a mocked `api/`).

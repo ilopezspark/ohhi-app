@@ -78,3 +78,35 @@ export async function listMyPhotos(): Promise<UserPhotoRow[]> {
   if (error) throw mapSupabaseError(error);
   return data ?? [];
 }
+
+/**
+ * Signed URLs for grid/profile photo paths (`grid_for_me()` returns
+ * `photo_path`, never a URL — architecture plan §7). 60-second expiry, per
+ * the migration plan's storage section, re-signed per fetch.
+ *
+ * The `profile-photos` bucket is private; the "read when ok and readable"
+ * policy is what lets one authenticated user sign another's object, and it
+ * re-checks `moderation_state = 'ok'`, `account_readable` and `is_blocked`
+ * at sign time. A path that stops qualifying simply fails to sign — which is
+ * why a failure here maps to "show the tinted placeholder", never to an error
+ * state, and never to anything that says *why*.
+ *
+ * Returns a path -> URL map with only the paths that signed successfully.
+ */
+export async function signedPhotoUrls(paths: string[]): Promise<Record<string, string>> {
+  const unique = Array.from(new Set(paths.filter((path) => !!path)));
+  if (unique.length === 0) return {};
+
+  const { data, error } = await supabase.storage
+    .from('profile-photos')
+    .createSignedUrls(unique, 60);
+  // A whole-request failure is treated the same as a per-path failure: no URL,
+  // so the tile falls back to its tinted placeholder.
+  if (error || !data) return {};
+
+  const urls: Record<string, string> = {};
+  for (const entry of data) {
+    if (entry.signedUrl && entry.path) urls[entry.path] = entry.signedUrl;
+  }
+  return urls;
+}

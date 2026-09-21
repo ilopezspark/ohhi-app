@@ -45,6 +45,24 @@ const config: ExpoConfig = {
       },
     ],
     'expo-secure-store',
+    'expo-web-browser',
+    [
+      // Foreground-only, per decision 5 and brief §4: no "Always" permission,
+      // no background location, no `startLocationUpdatesAsync`. Only
+      // `locationWhenInUsePermission` is set — deliberately not
+      // `locationAlwaysAndWhenInUsePermission`, so the Always strings never
+      // enter the Info.plist and the app can't request that authorisation
+      // even by mistake.
+      'expo-location',
+      {
+        locationWhenInUsePermission:
+          'OhHi uses your location only to show whether you’re on campus, nearby, or in the ' +
+          'county — never your exact spot, and never while the app is closed.',
+        isIosBackgroundLocationEnabled: false,
+        isAndroidBackgroundLocationEnabled: false,
+        isAndroidForegroundServiceEnabled: false,
+      },
+    ],
     '@react-native-community/datetimepicker',
   ],
   experiments: {

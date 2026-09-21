@@ -38,6 +38,7 @@ export default function RootLayout() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(onboarding)" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="profile/[id]" options={{ headerShown: true, title: 'Profile' }} />
         <Stack.Screen name="restricted" />
         <Stack.Screen name="+not-found" />
       </Stack>

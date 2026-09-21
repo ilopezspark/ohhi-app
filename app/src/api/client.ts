@@ -20,6 +20,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
+/**
+ * Exported for the edge-function clients (`src/api/verification.ts`), which
+ * call `${SUPABASE_URL}/functions/v1/...` over plain HTTPS with the user's JWT
+ * rather than through `supabase-js` (architecture plan §8).
+ */
+export const SUPABASE_URL: string = supabaseUrl;
+
 // Session persistence over expo-secure-store, per docs/app-architecture-plan.md §3.
 // SecureStore has a ~2KB per-key limit on some platforms; a Supabase session JSON can
 // exceed that under some token payloads. This adapter does NOT chunk `setItem` across
