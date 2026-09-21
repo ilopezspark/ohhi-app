@@ -45,6 +45,7 @@ const config: ExpoConfig = {
       },
     ],
     'expo-secure-store',
+    '@react-native-community/datetimepicker',
   ],
   experiments: {
     typedRoutes: true,

@@ -1,67 +1,58 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import { me, type MeResult } from '../../api/me';
+import { useEffect } from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
+import { me } from '../../api/me';
+import { getFirstName } from '../../api/profile';
+import { getDateOfBirth } from '../../api/onboarding';
+import { resolveOnboardingStep, stepToPath } from '../../onboarding/stepResolver';
 
 /**
- * Placeholder only — the full onboarding step flow (DOB, name, goals, tags,
- * main photo, consent) is docs/app-onboarding-grid-plan.md's, built against
- * this skeleton in architecture plan §11 build step 2. This screen proves
- * the routing lands here for `status = 'onboarding'` and surfaces the
- * fields `me()` reports as missing, in the same order
- * `complete_onboarding()` checks them (onboarding-grid plan §1.4):
- * date_of_birth, first_name (neither reported by `me()` — only counts are),
- * then goals, then a position-0 photo.
+ * Resume entry for `status = 'onboarding'` (onboarding-grid plan §1.4).
+ * `me()` only reports counts of goals/tags/photos (plus status and
+ * verification_status) — `first_name` and DOB presence aren't in its
+ * return shape, so both are read directly here under their owner select
+ * grants (`profiles.first_name`, `users_private.date_of_birth`). Replaces
+ * to the first unmet required step, in `complete_onboarding()`'s own check
+ * order (`resolveOnboardingStep`).
  */
 export default function OnboardingIndex() {
-  const [meResult, setMeResult] = useState<MeResult | null>(null);
-  const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     let cancelled = false;
-    me()
-      .then((result) => {
-        if (!cancelled) setMeResult(result);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+
+    async function resume() {
+      const [meResult, firstName, dob] = await Promise.all([me(), getFirstName(), getDateOfBirth()]);
+      const step = resolveOnboardingStep({
+        dobSet: dob !== null,
+        firstName,
+        goalsCount: meResult?.goals_count ?? 0,
+        photosCount: meResult?.photos_count ?? 0,
       });
+      if (!cancelled) {
+        router.replace(stepToPath(step) as never);
+      }
+    }
+
+    resume().catch(() => {
+      // No screen exists here to show a retry affordance — fall back to the
+      // first step of the flow rather than a stuck loading spinner, same
+      // posture as routing/bootstrap.ts's boot-time fallback.
+      if (!cancelled) {
+        router.replace(stepToPath('dob') as never);
+      }
+    });
+
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const missing: string[] = [];
-  if (meResult) {
-    if (meResult.goals_count === 0) missing.push('goals');
-    if (meResult.tags_count === 0) missing.push('tags');
-    if (meResult.photos_count === 0) missing.push('main photo');
-  }
-
   return (
     <View style={styles.container} testID="onboarding-screen">
-      <Text style={styles.title}>Onboarding goes here</Text>
-      {loading ? (
-        <ActivityIndicator />
-      ) : (
-        <>
-          <Text style={styles.body}>
-            date_of_birth and first_name aren&apos;t reported by me() — only counts of
-            goals/tags/photos are. The onboarding-grid plan&apos;s step flow (§1.4) owns
-            resuming those from `profiles`/`users_private` reads directly.
-          </Text>
-          {missing.length > 0 ? (
-            <Text style={styles.body}>me() reports missing: {missing.join(', ')}.</Text>
-          ) : (
-            <Text style={styles.body}>me() reports goals, tags, and a photo are all present.</Text>
-          )}
-        </>
-      )}
+      <ActivityIndicator size="large" />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center', gap: 12 },
-  title: { fontSize: 20, fontWeight: '600' },
-  body: { color: '#555', fontSize: 14 },
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });
