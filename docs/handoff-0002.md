@@ -151,6 +151,11 @@ and in the hosted project; the hosted runner is 98/98 green as of 18 September 2
 8. The identity/private-card edge function, the verification webhook handler, and purge-drain
    (decisions 19 and 8). Code is built and tested; nothing is deployed. See "Step 8 status"
    below.
+9. Migration 0004 (`20260918000004_waitlist_and_dob.sql`) — `public.request_waitlist(text)` and
+   the `users_private.date_of_birth` owner update grant (decisions 34/35) — exists and is
+   applied to the hosted project as version `20260918000004 after the CLI history repair`, name `waitlist_and_dob`;
+   `supabase/tests/hosted/0004_hosted_run.sql` is green at 20/20 with no history row left
+   behind. Migration history is now four rows, local = remote.
 
 ## Step 8 status
 

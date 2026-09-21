@@ -68,6 +68,45 @@ commitment and the build follows it.
 |---|----------|--------|
 | 33 | Blocked users and public identity | A block in either direction hides the identity even when `is_public`; same generic 404 as any other refusal. |
 
+## Expo app (21 September 2026)
+
+Decided by Izaac Lopez after review of the open questions in `app-architecture-plan.md` §10,
+`app-onboarding-grid-plan.md` §8, and `app-social-plan.md` §10. The recommended default was
+accepted for every question; the four schema-gap items (S1-S4) were decided explicitly and are
+recorded first.
+
+| # | Decision | Answer |
+|---|----------|--------|
+| 34 | S1: Waitlist capture RPC | Add a `request_waitlist(email)` security-definer RPC mirroring `private.campus_id_for_email`'s domain logic, shipped in migration 0004; kept separate from the marketing site's existing Sanity+Supabase dual-write (decision 2). |
+| 35 | S2: `date_of_birth` write grant | Grant the owner `update (date_of_birth) on public.users_private to authenticated` in migration 0004, guarded by the existing `dob_write_once` write-once trigger; no new RPC or trigger logic needed. |
+| 36 | S3: Unblock and `closed_block` threads | Unblocking does not reopen a `closed_block` conversation; the unblock confirmation copy says so explicitly rather than let the user discover it by trying to type in the old thread. |
+| 37 | S4: Orphaned `chat-media` uploads | Accepted in v1; swept later by extending the existing purge-queue infrastructure to an orphan sweep, not blocking this build. |
+| 38 | PostGIS geometry decode | A small client-side WKB parser for one point plus one multipolygon (`campuses.center_point`/`county_boundary`), rather than a schema or RPC change. |
+| 39 | Photo resize target | 1600px long edge, JPEG quality 0.8; revisit once real upload sizes are measured. |
+| 40 | Restricted-account terminal screen | One shared "account restricted" screen covering `suspended`/`closed_age`/`banned`, with state-specific copy and a `mailto:` support link. |
+| 41 | Push notification triggers | Register the device token and upsert `devices` now; defer send-side event wiring to the step after the walking skeleton. |
+| 42 | Persona hosted-flow redirect | Assume `verification`'s `session_url` needs an in-app-browser round trip with a deep-link return; stub the deep-link route now, confirm once `verification` is deployed and inspectable. |
+| 43 | Location-denied UX | The grid stays browsable when location is denied: the user is away and invisible to others, but never blocked from browsing. |
+| 44 | Verification copy and retry limits | Reuse the plan's proposed banner/screen copy until final strings ship; keep the 4th-attempt permanent-block screen visually distinct from a retry-able failure. |
+| 45 | Presence sampling cadence | ~5-minute / significant-location-change sampling, with a 20-minute `set_my_tier` heartbeat; ship unmeasured and tune post-launch against real battery/network data. |
+| 46 | Hi CTA when the target already hi'd the viewer | "Hi" stays a fresh send; the recipient's own hi-back on their Hi's tab is the only merge path. |
+| 47 | Report entry point for paused users | Hidden whenever `me().status !== 'active'`, since the `reports` insert requires `is_active`. |
+| 48 | Card/identity chip vocabularies | Editors render whatever `validate.ts` exports from the `identity` edge function at build/deploy time, never copy baked into the plan docs' examples. |
+
+## Consequences for the app build
+
+Migration 0004 adds the `request_waitlist(email)` RPC (decision 34) and the owner's
+write-once-guarded `update` grant on `users_private.date_of_birth` (decision 35). The client
+carries its own WKB parser for campus geometry (38) instead of a server-side decode. Restricted
+accounts (`suspended`/`closed_age`/`banned`) share a single screen with state-specific copy (40).
+Push tokens are registered and upserted into `devices` now, but no send-side event wiring ships
+in this pass (41); the Persona hosted-flow return is handled by a stubbed deep-link route pending
+confirmation once `verification` is deployed (42). The grid stays reachable and browsable when
+location permission is denied, just invisible to others (43). The report entry point is hidden
+for any non-`active` user rather than left to fail on insert (47). Identity and private-card
+chip vocabularies are fetched from the `identity` edge function's `validate.ts` output rather
+than hardcoded client-side (48).
+
 ## Consequences for the next migration
 
 - No tiering edge function. `user_presence.tier` is written by the client through an RPC
