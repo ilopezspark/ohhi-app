@@ -12,7 +12,7 @@ export default function OtpScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Supabase issues 6 to 10 digits depending on the project's OTP length setting.
-  const isValid = /^d{6,10}$/.test(code.trim()) && !!email;
+  const isValid = /^\d{6,10}$/.test(code.trim()) && !!email;
   const submitDisabled = !isValid || submitting;
 
   async function handleSubmit() {
