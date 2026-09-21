@@ -156,6 +156,12 @@ and in the hosted project; the hosted runner is 98/98 green as of 18 September 2
    applied to the hosted project as version `20260918000004 after the CLI history repair`, name `waitlist_and_dob`;
    `supabase/tests/hosted/0004_hosted_run.sql` is green at 20/20 with no history row left
    behind. Migration history is now four rows, local = remote.
+10. Migration 0007 (`20260918000007_timezone_and_privilege_checks.sql`) — the `campuses.timezone`
+   select grant, plus a comments-only audit finding no other table exposed to 0006's
+   upsert-privilege defect — is applied to the hosted project as version `20260918000007 after the CLI history repair`, name
+   `timezone_and_privilege_checks`; `supabase/tests/hosted/0007_hosted_run.sql` is green at 27/27
+   with no history row left behind. Migration history is seven rows; local file versions and the
+   recorded remote versions differ for 0007 and need the usual `supabase migration repair`.
 
 ## Step 8 status
 

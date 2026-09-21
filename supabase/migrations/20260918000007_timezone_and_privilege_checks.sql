@@ -1,0 +1,84 @@
+-- OhHi v1 · migration 0007 · campus timezone read grant, and a privilege audit
+--
+-- =============================================================================
+-- 1. public.campuses.timezone — select grant for authenticated
+-- =============================================================================
+--
+-- Migration 0002 §2 added `public.campuses.timezone` (`text not null default
+-- 'America/Chicago'`, IANA zone) but never extended the column-level select
+-- grant, so no client role can read it. Migration 0001 granted
+-- `select (id, name, slug, city, state, email_domains, status, launch_date,
+-- county_label)` to anon and authenticated; 0002 §2 widened that with
+-- `select (center_point, on_campus_radius_m, nearby_radius_m,
+-- county_boundary)` to authenticated only. `timezone` is in neither list.
+-- Verified on the hosted project (yvmxyynxpheudnyoveqx) 2026-09-21:
+-- has_column_privilege('authenticated', 'public.campuses', 'timezone',
+-- 'select') was false.
+--
+-- The app's onboarding DOB screen (app/src/app/(onboarding)/dob.tsx) shows an
+-- advisory 18+ hint via `isEighteen(dob, tz)` in app/src/onboarding/age.ts,
+-- which today falls back to the hard-coded DEFAULT_CAMPUS_TIMEZONE
+-- ('America/Chicago'). Granting select lets the client read the real campus
+-- zone instead of assuming CLC's. This is advisory only: the server's
+-- `complete_onboarding()` (migration 0002 §11) remains the authority on the
+-- 18+ check — it computes the age in campus-local time itself and returns
+-- 'closed_age', and nothing about that path changes here.
+--
+-- Granted to `authenticated` only, not `anon`: a signed-out visitor has no
+-- campus context and no DOB to check. The campus select policy ("campuses are
+-- readable by everyone", migration 0001) already covers the authenticated
+-- role, so no policy change is needed; this is purely a column privilege.
+
+grant select (timezone) on public.campuses to authenticated;
+
+-- =============================================================================
+-- 2. Upsert privilege audit — no further grants needed
+-- =============================================================================
+--
+-- Migration 0006 fixed one instance of a general hazard: PostgREST's
+-- merge-duplicates upsert compiles `on conflict (...) do update set` with
+-- *every* payload column, including the conflict-target columns, and Postgres
+-- checks UPDATE privilege on every column in that SET list at parse time —
+-- before any conflict exists. A column-level update grant that omits a
+-- conflict-key column therefore fails every upsert, even the first insert.
+-- See 20260918000006_fix_user_photos_upsert_grant.sql for the full write-up.
+--
+-- Every table the app writes to was re-checked against that failure mode on
+-- the hosted project. No other table is exposed to it, so this migration adds
+-- no further grants:
+--
+--   user_photos       update (user_id, position, storage_path, tint) — both
+--                     conflict keys of `(user_id, position)` are covered by
+--                     0002 plus 0006. This is the one upsert the app actually
+--                     issues (uploadProfilePhoto, app/src/api/photos.ts).
+--   user_tags         whole-table `grant ... update ...`, so both
+--                     `(user_id, tag_id)` and `(user_id, position)` are
+--                     already covered. Whole-table grants need nothing.
+--   devices           whole-table update grant. Nothing needed.
+--   notification_prefs whole-table update grant. Nothing needed.
+--   user_goals        `grant select, insert, delete` — no UPDATE privilege of
+--                     any kind, by design (goals are append/remove-only, and
+--                     app/src/api/goals.ts does delete-then-insert). This is
+--                     not 0006's defect — there is no column-level update
+--                     grant with a gap in it — and inventing one here would
+--                     newly allow clients to rewrite goal rows in place. Out
+--                     of scope: nothing that changes behaviour.
+--   consents          `grant select, insert` — append-only by design (0002
+--                     §"consents — append-only, owner select and insert").
+--                     Same reasoning as user_goals.
+--   user_presence     update (tier, is_visible) and NO insert privilege at
+--                     all. `user_id` is missing from the update grant, but a
+--                     PostgREST upsert would fail the INSERT check first and
+--                     could never succeed regardless; the row is created
+--                     server-side by `begin_signup()`. Granting update
+--                     (user_id) would be dead weight, so it is not granted.
+--
+-- Owner-pinning RLS is unchanged and still forbids reassigning a row to a
+-- different user: "user_photos owner update" keeps `using (user_id =
+-- auth.uid()) with check (user_id = auth.uid())`, and the equivalent owner
+-- policies on user_tags, devices and notification_prefs are untouched. A
+-- column grant only lets PostgREST's generated SET clause re-assert the value
+-- the row already carries.
+--
+-- Covered by supabase/tests/0007_privileges.test.sql (plan(27)); down-script
+-- is supabase/tests/hosted/0007_down.sql.
