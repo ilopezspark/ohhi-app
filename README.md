@@ -42,6 +42,7 @@ the hosted migration history matches this folder.
 | `20260918000005_test_domain.sql` | **Testing only, revert before launch.** Appends `sayohhi.com` to CLC's `email_domains` so the test cohort can sign up; down-script is `supabase/tests/hosted/0005_down.sql`. |
 | `20260918000006_fix_user_photos_upsert_grant.sql` | Grants the owner update on `user_photos.user_id` so PostgREST upserts pass the parse-time privilege check. |
 | `20260918000007_timezone_and_privilege_checks.sql` | Grants `select (timezone)` on `campuses` to `authenticated` so the app's advisory 18+ hint can use the real campus zone (`complete_onboarding()` stays the authority). §2 is an audit, in comments only: every other table the app writes to was re-checked against 0006's upsert-privilege failure mode and none is exposed to it, so no further grants. Tests: `supabase/tests/0007_privileges.test.sql`, `plan(27)`; down-script `supabase/tests/hosted/0007_down.sql`. |
+| `20260918000008_test_domain_sparkncode.sql` | Testing only: adds `sparkncode.com` to the CLC campus domains. Revert with `supabase/tests/hosted/0008_down.sql` before launch. |
 
 The three edge functions built against that migration (`identity`, `verification`,
 `purge-drain`) are built and unit-tested but not deployed; `docs/handoff-0002.md`'s "Step 8
