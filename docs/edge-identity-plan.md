@@ -35,7 +35,7 @@ together ("the identity and private-card edge function").
 
 | Route | Method | Auth | Behaviour |
 |---|---|---|---|
-| `/identity/:user_id` | GET | owner or `is_public` | Decrypt and return the identity payload. |
+| `/identity/:user_id` | GET | owner or (`is_public` and not blocked either direction) | Decrypt and return the identity payload. |
 | `/identity` | PUT | owner only | Validate, encrypt, upsert; recompute `fields_filled`. |
 | `/card/:user_id` | GET | owner or `share_is_active` | Decrypt and return the card payload. |
 | `/card` | PUT | owner only | Validate, encrypt, upsert; recompute `fields_filled`. |
@@ -86,8 +86,10 @@ Postgres-protocol connection is the only path. The authorization checks are plai
 that connection, no new helper needed for either:
 
 ```sql
--- identity: no helper needed, is_public is a column
-select is_public, payload_ciphertext, key_version from public.user_identity where user_id = $1;
+-- identity: is_public is a column; private.is_blocked (decision 33) keeps a
+-- block symmetric with the card path even though is_public needs no helper
+select is_public, payload_ciphertext, key_version, private.is_blocked(user_id, $2)
+  from public.user_identity where user_id = $1;
 -- card: the existing helper, already service_role-executable
 select private.share_is_active($1::uuid, $2::uuid, 'private_card', $1::uuid);
 ```

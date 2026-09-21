@@ -62,6 +62,12 @@ commitment and the build follows it.
 | 31 | Auth deletion method | Scrub-and-ban via `auth.admin.updateUserById` (randomized email/phone, cleared metadata and identities, banned id) is accepted as the permanent-deletion mechanism, not a literal `auth.users` row delete. |
 | 32 | Purge-drain batch size and cadence | 200 objects per run, scheduled daily at 03:15 UTC (15 minutes after `purge-deleted-users`); backoff handles backlog. |
 
+## Identity/card follow-up (21 September 2026)
+
+| # | Decision | Answer |
+|---|----------|--------|
+| 33 | Blocked users and public identity | A block in either direction hides the identity even when `is_public`; same generic 404 as any other refusal. |
+
 ## Consequences for the next migration
 
 - No tiering edge function. `user_presence.tier` is written by the client through an RPC

@@ -384,6 +384,22 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# docs/edge-verification-plan.md / handoff-0002.md item 8. One deployed function
+# (supabase/functions/verification/) serves both POST /verification/start and
+# POST /verification/webhook — `verify_jwt` is a per-function setting, not a per-route one, and
+# /webhook must be reachable with no Supabase JWT at all (Persona has no Supabase session; the
+# only trust boundary there is the webhook signature, plan §3). So verify_jwt is off for the
+# whole function, and /start compensates by verifying the caller's JWT itself, in code, via
+# `_shared/supabase.ts`'s `callerUid()` (see supabase/functions/verification/index.ts's
+# handleStart) before it ever touches private.start_verification_attempt(). Same pattern
+# docs/edge-purge-plan.md §4/§6 uses for purge-drain's shared-secret header, and the same
+# reasoning docs/edge-identity-plan.md §2 gives for never trusting a client-supplied user id.
+[functions.verification]
+enabled = true
+verify_jwt = false
+import_map = "./functions/verification/deno.json"
+entrypoint = "./functions/verification/index.ts"
+
 [analytics]
 enabled = true
 port = 54327
@@ -413,3 +429,24 @@ enabled = true
 # formatted with uppercase keywords, indent 2, max width 180, trailing commas,
 # and column/key alignment. Set to "null" to emit raw, unformatted SQL.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":180,\"commaStyle\":\"trailing\"}"
+
+# Edge functions. One block per function; `verify_jwt = true` makes the platform
+# reject a request with no/invalid Supabase JWT before the function's own
+# `callerUid()` check, which stays in place as the source of `auth.uid()`.
+[functions.identity]
+enabled = true
+verify_jwt = true
+import_map = "./functions/identity/deno.json"
+entrypoint = "./functions/identity/index.ts"
+
+# purge-drain (docs/edge-purge-plan.md §4): invoked only by
+# private.invoke_purge_drain() via pg_net, carrying the shared secret in the
+# x-purge-drain-secret header -- never a Supabase user JWT. verify_jwt must
+# stay false here, unlike the JWT-checked functions above, or every pg_net
+# call would be rejected before the function's own secret check ever runs.
+# See supabase/functions/purge-drain/README.md.
+[functions.purge-drain]
+enabled = true
+verify_jwt = false
+import_map = "./functions/purge-drain/deno.json"
+entrypoint = "./functions/purge-drain/index.ts"
