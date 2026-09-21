@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ohhi — chat list</title>
+
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;800&family=JetBrains+Mono:wght@500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Outfit', 'Helvetica Neue', Arial, sans-serif; background: #F7F3EC; color: #23211F; }
+    a { color: #D4460F; } a:hover { color: #B93A0A; }
+    .btn { font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 600; line-height: 1; padding: 18px; border: 0; border-radius: 999px; width: 100%; box-sizing: border-box; text-align: center; text-decoration: none; display: block; }
+    .primary { background: #FF5A1F; color: #F7F3EC; }
+    .secondary { background: #23211F; color: #F7F3EC; }
+    .ghost { background: transparent; color: #6E6960; font-size: 14px; padding: 12px; }
+    .field { display: flex; flex-direction: column; gap: 8px; }
+    .field label { font-size: 12px; font-weight: 600; color: #6E6960; }
+    .field input, .field textarea { font-family: 'Outfit', sans-serif; font-size: 16px; padding: 16px 18px; border: 0; border-radius: 999px; background: #FFFFFF; box-shadow: 0 2px 8px rgba(35,33,31,0.08); color: #23211F; width: 100%; box-sizing: border-box; }
+    .field textarea { border-radius: 22px; resize: none; }
+    .help { font-size: 13px; color: #6E6960; line-height: 1.4; }
+    .h1 { font-weight: 800; font-size: 34px; letter-spacing: -0.03em; line-height: 1.05; }
+    .back { width: 44px; height: 44px; border-radius: 50%; background: #FFFFFF; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(35,33,31,0.08); color: #23211F; text-decoration: none; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 9px 13px; border-radius: 999px; background: #FFFFFF; box-shadow: 0 2px 8px rgba(35,33,31,0.08); }
+    .chip.on { background: #23211F; color: #F7F3EC; }
+    .chip.tint { background: #ECE6DA; box-shadow: none; color: #6E6960; }
+    .tab { text-decoration: none; color: #9A958B; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 6px 0; position: relative; }
+    .tab.on { color: #23211F; }
+    .row { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid #E2DCD0; text-decoration: none; color: #23211F; }
+    .row:last-child { border-bottom: 0; }
+    .av { width: 52px; height: 52px; border-radius: 18px; flex-shrink: 0; position: relative; overflow: hidden; }
+    .bubble { max-width: 78%; padding: 12px 16px; border-radius: 22px; font-size: 15px; line-height: 1.4; }
+    .them { background: #FFFFFF; box-shadow: 0 2px 8px rgba(35,33,31,0.06); align-self: flex-start; border-bottom-left-radius: 8px; }
+    .me { background: #23211F; color: #F7F3EC; align-self: flex-end; border-bottom-right-radius: 8px; }
+    .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: #F7F3EC; border-radius: 34px 34px 0 0; padding: 14px 20px 32px 20px; box-shadow: 0 -12px 40px rgba(35,33,31,0.18); display: flex; flex-direction: column; gap: 14px; }
+    .handle { width: 40px; height: 5px; border-radius: 999px; background: #E2DCD0; align-self: center; }
+    .dim { position: absolute; inset: 0; background: rgba(35,33,31,0.45); }
+  </style>
+
+<style>html,body{background:#EFEAE0;display:flex;align-items:flex-start;justify-content:center;min-height:100vh;padding:24px 0;}</style>
+</head>
+<body>
+<div style="width: 390px; height: 844px; box-sizing: border-box; padding: 56px 16px 0 16px; display: flex; flex-direction: column; gap: 18px; background: #F7F3EC; color: #23211F; position: relative; overflow: hidden;">
+
+  <div class="h1" style="font-size: 32px;">chat</div>
+  <div style="display: flex; flex-direction: column;">
+    <a href="Chat-Thread.html" class="row"><div class="av" style="background: #E8C9B4;"><svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true" style="position: absolute; inset: 0; display: block;"><circle cx="50" cy="40" r="17" fill="rgba(35,33,31,0.16)"></circle><path d="M18 100 C18 72 34 64 50 64 C66 64 82 72 82 100 Z" fill="rgba(35,33,31,0.16)"></path></svg></div><div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1; min-width: 0;"><div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 16px; font-weight: 700;">maya <span style="font-size: 11px; font-weight: 500; color: #8A857C;">· on campus</span></span><span style="font-size: 11px; color: #8A857C;">2m</span></div><span style="font-size: 14px; color: #23211F; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">ok that's actually funny. 2nd floor by the windows?</span></div><span style="width: 8px; height: 8px; border-radius: 50%; background: #FF5A1F;"></span></a>
+    <a href="Chat-Thread.html" class="row"><div class="av" style="background: #D5E0CB;"><svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true" style="position: absolute; inset: 0; display: block;"><circle cx="50" cy="40" r="17" fill="rgba(35,33,31,0.16)"></circle><path d="M18 100 C18 72 34 64 50 64 C66 64 82 72 82 100 Z" fill="rgba(35,33,31,0.16)"></path></svg></div><div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1; min-width: 0;"><div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 16px; font-weight: 700;">priya <span style="font-size: 11px; font-weight: 500; color: #8A857C;">· on campus</span></span><span style="font-size: 11px; color: #8A857C;">1h</span></div><span style="font-size: 14px; color: #6E6960; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">see you at the union at 4</span></div></a>
+    <a href="Chat-Thread.html" class="row"><div class="av" style="background: #C9D6E3;"><svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true" style="position: absolute; inset: 0; display: block;"><circle cx="50" cy="40" r="17" fill="rgba(35,33,31,0.16)"></circle><path d="M18 100 C18 72 34 64 50 64 C66 64 82 72 82 100 Z" fill="rgba(35,33,31,0.16)"></path></svg></div><div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1; min-width: 0;"><div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 16px; font-weight: 700;">jordan <span style="font-size: 11px; font-weight: 500; color: #8A857C;">· nearby</span></span><span style="font-size: 11px; color: #8A857C;">3h</span></div><span style="font-size: 12px; font-weight: 600; color: #8A857C;">waiting on jordan</span></div></a>
+    <a href="Chat-Thread.html" class="row"><div class="av" style="background: #EBD5B0;"><svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true" style="position: absolute; inset: 0; display: block;"><circle cx="50" cy="40" r="17" fill="rgba(35,33,31,0.16)"></circle><path d="M18 100 C18 72 34 64 50 64 C66 64 82 72 82 100 Z" fill="rgba(35,33,31,0.16)"></path></svg></div><div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1; min-width: 0;"><div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 16px; font-weight: 700;">sam <span style="font-size: 11px; font-weight: 500; color: #8A857C;">· on campus</span></span><span style="font-size: 11px; color: #8A857C;">yday</span></div><span style="font-size: 14px; color: #6E6960; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">lol no way you have dr. patel too</span></div></a>
+    <a href="Chat-Thread.html" class="row"><div class="av" style="background: #E8C9B4;"><svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true" style="position: absolute; inset: 0; display: block;"><circle cx="50" cy="40" r="17" fill="rgba(35,33,31,0.16)"></circle><path d="M18 100 C18 72 34 64 50 64 C66 64 82 72 82 100 Z" fill="rgba(35,33,31,0.16)"></path></svg></div><div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1; min-width: 0;"><div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 16px; font-weight: 700;">dev <span style="font-size: 11px; font-weight: 500; color: #8A857C;">· lake co</span></span><span style="font-size: 11px; color: #8A857C;">2d</span></div><span style="font-size: 12px; font-weight: 600; color: #8A857C;">waiting on dev</span></div></a>
+  </div>
+  <div class="help" style="text-align: center; font-size: 12px; margin-top: 8px;">chats you don't answer in 7 days quietly close.</div>
+  <div style="margin-top: auto; margin-left: -16px; margin-right: -16px; border-top: 1px solid #E2DCD0; background: #FBF8F2; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 10px 8px 26px 8px;"><a href="Grid.html" class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2.5"></rect><rect x="13" y="3" width="8" height="8" rx="2.5"></rect><rect x="3" y="13" width="8" height="8" rx="2.5"></rect><rect x="13" y="13" width="8" height="8" rx="2.5" ></rect></svg>grid</a><a href="#hi" class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 11V7a3 3 0 0 1 6 0v4"></path><path d="M13 9a2.5 2.5 0 0 1 5 0v6a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L3.5 15a2 2 0 0 1 3-2.5L7 13"></path></svg>hi's</a><a href="Chat-List.html" class="tab on"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg>chat</a><a href="Me.html" class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>me</a></div>
+
+</div>
+</body>
+</html>

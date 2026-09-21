@@ -11,3 +11,6 @@ android/
 .DS_Store
 supabase/.branches
 supabase/.temp
+
+# design exports are unpacked into docs/design; keep the archives out
+*.zip
