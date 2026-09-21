@@ -170,11 +170,15 @@ deploy` has run, and Persona is not configured.
 **Deployed — 21 September 2026.** `identity` and `purge-drain` deployed to the hosted project
 (`yvmxyynxpheudnyoveqx`), both `ACTIVE` at version 1. Unauthenticated boot checks returned `401`
 from each function's own gate (JWT check for `identity`, shared-secret check for `purge-drain`),
-not a `5xx`, so both are booting cleanly. `verification` is **PINNED: Persona setup** — held back,
-not deployed, until Persona is configured (Inquiry Template, webhook, signing secret). Remaining
-before Step 8 can close: hosted smoke checks for `identity` (PUT/GET with a real user JWT) and the
-`purge-drain` manual trigger (checklist items 7-8 below) — both need either a person with the
-`PURGE_DRAIN_SECRET` value or a real test user, so they are not done yet. Also note:
+not a `5xx`, so both are booting cleanly. `verification` is also deployed — `ACTIVE` at version 1
+as of 21 September 2026, `verify_jwt = false` per its `config.toml` block. Boot checks: `/start`
+returned `401` (its own JWT gate) and `/webhook` returned `400` (signature/parse check), neither a
+`5xx`. Remaining Persona step: send a test event from the Persona dashboard and confirm the
+function logs `verification_webhook_applied` with a verified signature, per the README's "Persona
+dashboard steps" §5. Remaining before Step 8 can close: hosted smoke checks for `identity`
+(PUT/GET with a real user JWT) and the `purge-drain` manual trigger (checklist items 7-8 below) —
+both need either a person with the `PURGE_DRAIN_SECRET` value or a real test user, so they are not
+done yet. Also note:
 `PURGE_DRAIN_DB_URL` was not found among this project's function secrets during the deploy pass
 (only the platform-provided `SUPABASE_DB_URL` fallback is set) — `purge-drain` will still run off
 that fallback per its README, but the dedicated pooler URL is worth setting explicitly. The
