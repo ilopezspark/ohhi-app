@@ -13,12 +13,9 @@ const config: ExpoConfig = {
   icon: './assets/images/icon.png',
   scheme: 'ohhi',
   userInterfaceStyle: 'automatic',
-  ios: {
-    icon: './assets/expo.icon',
-  },
   android: {
     adaptiveIcon: {
-      backgroundColor: '#E6F4FE',
+      backgroundColor: '#F7F3EC',
       foregroundImage: './assets/images/android-icon-foreground.png',
       backgroundImage: './assets/images/android-icon-background.png',
       monochromeImage: './assets/images/android-icon-monochrome.png',
@@ -39,9 +36,10 @@ const config: ExpoConfig = {
     [
       'expo-splash-screen',
       {
-        backgroundColor: '#208AEF',
+        backgroundColor: '#F7F3EC',
         image: './assets/images/splash-icon.png',
         imageWidth: 76,
+        resizeMode: 'contain',
       },
     ],
     'expo-secure-store',
