@@ -1,19 +1,91 @@
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet, TextInput, View, type NativeSyntheticEvent, type TextInputKeyPressEventData } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../api/client';
 import { resolveEntryHref } from '../../routing/bootstrap';
+import { Button, Text } from '../../ui';
+import { colors, fontFamilies, radii, shadows, spacing } from '../../theme/tokens';
+import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
 
-/** Verify code, architecture plan §4 step 2. */
+const CODE_LENGTH = 6;
+const RESEND_SECONDS = 60;
+
+/**
+ * `Onb-Code.html`. Verify code, architecture plan §4 step 2. Design step 1
+ * of 8, matching `Onb-Email.html`'s own bar (see `OnboardingHeader`'s doc
+ * comment — the mock doesn't advance the bar between email and code entry).
+ *
+ * **Deviation from existing behaviour, flagged in the report**: the previous
+ * screen accepted a free-form 6-10 digit code (`/^\d{6,10}$/`, since
+ * Supabase's OTP length is a per-project setting that can be 6-10 digits).
+ * The design's own input is a fixed 6-box grid with no affordance for a
+ * longer code. This screen narrows to exactly 6 digits to match the design
+ * — Supabase's default (and this project's apparent configuration, per the
+ * mock) is 6 — rather than inventing a >6-digit UI the design doesn't show.
+ * `verifyOtp` itself is untouched; only the client-side length gate moved
+ * from a range to a fixed 6.
+ *
+ * Adds a resend affordance the previous screen didn't have (the design
+ * shows one) — same `signInWithOtp` call `(auth)/email.tsx` already uses,
+ * gated by a plain local countdown (no server-provided expiry exists to
+ * read).
+ */
 export default function OtpScreen() {
   const { email } = useLocalSearchParams<{ email?: string }>();
-  const [code, setCode] = useState('');
+  const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(''));
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [resendSeconds, setResendSeconds] = useState(RESEND_SECONDS);
+  const [resending, setResending] = useState(false);
+  const inputRefs = useRef<Array<TextInput | null>>([]);
 
-  // Supabase issues 6 to 10 digits depending on the project's OTP length setting.
-  const isValid = /^\d{6,10}$/.test(code.trim()) && !!email;
+  useEffect(() => {
+    if (resendSeconds <= 0) return;
+    const timer = setInterval(() => setResendSeconds((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [resendSeconds]);
+
+  const code = digits.join('');
+  const isValid = new RegExp(`^\\d{${CODE_LENGTH}}$`).test(code) && !!email;
   const submitDisabled = !isValid || submitting;
+
+  function setDigitAt(index: number, value: string) {
+    setDigits((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  }
+
+  function handleChangeDigit(index: number, raw: string) {
+    const clean = raw.replace(/\D/g, '');
+    if (clean.length <= 1) {
+      setDigitAt(index, clean);
+      if (clean && index < CODE_LENGTH - 1) inputRefs.current[index + 1]?.focus();
+      return;
+    }
+    // Pasted/autofilled multiple digits at once — distribute from this box on.
+    const chars = clean.slice(0, CODE_LENGTH - index).split('');
+    setDigits((prev) => {
+      const next = [...prev];
+      chars.forEach((char, offset) => {
+        next[index + offset] = char;
+      });
+      return next;
+    });
+    const lastFilled = Math.min(index + chars.length, CODE_LENGTH - 1);
+    inputRefs.current[lastFilled]?.focus();
+  }
+
+  function handleKeyPress(index: number, event: NativeSyntheticEvent<TextInputKeyPressEventData>) {
+    if (event.nativeEvent.key === 'Backspace' && !digits[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  }
+
+  function goBack() {
+    router.replace({ pathname: '/(auth)/email' } as never);
+  }
 
   async function handleSubmit() {
     if (submitDisabled || !email) return;
@@ -22,7 +94,7 @@ export default function OtpScreen() {
     try {
       const { data, error } = await supabase.auth.verifyOtp({
         email,
-        token: code.trim(),
+        token: code,
         type: 'email',
       });
       if (error) throw error;
@@ -37,54 +109,102 @@ export default function OtpScreen() {
     }
   }
 
+  async function handleResend() {
+    if (resending || resendSeconds > 0 || !email) return;
+    setResending(true);
+    setErrorMessage(null);
+    try {
+      const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+      if (error) throw error;
+      setResendSeconds(RESEND_SECONDS);
+    } catch {
+      setErrorMessage('Something went wrong. Please try again.');
+    } finally {
+      setResending(false);
+    }
+  }
+
+  const minutes = Math.floor(resendSeconds / 60);
+  const seconds = resendSeconds % 60;
+  const countdown = `${minutes}:${String(seconds).padStart(2, '0')}`;
+
   return (
-    <View style={styles.container} testID="otp-screen">
-      <Text style={styles.title}>Enter your code</Text>
-      <Text style={styles.subtitle}>Sent to {email ?? 'your email'}</Text>
-      <TextInput
-        testID="otp-input"
-        style={styles.input}
-        placeholder="Code from your email"
-        keyboardType="number-pad"
-        maxLength={10}
-        value={code}
-        onChangeText={setCode}
-      />
-      {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-      <Pressable
-        testID="otp-submit"
-        style={[styles.button, submitDisabled && styles.buttonDisabled]}
-        disabled={submitDisabled}
-        accessibilityState={{ disabled: submitDisabled }}
-        onPress={handleSubmit}
-      >
-        {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verify</Text>}
-      </Pressable>
-    </View>
+    <OnboardingScreen
+      step={1}
+      onBack={goBack}
+      backTestID="otp-back"
+      testID="otp-screen"
+      footer={
+        <Button
+          label="verify"
+          onPress={handleSubmit}
+          loading={submitting}
+          disabled={submitDisabled}
+          testID="otp-submit"
+        />
+      }
+    >
+      <Text variant="headline" style={styles.title}>
+        check your email
+      </Text>
+      <Text variant="helper">
+        we sent a 6-digit code to <Text variant="helper" color={colors.ink} style={styles.bold}>{email ?? 'your email'}</Text>
+      </Text>
+      <View style={styles.digitRow}>
+        {digits.map((digit, index) => (
+          <TextInput
+            key={index}
+            ref={(ref) => {
+              inputRefs.current[index] = ref;
+            }}
+            testID={`otp-input-${index}`}
+            accessibilityLabel="digit"
+            style={[styles.digitInput, digit ? null : styles.digitInputEmpty]}
+            keyboardType="number-pad"
+            maxLength={CODE_LENGTH}
+            value={digit}
+            onChangeText={(value) => handleChangeDigit(index, value)}
+            onKeyPress={(event) => handleKeyPress(index, event)}
+          />
+        ))}
+      </View>
+      {errorMessage ? (
+        <Text testID="otp-error" variant="helper" color={colors.danger}>
+          {errorMessage}
+        </Text>
+      ) : (
+        <Text variant="helper">
+          didn&apos;t get it?{' '}
+          <Text
+            variant="helper"
+            color={resendSeconds > 0 ? colors.subtle : colors.signalPressed}
+            style={styles.bold}
+            onPress={handleResend}
+            testID="otp-resend"
+          >
+            resend
+          </Text>{' '}
+          {resendSeconds > 0 ? `in ${countdown}` : ''}
+        </Text>
+      )}
+    </OnboardingScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center', gap: 12 },
-  title: { fontSize: 20, fontWeight: '600' },
-  subtitle: { color: '#555', marginBottom: 8 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    letterSpacing: 4,
+  title: { marginTop: spacing.md },
+  bold: { fontFamily: fontFamilies.outfitSemiBold },
+  digitRow: { flexDirection: 'row', gap: spacing.smMd },
+  digitInput: {
+    flex: 1,
+    height: 60,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+    color: colors.ink,
+    fontSize: 26,
+    fontWeight: '700',
+    textAlign: 'center',
+    ...shadows.sm,
   },
-  error: { color: '#b00020', fontSize: 13 },
-  button: {
-    marginTop: 8,
-    backgroundColor: '#208AEF',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: { backgroundColor: '#a9c9e8' },
-  buttonText: { color: '#fff', fontWeight: '600' },
+  digitInputEmpty: { borderWidth: 0 },
 });

@@ -1,5 +1,8 @@
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import type { ConversationListItem } from '../api/conversations';
+import { tintForPhoto } from '../photos/tint';
+import { colors, hairline, spacing } from '../theme/tokens';
+import { Avatar, Badge, Dot, Text } from '../ui';
 import { conversationChip, messagePreview } from './rules';
 
 interface Props {
@@ -9,13 +12,28 @@ interface Props {
   onPress: (conversationId: string) => void;
 }
 
+/** Relative time, "2m"/"1h"/"3d" — `Chat-List.html`'s row timestamp. No "just now"/"yesterday" words, matching the mockup's compact format. */
+function relativeTime(iso: string | null): string {
+  if (!iso) return '';
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 /**
- * One row of the chat list.
+ * One row of the chat list — `Chat-List.html`'s `.row`: avatar, name, time,
+ * preview (bold + dot while unread), state chip.
  *
  * The chip comes from `conversationChip`, which renders nothing at all for a
  * shadow-accepted `closed_block` thread — for the blocked party this row must
  * be indistinguishable from an open one (decision 12), and the blocker never
- * receives the row in the first place.
+ * receives the row in the first place. Same testIDs as before this pass.
  */
 export function ConversationRow({ item, meId, photoUrl, onPress }: Props) {
   const chip = conversationChip(
@@ -33,42 +51,33 @@ export function ConversationRow({ item, meId, photoUrl, onPress }: Props) {
     <Pressable
       accessibilityRole="button"
       testID={`conversation-row-${item.id}`}
-      style={styles.row}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       onPress={() => onPress(item.id)}
     >
-      {photoUrl ? (
-        <Image source={{ uri: photoUrl }} style={styles.avatar} accessibilityIgnoresInvertColors />
-      ) : (
-        <View style={[styles.avatar, styles.avatarPlaceholder]} />
-      )}
+      <Avatar uri={photoUrl} tint={tintForPhoto(item.other.id, 0)} size="md" />
 
       <View style={styles.body}>
         <View style={styles.titleRow}>
-          <Text style={styles.name} numberOfLines={1}>
+          <Text variant="rowLabel" style={{ fontSize: 16, fontWeight: '700' }} numberOfLines={1}>
             {item.other.firstName ?? 'Someone'}
           </Text>
-          {chip ? (
-            <Text style={styles.chip} testID={`conversation-chip-${item.id}`}>
-              {chip}
-            </Text>
-          ) : null}
+          <Text variant="captionMuted">{relativeTime(item.lastMessageAt)}</Text>
         </View>
-        <Text
-          style={[styles.preview, item.unread && styles.previewUnread]}
-          numberOfLines={1}
-          testID={`conversation-preview-${item.id}`}
-        >
-          {messagePreview(item.lastMessage)}
-        </Text>
+        <View style={styles.previewRow}>
+          <Text
+            variant={item.unread ? 'rowLabel' : 'body'}
+            color={item.unread ? colors.ink : colors.muted}
+            style={item.unread ? undefined : { fontSize: 14 }}
+            numberOfLines={1}
+            testID={`conversation-preview-${item.id}`}
+          >
+            {messagePreview(item.lastMessage)}
+          </Text>
+          {chip ? <Badge label={chip} tone="neutral" testID={`conversation-chip-${item.id}`} /> : null}
+        </View>
       </View>
 
-      {item.unread ? (
-        <View
-          style={styles.unreadDot}
-          testID={`conversation-unread-${item.id}`}
-          accessibilityLabel="Unread"
-        />
-      ) : null}
+      {item.unread ? <Dot testID={`conversation-unread-${item.id}`} /> : null}
     </Pressable>
   );
 }
@@ -77,25 +86,13 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    gap: spacing.mdLg,
+    paddingVertical: spacing.lg,
+    borderBottomWidth: hairline.width,
+    borderBottomColor: hairline.color,
   },
-  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#E6E8EB' },
-  avatarPlaceholder: { backgroundColor: '#DDE1E6' },
-  body: { flex: 1, gap: 2 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  name: { fontSize: 16, fontWeight: '600', flexShrink: 1 },
-  chip: {
-    fontSize: 11,
-    color: '#666',
-    backgroundColor: '#EDEFF2',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  preview: { fontSize: 13, color: '#666' },
-  previewUnread: { color: '#111', fontWeight: '600' },
-  unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#208AEF' },
+  pressed: { opacity: 0.7 },
+  body: { flex: 1, gap: 3, minWidth: 0 },
+  titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: spacing.smMd },
+  previewRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.smMd },
 });

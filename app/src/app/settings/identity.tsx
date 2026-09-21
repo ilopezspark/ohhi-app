@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { me } from '../../api/me';
@@ -8,24 +9,23 @@ import { putIdentity } from '../../api/identityWrite';
 import { mapSupabaseError } from '../../api/errors';
 import { supabase } from '../../api/client';
 import { ChipPicker } from '../../settings/ChipPicker';
+import { Toggle } from '../../settings/components/Toggle';
 import { ORIENTATION_CHIPS, ORIENTATION_MAX_ITEMS, PRONOUN_MAX_LENGTH, PRONOUN_OPTIONS } from '../../settings/vocab';
+import { Button, Chip, Header, Input, Text } from '../../ui';
+import { colors, spacing } from '../../theme/tokens';
 
 /**
- * `/settings/identity` — pronouns + orientation editor (plan §6, decision 20).
+ * `/settings/identity` — pronouns + orientation editor (plan §6, decision
+ * 20), reached from `/settings/card`'s header link since `Me.html` only
+ * shows one combined "more about me" entry point (see that file's doc
+ * comment). No dedicated mockup covers this screen either, so it's
+ * restyled onto the shared tokens/`Header`/`ChipPicker` rather than a 1:1
+ * port.
  *
  * "Show on my profile" (`is_public`) is off by default and never clears the
  * field values when toggled — it only changes who can `GET` them (plan §6).
  * Saves always send the whole object (`PUT /identity {pronouns, orientation,
  * is_public}`); there is no partial-update path.
- *
- * Current values load from the other agent's `getIdentity` (owner path
- * returns the full `{pronouns, orientation}` payload, or `null` on a 404 —
- * "never written yet", per the function's README, including for the owner).
- * `is_public`/`fields_filled` aren't in that wrapper's return type, so
- * they're read directly off `user_identity`'s owner-granted columns
- * (`select (user_id, is_public, key_version, fields_filled, updated_at)`,
- * migration 0002 §10) — a different read path from `getIdentity`, not a
- * reimplementation of it.
  */
 export default function IdentityEditorScreen() {
   const [userId, setUserId] = useState<string | null>(null);
@@ -106,109 +106,85 @@ export default function IdentityEditorScreen() {
   const canSave = !!userId && !customTooLong && !mutation.isPending;
 
   return (
-    <View style={styles.container} testID="identity-screen">
-      <Text style={styles.title}>Pronouns</Text>
-      <View style={styles.chipRow} testID="identity-pronoun-options">
-        {PRONOUN_OPTIONS.map((option) => {
-          const selected = pronouns === option;
-          return (
-            <Pressable
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScrollView contentContainerStyle={styles.container} testID="identity-screen">
+        <Header title="pronouns & orientation" titleSize={22} onBack={() => router.back()} />
+
+        <Text variant="rowLabel">Pronouns</Text>
+        <View style={styles.chipRow} testID="identity-pronoun-options">
+          {PRONOUN_OPTIONS.map((option) => (
+            <Chip
               key={option}
               testID={`identity-pronoun-${option}`}
-              accessibilityRole="radio"
-              accessibilityState={{ selected }}
-              style={[styles.chip, selected && styles.chipSelected]}
+              label={option}
+              selected={pronouns === option}
               onPress={() => selectPronoun(option)}
-            >
-              <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{option}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <TextInput
-        testID="identity-pronoun-custom"
-        style={styles.input}
-        placeholder="Or write your own"
-        maxLength={PRONOUN_MAX_LENGTH + 10}
-        value={customPronoun}
-        onChangeText={onCustomPronounChange}
-      />
-      {customTooLong ? (
-        <Text style={styles.error} testID="identity-pronoun-error">{`Keep it under ${PRONOUN_MAX_LENGTH} characters.`}</Text>
-      ) : null}
-
-      <Text style={styles.title}>Orientation</Text>
-      <Text style={styles.hint}>{`Up to ${ORIENTATION_MAX_ITEMS}`}</Text>
-      <ChipPicker
-        testID="identity-orientation"
-        options={ORIENTATION_CHIPS}
-        selected={orientation}
-        maxItems={ORIENTATION_MAX_ITEMS}
-        onChange={setOrientation}
-      />
-
-      <View style={styles.publicRow}>
-        <View style={styles.publicText}>
-          <Text style={styles.title}>Show on my profile</Text>
-          <Text style={styles.hint}>Off by default. Turning this off never clears what you&apos;ve entered.</Text>
+            />
+          ))}
         </View>
-        <Switch testID="identity-is-public" value={isPublic} onValueChange={setIsPublic} />
-      </View>
+        <Input
+          testID="identity-pronoun-custom"
+          placeholder="Or write your own"
+          maxLength={PRONOUN_MAX_LENGTH + 10}
+          value={customPronoun}
+          onChangeText={onCustomPronounChange}
+        />
+        {customTooLong ? (
+          <Text variant="helper" color={colors.danger} testID="identity-pronoun-error">{`Keep it under ${PRONOUN_MAX_LENGTH} characters.`}</Text>
+        ) : null}
 
-      {errorMessage ? (
-        <Text style={styles.error} testID="identity-error">
-          {errorMessage}
+        <Text variant="rowLabel" style={styles.sectionSpacing}>
+          Orientation
         </Text>
-      ) : null}
-      {saved && !mutation.isPending ? (
-        <Text style={styles.saved} testID="identity-saved">
-          Saved
-        </Text>
-      ) : null}
+        <Text variant="helper">{`Up to ${ORIENTATION_MAX_ITEMS}`}</Text>
+        <ChipPicker
+          testID="identity-orientation"
+          options={ORIENTATION_CHIPS}
+          selected={orientation}
+          maxItems={ORIENTATION_MAX_ITEMS}
+          onChange={setOrientation}
+        />
 
-      <Pressable
-        testID="identity-save"
-        style={[styles.button, !canSave && styles.buttonDisabled]}
-        disabled={!canSave}
-        accessibilityState={{ disabled: !canSave }}
-        onPress={() => {
-          setSaved(false);
-          mutation.mutate();
-        }}
-      >
-        {mutation.isPending ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save</Text>}
-      </Pressable>
-      <Text testID="identity-back" style={styles.back} onPress={() => router.back()}>
-        Back
-      </Text>
-    </View>
+        <View style={styles.publicRow}>
+          <View style={styles.publicText}>
+            <Text variant="rowLabel">Show on my profile</Text>
+            <Text variant="helper">Off by default. Turning this off never clears what you&apos;ve entered.</Text>
+          </View>
+          <Toggle testID="identity-is-public" value={isPublic} onValueChange={setIsPublic} />
+        </View>
+
+        {errorMessage ? (
+          <Text variant="helper" color={colors.danger} testID="identity-error">
+            {errorMessage}
+          </Text>
+        ) : null}
+        {saved && !mutation.isPending ? (
+          <Text variant="helper" color={colors.success} testID="identity-saved">
+            Saved
+          </Text>
+        ) : null}
+
+        <Button
+          testID="identity-save"
+          label="Save"
+          disabled={!canSave}
+          loading={mutation.isPending}
+          onPress={() => {
+            setSaved(false);
+            mutation.mutate();
+          }}
+        />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, gap: 10 },
+  safe: { flex: 1, backgroundColor: colors.paper },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 16, fontWeight: '600', marginTop: 10 },
-  hint: { fontSize: 12, color: '#777' },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { borderWidth: 1, borderColor: '#208AEF', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
-  chipSelected: { backgroundColor: '#208AEF' },
-  chipText: { color: '#208AEF', fontSize: 14 },
-  chipTextSelected: { color: '#fff' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 14,
-  },
-  publicRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, gap: 10 },
-  publicText: { flex: 1 },
-  error: { color: '#B00020', fontSize: 13 },
-  saved: { color: '#1a7f37', fontSize: 13 },
-  button: { marginTop: 10, backgroundColor: '#208AEF', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
-  buttonDisabled: { backgroundColor: '#a9c9e8' },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  back: { textAlign: 'center', color: '#555', fontSize: 14, marginTop: 8 },
+  container: { paddingHorizontal: spacing.lgXl, paddingBottom: spacing.huge, gap: spacing.md },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.smMd },
+  sectionSpacing: { marginTop: spacing.md },
+  publicRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.md, gap: spacing.mdLg },
+  publicText: { flex: 1, gap: spacing.xs },
 });

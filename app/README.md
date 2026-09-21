@@ -753,3 +753,443 @@ A blocked-users route and a `consents.ts` file were named in the design note's p
 this build's explicit file list; both were folded into existing owned files (`(tabs)/
 settings.tsx`, `api/account.ts`) rather than adding new ones outside that list.
 <!-- END: Settings, blocks, reports, albums, editors -->
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Chat design pass, applying docs/design/screens/Chat-*.html to the      -->
+<!-- chat slice above. Same owned files, same composer rule table, same     -->
+<!-- realtime/pagination/optimistic-send — this section only covers what    -->
+<!-- changed: visuals, and the share sheet the design added.                -->
+<!-- ---------------------------------------------------------------------- -->
+
+<!-- BEGIN: Chat design -->
+## Chat design
+
+Applies `docs/design/screens/Chat-List.html`, `Chat-Thread.html`, `Chat-Share.html` and
+`Chat-Album.html` to the chat slice documented in "Chat (conversations and messages)" above.
+Nothing about the message pipeline changed — composer gating, optimistic send, pagination,
+realtime, read-marking are all untouched; this pass is the restyle plus the share sheet the
+design added.
+
+### Screen → file map
+
+| Design screen | File |
+|---|---|
+| `Chat-List.html` | `(tabs)/chats.tsx`, `chat/ConversationRow.tsx` |
+| `Chat-Thread.html` | `chat/[id].tsx` (header, bubbles, composer), `chat/MessageBubble.tsx`, `chat/Composer.tsx` |
+| `Chat-Share.html` | `chat/ShareSheet.tsx`, opened from the composer's plus button |
+| `Chat-Album.html`'s inline bubble | `chat/ShareBubble.tsx`, merged into the thread feed |
+| `Chat-Album.html`'s "tap to view · N photos" (not itself one of the four mockups — only the collapsed bubble is shown) | `chat/[id]/album/[albumId].tsx`, a new nested route |
+
+### Share/album wiring — what the server allows
+
+- The plus button (`composer-attach`, testID unchanged) now opens `ShareSheet` instead of
+  jumping straight into the image picker. "a photo" inside the sheet is what triggers the
+  existing `chatMedia` attach flow (unchanged: upload-before-insert, decision 37's leak
+  acceptance, decision 12's shadow-accepted-thread behaviour).
+- "an album" lists the caller's own albums (`api/albums.ts#listMyAlbums`, called not edited),
+  then `api/shares.ts#shareAlbum(albumId, otherId)`.
+- "more about me" (the private card) calls `api/shares.ts#sharePrivateCard(otherId)` directly.
+- **Server mutuality is exactly `conversation.state === 'open'`** — `enforce_share_rules()` /
+  `conversation_is_mutual` (`api/shares.ts#listShareCandidates`'s own doc comment). The sheet
+  gates "an album"/"the private card" on that literal state, not on
+  `composerState().canAttachMedia` (which is also `true` for a shadow-accepted `closed_block`
+  thread, decision 12, where sharing is not actually mutual). Disabled rows show one neutral
+  line — "you can share once you've both said something" — regardless of the real reason
+  (`awaiting_reply`, `expired`, `closed_deleted`, or the blocked-party case), never naming a
+  block. "a photo" is unaffected: it keeps the existing `canAttachMedia` gate.
+- **Inline bubbles**: `chat/shareFeed.ts` reads every *active* album/private-card share between
+  the two participants, either direction, merged into the message feed by `created_at` (a
+  `shares` row has no `conversation_id` to embed through). Revoked shares vanish outright — no
+  "revoked" label — matching the design's own note: "she'll know it's gone, not why."
+- **Shared album viewer** (`chat/[id]/album/[albumId].tsx`): read-only
+  `listAlbumPhotos` + `signedAlbumPhotoUrls` (`api/albums.ts`, called not edited). RLS (the
+  "album-photos shared read" storage policy) already restricts a non-owner viewer to `ok`
+  photos; the screen adds no extra filtering of its own.
+
+### Local components (`app/src/chat/`)
+
+- `ShareSheet.tsx` — the two-step share tray (menu, then an album picker), static shape on
+  `ui/Sheet`.
+- `ShareBubble.tsx` — the inline album/private-card bubble.
+- `shareFeed.ts` — **api gap, flagged**: `src/api/shares.ts` has two query shapes ("who can I
+  share with" and "every share I own for one subject"), neither of which is "every active share
+  between exactly these two people, either direction" that the thread bubble needs. This is the
+  smallest local addition rather than an `api/shares.ts` edit — a direct `owner_id`/`viewer_id`
+  pair select through the same `shares readable by owner or viewer` RLS policy every other call
+  here goes through.
+
+### Deviations
+
+- `Chat-List.html`'s row subtitle (`· on campus` / `· nearby`) and `Chat-Thread.html`'s header
+  line (`here now · on campus`) are presence data `listConversations()`/`getConversation()`
+  don't fetch — not reproduced rather than fabricated.
+- `Chat-Album.html`'s blurred 6-photo preview grid inside the album bubble renders as album
+  name + photo count instead — see `ShareBubble.tsx`'s own doc comment for why (fetching and
+  rendering thumbnails for every shared album on every thread open wasn't worth it for a
+  collapsed bubble whose whole job is a tap target).
+- The opened shared-album grid isn't one of the four given mockups (`Chat-Album.html` only
+  shows the bubble collapsed) — built from the app's existing 3-across photo-grid vocabulary
+  (`Grid.html`) rather than invented from nothing.
+- No new packages; `package.json` untouched.
+
+### Tests / typecheck / export
+
+- `npx jest` — 65 suites / 582 tests pass. `chat-thread-screen.test.tsx` was updated (owned
+  test file) for the new attach path — the three media tests now open the share sheet and tap
+  "a photo" before asserting the picker flow — plus a new `describe('thread — share sheet')`
+  covering the menu's contents, sharing an album, sharing the private card, and the neutral
+  disabled state outside an `open` thread.
+- `npx tsc --noEmit` — clean for every file this pass touched. Two pre-existing errors remain
+  in `src/grid/GridTile.tsx` and `src/settings/components/PhotoTile.tsx`
+  (`StyleSheet.absoluteFillObject`) — outside this pass's ownership, not introduced by it.
+- `npx expo export --platform web` — succeeds.
+<!-- END: Chat design -->
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Me and settings design pass, applying docs/design/screens/Me.html,     -->
+<!-- Me-Albums.html and Settings.html to the "me" tab and settings slice.   -->
+<!-- Please keep further additions after this point in their own clearly   -->
+<!-- delimited section.                                                    -->
+<!-- ---------------------------------------------------------------------- -->
+
+<!-- BEGIN: Me and settings design -->
+## Me and settings design
+
+Applies `docs/design/screens/Me.html`, `Me-Albums.html` and `Settings.html` to the fourth tab
+and everything under `settings/`. No API/RPC behaviour changed anywhere in this pass — every
+mutation (`pauseGrid`, `setHereNow`, `blockUser`, `submitReport`, `deleteMyAccount`, album/share
+calls, `putIdentity`/`putCard`) is called exactly as it was before, just from restyled screens.
+
+### Screen → file map
+
+| Design screen | File |
+|---|---|
+| `Me.html` | `(tabs)/settings.tsx` — still the file/route name (see "tab naming" below) |
+| `Me-Albums.html` | `settings/albums/index.tsx` |
+| `Settings.html` | `settings/menu.tsx` (new — see below), plus `settings/notifications.tsx` |
+
+`settings/account.tsx` (delete account), `settings/card.tsx`, `settings/identity.tsx`,
+`settings/block/[id].tsx`, `settings/report/[id].tsx` (styled to match `Profile-Report.html`'s
+chip-row vocabulary) and `settings/albums/[id].tsx` have no dedicated mockup among the 24
+screens — restyled onto the shared `theme/tokens.ts`/`ui/*` colours and type scale rather than
+a 1:1 port of a screen that doesn't exist.
+
+### Tab naming
+
+The fourth tab's title changes from `'Settings'` to `'me'` in `(tabs)/_layout.tsx` (one line —
+`tabBarIcon` already rendered the `person`/`me` glyph). The route file stays `settings.tsx`
+(not renamed to `me.tsx`): `settings/block/[id].tsx` navigates to it by literal path
+(`router.replace('/(tabs)/settings')`, asserted by `settings-block-screen.test.tsx`), and
+renaming would have meant either breaking that or rewriting a passing test for a cosmetic-only
+change. `Me.html`'s content — own photo card, status, "more about me", albums, verification,
+gear → settings — now lives inside that same `settings.tsx` file; only the tab label and the
+screen's own contents changed.
+
+### `Settings.html`'s content moved to a new route, not a literal `/settings`
+
+`Me.html`'s gear button needed somewhere to go that (a) matches `Settings.html`'s content and
+(b) doesn't collide with the tab's own URL. Expo Router strips `(tabs)` from the tab screen's
+path, so `(tabs)/settings.tsx` and a hypothetical `settings/index.tsx` would both resolve to
+`/settings` — a real collision, not a hypothetical one, since the block screen's own
+`/(tabs)/settings` reference proves the group-stripped and group-qualified forms address the
+same route. The new screen is `settings/menu.tsx` (`/settings/menu`) instead.
+
+Its content is the task brief's explicit list rather than a literal port of every row in
+`Settings.html`:
+- **pause** and **here now** — both real, wired toggles (`usePresenceStore` / `pauseGrid` /
+  `setHereNow`, unchanged from the pre-restyle `(tabs)/settings.tsx`). `here now` also still
+  appears as a toggle on `Me.html`'s own screen (the mockup shows it there too, inline on the
+  status card) — both read/write the same store and RPC, so they can't drift out of sync; `pause`
+  is a plain navigational row on the `me` screen (linking here), matching that row's own
+  `.row` styling in the mockup rather than a second toggle.
+- **notifications** — a link to `/settings/notifications`, which already has a
+  `someone_new_nearby` toggle among its four; `Settings.html`'s second "someone new nearby" row
+  is not duplicated as its own row here.
+- **blocked** — inline list (unblock per row), same `listBlockedUsers`/`unblockUser` calls the
+  pre-restyle screen used.
+- **school email** — a static row reading `supabase.auth.getUser()`'s email; there is no
+  editable-school-email API anywhere in this codebase, so it isn't a link.
+- **sign out** / **delete my account** (`colors.danger`, decision 17's copy, linking to the
+  existing two-tap `/settings/account` flow) — unchanged behaviour, restyled buttons.
+- **Not carried over**: the mockup's legal links (privacy, terms, "what we do with your ID",
+  "how to not get banned") and the old screen's "consents" list have no backing route/content
+  anywhere in this codebase and weren't invented — left out, same as this doc's own
+  documented-gap convention elsewhere (see "What it does not do yet" above).
+
+### Local components (`app/src/settings/components/`)
+
+The kit (`ui/*`) had no primitive for three shapes the mockups use, so these were added locally
+per the task brief rather than extending `ui/*` (they're single-purpose, "me"/settings-specific):
+
+- `Toggle.tsx` — the 44×26 pill switch (`Me.html`'s "here now" card). `ui/*` has no switch
+  primitive at all.
+- `PhotoTile.tsx` — the 4/5 tinted hero photo card with a "here now" badge and a gradient name
+  caption (`Me.html`). Not `ui/Avatar` (tops out at 64px, no badge/caption slots). The caption
+  gradient reuses `src/grid/GridTile.tsx`'s own technique — an `react-native-svg`
+  `<LinearGradient>` rect — rather than adding `expo-linear-gradient`.
+  `Me.html` has no expandable identity/card fill state either.
+- `AlbumCover.tsx` — the 2×2 collage album-tile cover with its "private" badge (`Me-Albums.html`).
+
+`ConfirmButton.tsx` and `ChipPicker.tsx` (pre-existing, under `src/settings/`) were restyled in
+place to render through `ui/Button`/`ui/Chip` instead of their own hardcoded colours — same
+props, same testIDs, no call site changed.
+
+### Deviations
+
+- **"edit photos & tags"** (`Me.html`'s chip next to the status card) has no route anywhere —
+  post-onboarding photo/tag re-editing isn't built in this codebase
+  (`(onboarding)/photo.tsx`/`tags.tsx` are onboarding-only, read-only for this pass). Rendered
+  as a disabled chip rather than invented or silently dropped.
+- **Album cover thumbnails** are 4 tinted placeholders (`tintForPhoto`, seeded off the album id),
+  not the album's real first 4 photos — fetching + signing each album's own photos would be a
+  second N-query layer on top of the per-album active-share-count fetch this pass already added
+  (`listSharesForSubject`, one call per owned album — there's no bulk "shares per album" query)
+  to show `Me-Albums.html`'s "shared with 3 people" / "not shared with anyone" line, which the
+  pre-restyle screen didn't render at all.
+- **`Profile-Report.html`'s "send report & block"** copy isn't used verbatim — this build's
+  `submitReport()` only ever inserts into `reports`; there's no combined report+block RPC, and
+  adding a `blockUser()` call here would change behaviour a passing test already pins to
+  "submit only" (`settings-report-screen.test.tsx`). The button reads "Submit report" instead.
+- **`Settings.html`'s "max 1 an hour"** annotation on the "someone new nearby" toggle has nowhere
+  to land inside `/settings/notifications` — `ui/ListRow`'s `helper` slot is replaced, not
+  supplemented, by `right` (needed here for the toggle itself) — folded into the row's own label
+  instead of a second line the component has no slot for.
+- No new packages; `package.json` untouched.
+
+### Tests / typecheck / export
+
+- `npx jest` — 65 suites / 584 tests: 582 pass. The two failures
+  (`email.test.tsx`, `card-screen.test.tsx`) are outside this pass's ownership — `email.test.tsx`
+  passes in isolation with a longer timeout (a parallel-run flake, not a real failure);
+  `card-screen.test.tsx` fails on `Found multiple elements with text: /Ada/` inside
+  `app/profile/[id].tsx`, a file this pass never touches. Every suite under this pass's own
+  ownership (`settings-*`, `albums-*`, `blocks-*`, `reports-*`, `editors-*`) passes.
+- `npx tsc --noEmit` — clean for every file this pass touched.
+- `npx expo export --platform web` — succeeds.
+<!-- END: Me and settings design -->
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Grid and profile design pass, applying docs/design/screens/Grid.html,   -->
+<!-- Grid-Empty.html, Grid-Verify.html, Profile.html, Profile-Details.html,  -->
+<!-- Profile-Message.html and Profile-Report.html to the grid/his/profile    -->
+<!-- slice documented in "Profile card and hi's" above. Please keep further -->
+<!-- additions after this point in their own clearly delimited section.     -->
+<!-- ---------------------------------------------------------------------- -->
+
+<!-- BEGIN: Grid and profile design -->
+## Grid and profile design
+
+Applies the grid/profile/hi's screens to the slice documented in "Profile card and hi's" above.
+Business logic is unchanged — refresh policy, realtime merge, the CTA state machine, `sendHi`/
+`startConversation`/`hiBack`/`dismissHi` — this pass is the restyle, the in-app verify sheet the
+design adds in place of the old direct-to-Persona jump, and the one-message composer sheet
+decision 49's "Message" opener now goes through instead of calling `startConversation` blind.
+
+### Screen → file map
+
+| Design screen | File |
+|---|---|
+| `Grid.html` | `(tabs)/grid.tsx` (header, count line, roam pill), `grid/GridTile.tsx` |
+| `Grid-Empty.html` | `(tabs)/grid.tsx`'s `ListEmptyComponent`, via `ui/EmptyState` |
+| `Grid-Verify.html` | `grid/VerifySheet.tsx`, opened from the "not visible because unverified/id_failed" banner's action instead of jumping straight to `startAndOpenVerification()` |
+| `Profile.html` | `app/profile/[id].tsx` (full-bleed hero), `card/CtaButton.tsx`, `card/ChipList.tsx` |
+| `Profile-Message.html` | `card/MessageSheet.tsx`, opened by the CTA row's message icon when there's no conversation yet |
+| `Profile-Details.html` | `card/DetailsSheet.tsx`, opened from a new "more about {name}" link next to the pronouns/orientation line |
+| `Profile-Report.html` | `card/OverflowMenu.tsx`'s sheet chrome (`ui/Sheet`) only — the reason-picker form itself is `settings/report/[id].tsx`, out of this agent's ownership; see Deviations |
+| *(no mockup)* | `(tabs)/his.tsx` — styled from the grid's own header rhythm and the kit's row/avatar/empty-state vocabulary, not a specific screen |
+
+### Local components (`app/src/grid/`, `app/src/card/`)
+
+- `grid/VerifySheet.tsx` — `Grid-Verify.html`'s sheet: "verify now" (calls
+  `startAndOpenVerification`) and "just look around for now" (dismiss only) — a real dismiss
+  option the old single-button banner never had.
+- `grid/Banner.tsx` — kept as a thin wrapper (same props/testIDs the grid already called it
+  with) now rendering through `ui/Banner` underneath, so the paused/not-visible/location banners
+  pick up the kit's tinted-panel styling without every call site in `grid.tsx` changing.
+- `card/MessageSheet.tsx` — `Profile-Message.html`'s composer. Owns only the draft text and
+  presentation; "send" calls the same `startConversation`-then-navigate flow the screen already
+  had (`ProfileScreen`'s `messageMutation`) — this sheet doesn't call `sendMessage` to also post
+  the draft as the thread's first message (see Deviations).
+- `card/DetailsSheet.tsx` — `Profile-Details.html` trimmed to the fields this app has a data
+  source for (see Deviations).
+- `card/OverflowMenu.tsx` — restyled onto `ui/Sheet`, same Block/Report navigation as before.
+- `card/ChipList.tsx` — gained a `tone: 'solid' | 'translucent'` prop for the design's two chip
+  looks on the hero's dark overlay (goals get the opaque `paper` chip, tags the bordered
+  translucent one); same per-item rendering contract as before, no data reshaping.
+
+### Deviations
+
+- **Grid header bell and roam-pill "change"** are decorative — no notifications feed and no
+  campus-switching feature exist anywhere in this app (`docs/design/system.md`'s screen→route
+  map has no notifications entry; the task brief explicitly says wire `change` to nothing).
+- **The here-now/pause toggles** have no home in `Grid.html` at all (conceptually they belong on
+  `Me.html`), but removing them would drop real, tested behaviour (`here-now-toggle`/
+  `pause-toggle`) the brief requires keeping — kept in the grid header, restyled with the kit's
+  tokens rather than matching a mockup that doesn't show them.
+- **Grid tile / profile-hero verified check** renders unconditionally, not from a per-row
+  field — neither `grid_for_me()` nor `profile_card_for()` return one, because
+  `private.is_grid_visible()` already hard-codes `verification_status = 'verified'` for every
+  row either RPC can return (`supabase/migrations/20260918000002_core_schema.sql`). Every tile
+  and every visible profile is guaranteed verified already.
+- **Roam pill copy**: the design's "Grayslake, IL · CLC" is a town + campus code; this app's
+  `me()` only returns `campus_label`/`campus_slug` (e.g. "College of Lake County" / "clc") — no
+  separate city field exists, so the pill shows the campus label/slug pair instead of a town
+  name that isn't in the schema.
+- **`Profile-Details.html`'s "into" / "safer sex" / "kinks" / "hard nos" groups** aren't
+  rendered — nothing in `api/identity.ts` or `api/profileCard.ts` carries that data, only
+  pronouns/orientation (the `identity` edge function). Not fabricated; `DetailsSheet` shows only
+  the two groups this app actually has, gated exactly like the existing `profile-identity` row
+  (`getIdentity` 404s to `null` whenever `is_public` is off — deviation 1,
+  `docs/design/system.md`).
+- **`Profile-Report.html`'s reason-picker form isn't reproduced** — `settings/report/[id].tsx`
+  (another agent's file) already owns `submitReport()` and its own form; this pass's
+  `OverflowMenu` sheet stays a Block/Report chooser on the way there; `Report` still navigates to
+  `` `/settings/${kind}/${targetId}?context=profile` `` unchanged. Building a second, inert
+  preview of that same form here would duplicate content the other agent is actively styling.
+- **`Profile-Message.html`'s composer doesn't post the draft as the thread's first message** —
+  the brief scopes this sheet's send to the existing `startConversation`-then-navigate flow, and
+  there's no combined "create conversation with an opening message" RPC; `sendMessage()`
+  (`api/messages.ts`) exists but posting through it here would add a second, un-briefed network
+  call this pass doesn't own.
+- **Profile screen no longer scrolls** — `Profile.html`'s hero is a fixed full-bleed card, not a
+  scrolling page; content (name, status line, chips, CTA) is bottom-anchored inside it rather
+  than laid out in a `ScrollView`, matching the mockup. An unusually long status line plus every
+  goal/tag chip could in principle run past the hero's bottom edge on a very small device —
+  accepted as a mockup-fidelity trade-off rather than reintroducing scroll the design doesn't
+  show.
+- **Profile overflow (Block/Report) has no spot in `Profile.html`** — the mockup shows no
+  affordance for it at all. Kept as a circular icon button in the hero's top-right (next to the
+  here-now pill), the same chrome shape the kit already uses for back/overflow buttons
+  elsewhere, rather than dropping access to Block/Report entirely.
+- No new packages; `package.json` untouched.
+
+### Tests / typecheck / export
+
+- `npx jest` — 65 suites / 584 tests: 583 pass. The one failure (`photos-screen.test.tsx`) is
+  outside this pass's ownership (`(onboarding)/photo.tsx`, being edited concurrently). Every
+  suite under this pass's own ownership (`grid-*`, `card-*`, `his-*`) passes, including new
+  coverage for the verify sheet (open-on-action / verify-then-close / dismiss-without-verifying)
+  and the one-message sheet (opens instead of calling `startConversation` directly; send still
+  reaches it; the details-sheet trigger).
+- `npx tsc --noEmit` — clean for every file this pass touched, including the two
+  `StyleSheet.absoluteFillObject` errors the "Chat design" section above flagged in
+  `src/grid/GridTile.tsx` — fixed as part of this pass. Two unrelated pre-existing errors remain
+  in `(onboarding)/location.tsx` and `(onboarding)/photo.tsx`, outside this pass's ownership.
+- `npx expo export --platform web` — succeeds.
+<!-- END: Grid and profile design -->
+
+<!-- BEGIN: Onboarding design -->
+## Onboarding design
+
+Applies `Main.html`, `Onb-Email.html`, `Onb-Code.html`, `Onb-Basics.html`, `Onb-Goal.html`,
+`Onb-Identity.html`, `Onb-Photos.html`, `Onb-Status.html` and `Onb-Location.html` to the
+pre-auth welcome screen, `(auth)/*` and `(onboarding)/*`. No API/RPC behaviour changed except
+where called out under "Deviations" below — every mutation (`setDateOfBirth`, `updateProfile`,
+`setUserGoals`, `setUserTags`, `uploadProfilePhoto`, `putIdentity`, `completeOnboarding`) is
+called exactly as before, just from restyled screens.
+
+### Screen → file map
+
+| Design screen | File |
+|---|---|
+| `Main.html` (welcome) | `(auth)/welcome.tsx` — new route, see below |
+| `Onb-Email.html` | `(auth)/email.tsx` |
+| `Onb-Code.html` | `(auth)/otp.tsx` |
+| `Onb-Basics.html` | `(onboarding)/dob.tsx` + `(onboarding)/name.tsx` (existing split, unchanged) |
+| `Onb-Goal.html` | `(onboarding)/goals.tsx` |
+| `Onb-Identity.html` | `(onboarding)/identity.tsx` — new step |
+| `Onb-Photos.html` | `(onboarding)/photo.tsx` |
+| `Onb-Status.html` | `(onboarding)/tags.tsx` + `(onboarding)/status.tsx` (existing split, unchanged) |
+| `Onb-Location.html` | `(onboarding)/location.tsx` — new step |
+
+`(onboarding)/finish.tsx` has no mockup among the 24 screens (see "Deviations").
+
+### New steps and where they slot
+
+Design order (`docs/design/screens/index.html`'s contact sheet): welcome → email → code →
+basics → here for → about you → photos → status & tags → location. App route order is now:
+
+```
+dob -> name -> goals -> identity -> photo -> tags -> status -> location -> finish
+```
+
+`identity` sits between `goals` and `photo` (design step 4 of 8); `location` sits between
+`status` and `finish` (design step 7 of 8) — both exactly where the design's own screen order
+puts them. Both are optional/skippable and, like the pre-existing `tags`/`status` steps,
+**not** tracked by `resolveOnboardingStep()`/`complete_onboarding()` — the required-step check
+order (`dob` → `first_name` → `goals` → `photo`) is unchanged, so a resume still lands on the
+same required step it always did (`onboarding/stepResolver.ts`'s doc comment covers this).
+
+- **`identity.tsx`** — writes through `identityWrite.ts`'s `PUT /identity` (owner path).
+  `is_public` defaults off (decision 20) and Skip navigates on to `photo` without writing
+  anything (nothing to clear on a first-run onboarding screen). Loads any already-saved
+  identity on mount so navigating back here from `photo.tsx` doesn't show a blank form.
+- **`location.tsx`** — "allow location" calls `src/presence`'s `getPresenceController()
+  .requestPermission()` (the same seam the grid uses later); a denial's `away` tier write
+  already happens inside `presence/controller.ts`. "not now" never prompts, so it writes
+  `away` directly via `setMyTier` (`src/api/presence`), per decision 43.
+
+### Welcome screen
+
+`Main.html` previously had no app route — `docs/design/system.md` said `index.tsx` replaced
+straight to `(auth)/email`. `(auth)/welcome.tsx` is new; `routing/stateToRoute.ts`'s `auth`
+case now resolves to `/(auth)/welcome` instead of `/(auth)/email` (`stateToRoute.test.ts`
+updated to match, plus the root bootstrap screen's own failure fallback in `app/index.tsx`, for
+the same destination). `welcome.tsx`'s CTA `push`es on to `(auth)/email` (not `replace`), so
+`email.tsx`'s new back button has somewhere to go.
+
+### Back navigation
+
+Every `Onb-*` screen's back arrow is wired to an explicit `router.replace(<previous step's
+path>)` — the same convention `photo.tsx` already used for its own back button before this
+pass, extended to every other step rather than switching to `router.back()` (every onboarding
+transition is `replace`-based, so there is no real navigation stack to pop). `dob.tsx` is the
+one exception: it renders no back button at all, since it's the flow's true entry point and
+`onboarding/index.tsx` always `replace`s straight to it — there is nothing before it to return
+to (unchanged from before this pass).
+
+### Local components (`app/src/onboarding/components/`)
+
+The kit (`ui/*`) had no primitive for two shapes every `Onb-*`/auth screen needs, so these were
+added locally per the task brief:
+
+- `OnboardingScreen.tsx` — the `padding: 56px 16px 0 16px` frame, `KeyboardAvoidingView` +
+  scrollable body, and the bottom-pinned action area (`margin-top: auto`) every screen shares.
+- `OnboardingHeader.tsx` — the back-circle + 8-segment step-progress bar + right-spacer row.
+  Documents the step-numbering scheme (step counts are transcribed from the 24 screens' own bar
+  fill, not invented — `Onb-Email`/`Onb-Code` both render 1 of 8, not incrementing between them).
+- `Toggle.tsx` — the 44×26 pill switch (`Onb-Identity.html`'s "show these on my profile"); `ui/*`
+  has no switch primitive at all. Worth promoting if a second screen needs one.
+
+### Deviations
+
+- **`otp.tsx` narrows to a fixed 6-digit box grid** (the design's own shape) — the previous
+  screen accepted a free-form 6-10 digit code (Supabase's OTP length is a per-project setting).
+  Flagged in-code; `verifyOtp` itself is untouched.
+- **`name.tsx` keeps grad year as a free-text field** rather than the design's 5-chip picker —
+  the app validates a much wider range (`GRAD_YEAR_MIN`/`MAX`, current year ±10) than 5 discrete
+  chips could express.
+- **`identity.tsx` uses `settings/vocab.ts`'s real pronoun/orientation allow-lists**, not the
+  design's exact chip wording — that file is a checked copy of the identity edge function's own
+  validation list (kept in sync by a dedicated test), and the design's chip set doesn't match it.
+- **`location.tsx` uses the design's own explainer copy** (per the task brief) rather than
+  `src/presence/index.ts`'s shared `LOCATION_PERMISSION_EXPLAINER` constant.
+- **`photo.tsx`'s extra two grid slots are inert placeholders** — this screen only ever writes
+  position 0 (existing scope); wiring positions 1-2 would be a scope change, not a restyle.
+- **`finish.tsx` has no design mockup** among the 24 screens (the 8-segment bar never renders
+  its 8th segment filled anywhere) — restyled with the same tokens/components, not a
+  transcription; flagged rather than left unstyled.
+- **`welcome.tsx`'s floating-avatar illustration** is a simplified, proportionally-positioned
+  layout (four tinted tiles + three caption pills), not a pixel port of the mock's decorative
+  SVG squiggle/dots — those are purely ornamental.
+- No new packages; `package.json` untouched (`react-native-svg` was already installed).
+
+### Tests / typecheck / export
+
+- `npx jest` — 68 suites / 593 tests, all pass. Updated existing coverage
+  (`goals.test.tsx`, `photos-screen.test.tsx`'s back-target assertions, `stateToRoute.test.ts`)
+  for the new step order/welcome route, plus new coverage for `identity.tsx`, `location.tsx`
+  and `welcome.tsx`.
+- `npx tsc --noEmit` — clean.
+- `npx expo export --platform web` — succeeds.
+<!-- END: Onboarding design -->

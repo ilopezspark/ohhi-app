@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import { MoreIcon, Sheet, Text } from '../ui';
+import { colors, radii, shadows, spacing } from '../theme/tokens';
 
 export interface OverflowMenuProps {
   targetId: string;
@@ -15,6 +17,13 @@ export interface OverflowMenuProps {
  * (cast `as never` like every other not-yet-typed route in this app, e.g.
  * `(tabs)/grid.tsx`'s `/profile/${userId}`), so this doesn't depend on how
  * the other agent's screen destructures its params.
+ *
+ * Visually this is the design's `Sheet` chrome (`ui/Sheet.tsx`) rather than
+ * `Profile-Report.html`'s own reason-picker content — that form (radio
+ * reasons, "anything else" field, "send report & block") lives in
+ * `settings/report/[id].tsx`, out of this agent's ownership, and is that
+ * screen's job to style. What this menu owns is only the "block or report"
+ * choice on the way there, which never had a dedicated mockup of its own.
  */
 export function OverflowMenu({ targetId, testID }: OverflowMenuProps) {
   const [open, setOpen] = useState(false);
@@ -31,32 +40,37 @@ export function OverflowMenu({ targetId, testID }: OverflowMenuProps) {
         accessibilityRole="button"
         accessibilityLabel="More options"
         onPress={() => setOpen(true)}
-        style={styles.trigger}
+        style={[styles.trigger, shadows.sm]}
       >
-        <Text style={styles.triggerText}>{'⋯'}</Text>
+        <MoreIcon size={18} color={colors.ink} />
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.backdrop} testID="profile-overflow-backdrop" onPress={() => setOpen(false)}>
-          <View style={styles.sheet}>
-            <Pressable testID="profile-overflow-block" style={styles.item} onPress={() => goTo('block')}>
-              <Text style={styles.itemText}>Block</Text>
-            </Pressable>
-            <Pressable testID="profile-overflow-report" style={styles.item} onPress={() => goTo('report')}>
-              <Text style={styles.itemText}>Report</Text>
-            </Pressable>
-          </View>
-        </Pressable>
+        <Sheet testID="profile-overflow-sheet" onDismiss={() => setOpen(false)}>
+          <Pressable testID="profile-overflow-block" style={styles.item} onPress={() => goTo('block')}>
+            <Text variant="rowLabel" color={colors.danger}>
+              Block
+            </Text>
+          </Pressable>
+          <Pressable testID="profile-overflow-report" style={styles.item} onPress={() => goTo('report')}>
+            <Text variant="rowLabel" color={colors.danger}>
+              Report
+            </Text>
+          </Pressable>
+        </Sheet>
       </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  trigger: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  triggerText: { fontSize: 20, color: '#333', fontWeight: '700' },
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingVertical: 8 },
-  item: { paddingHorizontal: 20, paddingVertical: 16 },
-  itemText: { fontSize: 16, color: '#B00020', fontWeight: '600' },
+  trigger: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.circle,
+    backgroundColor: 'rgba(247,243,236,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  item: { paddingVertical: spacing.lg },
 });

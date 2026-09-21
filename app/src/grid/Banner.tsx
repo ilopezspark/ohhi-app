@@ -1,4 +1,4 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Banner as KitBanner, type BannerTone as KitBannerTone } from '../ui';
 
 export interface BannerProps {
   message: string;
@@ -10,60 +10,31 @@ export interface BannerProps {
   actionTestID?: string;
 }
 
+const TONE_MAP: Record<'info' | 'warning', KitBannerTone> = {
+  info: 'tint',
+  warning: 'warning',
+};
+
 /**
- * The one banner shape used for all of §3's persistent grid banners: the
- * paused banner, the "you're not visible because…" banner (§3.1) and the
- * verification prompt (§5). One component so the copy is the only thing that
- * varies between them — and so no banner can accidentally grow a "why" that
- * decision 24 doesn't allow.
+ * The grid's persistent banners (paused, "you're not visible because…",
+ * location pre-prompt, §3/§3.1/§5) — same props/testIDs this screen has
+ * always used, now rendered through the design kit's `ui/Banner` (the tinted
+ * info-panel pattern, `docs/design/system.md`'s component inventory) instead
+ * of this file's own ad hoc styling. Kept as a thin wrapper, rather than
+ * inlining `ui/Banner` at each call site in `(tabs)/grid.tsx`, so the
+ * `tone="info"|"warning"` vocabulary this screen already uses doesn't have to
+ * change everywhere `<Banner .../>` is used.
  */
-export function Banner({
-  message,
-  actionLabel,
-  onAction,
-  busy = false,
-  tone = 'info',
-  testID,
-  actionTestID,
-}: BannerProps) {
+export function Banner({ message, actionLabel, onAction, busy = false, tone = 'info', testID, actionTestID }: BannerProps) {
   return (
-    <View
+    <KitBanner
       testID={testID}
-      accessibilityRole="alert"
-      style={[styles.banner, tone === 'warning' ? styles.warning : styles.info]}
-    >
-      <Text style={styles.message}>{message}</Text>
-      {actionLabel && onAction ? (
-        <Pressable
-          testID={actionTestID}
-          accessibilityRole="button"
-          disabled={busy}
-          onPress={onAction}
-          style={[styles.action, busy && styles.actionDisabled]}
-        >
-          {busy ? <ActivityIndicator size="small" /> : <Text style={styles.actionText}>{actionLabel}</Text>}
-        </Pressable>
-      ) : null}
-    </View>
+      actionTestID={actionTestID}
+      tone={TONE_MAP[tone]}
+      message={message}
+      actionLabel={actionLabel ?? undefined}
+      onAction={onAction}
+      busy={busy}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginHorizontal: 12,
-    marginTop: 8,
-  },
-  info: { backgroundColor: '#EAF3FD' },
-  warning: { backgroundColor: '#FDF1E7' },
-  message: { flex: 1, fontSize: 13, color: '#20303F' },
-  action: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#208AEF' },
-  actionDisabled: { opacity: 0.6 },
-  actionText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-});

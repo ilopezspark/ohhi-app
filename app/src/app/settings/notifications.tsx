@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import {
   getOrCreateNotificationPrefs,
@@ -7,6 +8,9 @@ import {
   type NotificationPrefsRow,
 } from '../../api/notificationPrefs';
 import { mapSupabaseError } from '../../api/errors';
+import { Header, ListRow, Text } from '../../ui';
+import { Toggle } from '../../settings/components/Toggle';
+import { colors, spacing } from '../../theme/tokens';
 
 type ToggleKey = 'hi_received' | 'hi_back' | 'new_message' | 'someone_new_nearby';
 
@@ -14,15 +18,21 @@ const TOGGLES: { key: ToggleKey; label: string }[] = [
   { key: 'hi_received', label: 'Someone says hi to you' },
   { key: 'hi_back', label: 'Someone hi’s you back' },
   { key: 'new_message', label: 'New messages' },
-  { key: 'someone_new_nearby', label: 'Someone new nearby' },
+  // `Settings.html`'s "max 1 an hour" note has nowhere to land: `ListRow`'s
+  // `helper` slot is replaced (not appended) by `right`, and this row needs
+  // `right` for the toggle itself — folded into the label instead of a
+  // second line the component has no slot for.
+  { key: 'someone_new_nearby', label: 'Someone new nearby (max 1/hr)' },
 ];
 
 /**
- * `/settings/notifications` (plan §7). No row exists on signup — this
- * screen upserts the table-default row on first visit
- * (`getOrCreateNotificationPrefs`), then plain updates thereafter.
- * Verification and new-campus notifications have no column and so no
- * toggle here (they cannot be disabled).
+ * `/settings/notifications` — the notifications row from `Settings.html`
+ * (its own "someone new nearby" row is folded in here as one of these
+ * toggles rather than duplicated as a second row on `/settings/menu`, see
+ * that file's doc comment). No row exists on signup — this screen upserts
+ * the table-default row on first visit (`getOrCreateNotificationPrefs`),
+ * then plain updates thereafter. Verification and new-campus notifications
+ * have no column and so no toggle here (they cannot be disabled).
  */
 export default function NotificationPrefsScreen() {
   const [prefs, setPrefs] = useState<NotificationPrefsRow | null>(null);
@@ -71,45 +81,45 @@ export default function NotificationPrefsScreen() {
   if (!prefs) {
     return (
       <View style={styles.center} testID="notifications-error">
-        <Text style={styles.error}>{loadError}</Text>
+        <Text variant="body" color={colors.danger}>
+          {loadError}
+        </Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container} testID="notifications-screen">
-      <Text style={styles.title}>Notifications</Text>
-      {TOGGLES.map(({ key, label }) => (
-        <View key={key} style={styles.row}>
-          <Text style={styles.label}>{label}</Text>
-          <Switch testID={`notifications-${key}`} value={prefs[key]} onValueChange={(value) => toggle(key, value)} />
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.container} testID="notifications-screen">
+        <Header title="notifications" titleSize={28} onBack={() => router.back()} />
+        <View>
+          {TOGGLES.map(({ key, label }, i) => (
+            <ListRow
+              key={key}
+              title={label}
+              last={i === TOGGLES.length - 1}
+              right={
+                <Toggle
+                  testID={`notifications-${key}`}
+                  value={prefs[key]}
+                  onValueChange={(value) => toggle(key, value)}
+                />
+              }
+            />
+          ))}
         </View>
-      ))}
-      {saveError ? (
-        <Text style={styles.error} testID="notifications-save-error">
-          {saveError}
-        </Text>
-      ) : null}
-      <Text testID="notifications-back" style={styles.back} onPress={() => router.back()}>
-        Back
-      </Text>
-    </View>
+        {saveError ? (
+          <Text variant="helper" color={colors.danger} testID="notifications-save-error">
+            {saveError}
+          </Text>
+        ) : null}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, gap: 4 },
+  safe: { flex: 1, backgroundColor: colors.paper },
+  container: { flex: 1, paddingHorizontal: spacing.lgXl, gap: spacing.xl },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 20, fontWeight: '700', marginBottom: 10 },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e2e2e2',
-  },
-  label: { fontSize: 15, color: '#222', flex: 1, paddingRight: 12 },
-  error: { color: '#B00020', fontSize: 13, marginTop: 8 },
-  back: { textAlign: 'center', color: '#555', fontSize: 14, marginTop: 16 },
 });

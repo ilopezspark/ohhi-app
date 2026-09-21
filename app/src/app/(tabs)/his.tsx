@@ -1,11 +1,12 @@
 import { useCallback } from 'react';
-import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { dismissHi, hiBack, listReceivedHis, type ReceivedHi } from '../../api/his';
 import { signedPhotoUrls } from '../../api/photos';
-import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { tintForPhoto } from '../../photos/tint';
+import { Avatar, EmptyState, HisIcon, Text } from '../../ui';
+import { colors, hairline, radii, shadows, spacing } from '../../theme/tokens';
 
 const QUERY_KEY = ['his_received'];
 
@@ -13,6 +14,12 @@ const QUERY_KEY = ['his_received'];
  * The Hi's tab (decision 15, `docs/app-social-plan.md` §2): a minimal list of
  * received hi's with hi-back and dismiss. No realtime in v1 — refetch on
  * focus and pull-to-refresh only.
+ *
+ * `docs/design/system.md` has no dedicated mockup for this screen — styled
+ * here to match the grid's own header rhythm (56px top inset, `headline`
+ * title) and row/list patterns from the design kit (`ui/Avatar`, `ui/Text`,
+ * `ui/EmptyState`) plus the tab-bar's own "hi's" glyph (`ui/icons`'s
+ * `HisIcon`), rather than any specific screen mockup.
  */
 export default function HisScreen() {
   const queryClient = useQueryClient();
@@ -71,7 +78,7 @@ export default function HisScreen() {
   if (isPending) {
     return (
       <View style={styles.center} testID="his-loading">
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={colors.ink} />
       </View>
     );
   }
@@ -79,7 +86,7 @@ export default function HisScreen() {
   if (isError) {
     return (
       <View style={styles.center} testID="his-error">
-        <Text>Something went wrong. Pull to refresh to try again.</Text>
+        <Text variant="body">Something went wrong. Pull to refresh to try again.</Text>
       </View>
     );
   }
@@ -94,12 +101,22 @@ export default function HisScreen() {
       refreshing={isRefetching}
       onRefresh={() => void refetch()}
       contentContainerStyle={styles.list}
+      ListHeaderComponent={
+        <Text variant="headline" style={styles.header}>
+          hi&apos;s
+        </Text>
+      }
       ListEmptyComponent={
-        <View style={styles.emptyBox}>
-          <Text style={styles.empty} testID="his-empty">
-            No hi&apos;s yet &mdash; they&apos;ll show up here.
-          </Text>
-        </View>
+        <EmptyState
+          testID="his-empty"
+          title="no hi's yet"
+          message="they'll show up here."
+          icon={
+            <View style={styles.emptyIcon}>
+              <HisIcon size={36} color={colors.subtle} />
+            </View>
+          }
+        />
       }
       renderItem={({ item }) => {
         const url = item.photoPath ? photoUrls?.[item.photoPath] : undefined;
@@ -107,14 +124,9 @@ export default function HisScreen() {
           <View style={styles.row} testID={`his-row-${item.id}`}>
             <Pressable
               testID={`his-row-photo-${item.id}`}
-              style={styles.photoFrame}
               onPress={() => router.push(`/profile/${item.fromUserId}` as never)}
             >
-              {url ? (
-                <Image testID={`his-row-image-${item.id}`} source={{ uri: url }} style={styles.photo} />
-              ) : (
-                <TintedPlaceholder tint={tintForPhoto(item.fromUserId, 0)} />
-              )}
+              <Avatar uri={url} tint={tintForPhoto(item.fromUserId, 0)} size="md" />
             </Pressable>
 
             <Pressable
@@ -122,7 +134,7 @@ export default function HisScreen() {
               testID={`his-row-name-${item.id}`}
               onPress={() => router.push(`/profile/${item.fromUserId}` as never)}
             >
-              <Text style={styles.nameText} numberOfLines={1}>
+              <Text variant="rowLabel" numberOfLines={1}>
                 {item.firstName ?? 'Someone'}
               </Text>
             </Pressable>
@@ -132,18 +144,22 @@ export default function HisScreen() {
                 testID={`his-row-hiback-${item.id}`}
                 accessibilityRole="button"
                 disabled={hiBackMutation.isPending}
-                style={styles.hiBackButton}
+                style={[styles.hiBackButton, hiBackMutation.isPending && styles.disabled]}
                 onPress={() => hiBackMutation.mutate(item.id)}
               >
-                <Text style={styles.hiBackText}>Hi back</Text>
+                <Text variant="caption" color={colors.onDark}>
+                  Hi back
+                </Text>
               </Pressable>
               <Pressable
                 testID={`his-row-dismiss-${item.id}`}
                 accessibilityRole="button"
-                style={styles.dismissButton}
+                style={[styles.dismissButton, shadows.sm]}
                 onPress={() => dismissMutation.mutate(item.id)}
               >
-                <Text style={styles.dismissText}>Dismiss</Text>
+                <Text variant="caption" color={colors.muted}>
+                  Dismiss
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -154,30 +170,40 @@ export default function HisScreen() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  list: { paddingVertical: 8 },
-  emptyBox: { paddingTop: 64, paddingHorizontal: 24 },
-  empty: { color: '#555', textAlign: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.paper },
+  list: { paddingBottom: spacing.xxl, backgroundColor: colors.paper, flexGrow: 1 },
+  header: { fontSize: 32, paddingTop: spacing.xxl, paddingHorizontal: spacing.lgXl, marginBottom: spacing.smMd },
+  emptyIcon: {
+    width: 96,
+    height: 96,
+    borderRadius: radii.circle,
+    backgroundColor: colors.tint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.85,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 10,
+    paddingHorizontal: spacing.lgXl,
+    paddingVertical: spacing.lg,
+    gap: spacing.mdLg,
+    borderBottomWidth: hairline.width,
+    borderBottomColor: hairline.color,
   },
-  photoFrame: { width: 48, height: 48, borderRadius: 24, overflow: 'hidden', backgroundColor: '#eee' },
-  photo: { width: '100%', height: '100%' },
   nameButton: { flex: 1 },
-  nameText: { fontSize: 15, fontWeight: '600' },
-  actions: { flexDirection: 'row', gap: 8 },
-  hiBackButton: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: '#208AEF' },
-  hiBackText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  dismissButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#D5D8DD',
+  actions: { flexDirection: 'row', gap: spacing.smMd },
+  hiBackButton: {
+    paddingHorizontal: spacing.mdLg,
+    paddingVertical: spacing.smMd,
+    borderRadius: radii.pill,
+    backgroundColor: colors.signal,
   },
-  dismissText: { color: '#666', fontSize: 13 },
+  dismissButton: {
+    paddingHorizontal: spacing.mdLg,
+    paddingVertical: spacing.smMd,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+  },
+  disabled: { opacity: 0.6 },
 });

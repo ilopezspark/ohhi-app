@@ -29,7 +29,7 @@ describe('routeForMe', () => {
 
 describe('routeResultToHref', () => {
   it('maps auth/onboarding/grid to their static paths', () => {
-    expect(routeResultToHref({ screen: 'auth' })).toEqual({ pathname: '/(auth)/email' });
+    expect(routeResultToHref({ screen: 'auth' })).toEqual({ pathname: '/(auth)/welcome' });
     expect(routeResultToHref({ screen: 'onboarding' })).toEqual({ pathname: '/(onboarding)' });
     expect(routeResultToHref({ screen: 'grid' })).toEqual({ pathname: '/(tabs)/grid' });
   });

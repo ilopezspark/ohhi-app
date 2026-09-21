@@ -21,6 +21,9 @@ jest.mock('../api/chatMedia', () => ({
   uploadChatMedia: jest.fn(),
 }));
 jest.mock('../api/me', () => ({ me: jest.fn() }));
+jest.mock('../api/photos', () => ({ signedPhotoUrls: jest.fn() }));
+jest.mock('../api/albums', () => ({ listMyAlbums: jest.fn(), getAlbum: jest.fn() }));
+jest.mock('../api/shares', () => ({ shareAlbum: jest.fn(), sharePrivateCard: jest.fn() }));
 jest.mock('expo-image-picker', () => ({
   requestMediaLibraryPermissionsAsync: jest.fn(),
   launchImageLibraryAsync: jest.fn(),
@@ -39,6 +42,9 @@ import { getConversation } from '../api/conversations';
 import { listMessages, markRead, sendMessage } from '../api/messages';
 import { signedChatMediaUrls, uploadChatMedia } from '../api/chatMedia';
 import { me } from '../api/me';
+import { signedPhotoUrls } from '../api/photos';
+import { listMyAlbums } from '../api/albums';
+import { shareAlbum, sharePrivateCard } from '../api/shares';
 import ChatThreadScreen from '../app/chat/[id]';
 
 const conversation = (overrides: Record<string, unknown> = {}) => ({
@@ -84,7 +90,15 @@ beforeEach(() => {
   (markRead as jest.Mock).mockResolvedValue(undefined);
   (sendMessage as jest.Mock).mockResolvedValue(message({ id: 'sent' }));
   (signedChatMediaUrls as jest.Mock).mockResolvedValue({});
+  (signedPhotoUrls as jest.Mock).mockResolvedValue({});
+  (listMyAlbums as jest.Mock).mockResolvedValue([]);
 });
+
+/** Opens the share tray (the plus button) and taps "a photo" — the flow `Chat-Share.html` puts the picker behind. */
+async function openPhotoShare(screen: Awaited<ReturnType<typeof renderScreen>>) {
+  await fireEvent.press(await screen.findByTestId('composer-attach'));
+  await fireEvent.press(await screen.findByTestId('share-sheet-photo'));
+}
 
 describe('thread — composer gating', () => {
   it('is open for both sides in an open thread, with media attach', async () => {
@@ -256,7 +270,7 @@ describe('thread — media, reads, realtime and navigation', () => {
     (uploadChatMedia as jest.Mock).mockResolvedValue(`${CONV}/mid.jpg`);
 
     const screen = await renderScreen();
-    await fireEvent.press(await screen.findByTestId('composer-attach'));
+    await openPhotoShare(screen);
 
     await waitFor(() => expect(sendMessage).toHaveBeenCalled());
     const uploadArgs = (uploadChatMedia as jest.Mock).mock.calls[0]![0];
@@ -278,7 +292,7 @@ describe('thread — media, reads, realtime and navigation', () => {
     (uploadChatMedia as jest.Mock).mockRejectedValue(new Error('refused'));
 
     const screen = await renderScreen();
-    await fireEvent.press(await screen.findByTestId('composer-attach'));
+    await openPhotoShare(screen);
 
     await waitFor(() => expect(screen.getAllByTestId(/^message-retry-/).length).toBe(1));
     expect(sendMessage).not.toHaveBeenCalled();
@@ -291,7 +305,7 @@ describe('thread — media, reads, realtime and navigation', () => {
     (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({ canceled: true });
 
     const screen = await renderScreen();
-    await fireEvent.press(await screen.findByTestId('composer-attach'));
+    await openPhotoShare(screen);
     await waitFor(() => expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalled());
     expect(uploadChatMedia).not.toHaveBeenCalled();
     expect(sendMessage).not.toHaveBeenCalled();
@@ -361,5 +375,77 @@ describe('thread — media, reads, realtime and navigation', () => {
   it('renders the thread inverted', async () => {
     const screen = await renderScreen();
     expect((await screen.findByTestId('thread-list')).props.inverted).toBe(true);
+  });
+});
+
+describe('thread — share sheet', () => {
+  it('offers a photo, an album, and the private card when the thread is open', async () => {
+    const screen = await renderScreen();
+    await fireEvent.press(await screen.findByTestId('composer-attach'));
+
+    expect(await screen.findByTestId('share-sheet-photo')).toBeTruthy();
+    expect(screen.getByTestId('share-sheet-album')).toBeTruthy();
+    expect(screen.getByTestId('share-sheet-card')).toBeTruthy();
+  });
+
+  it('shares an album with the other participant and closes the tray', async () => {
+    (listMyAlbums as jest.Mock).mockResolvedValue([
+      { id: 'album-1', owner_id: ME, name: 'more of me', photo_count: 3, created_at: '2026-09-20T09:00:00.000Z' },
+    ]);
+    (shareAlbum as jest.Mock).mockResolvedValue({
+      id: 'share-1',
+      owner_id: ME,
+      viewer_id: THEM,
+      subject_type: 'album',
+      subject_id: 'album-1',
+      created_at: '2026-09-20T12:00:00.000Z',
+      revoked_at: null,
+    });
+
+    const screen = await renderScreen();
+    await fireEvent.press(await screen.findByTestId('composer-attach'));
+    await fireEvent.press(await screen.findByTestId('share-sheet-album'));
+    await fireEvent.press(await screen.findByTestId('share-sheet-album-album-1'));
+
+    await waitFor(() => expect(shareAlbum).toHaveBeenCalledWith('album-1', THEM));
+    await waitFor(() => expect(screen.queryByTestId('share-sheet')).toBeNull());
+  });
+
+  it('shares the private card with the other participant', async () => {
+    (sharePrivateCard as jest.Mock).mockResolvedValue({
+      id: 'share-2',
+      owner_id: ME,
+      viewer_id: THEM,
+      subject_type: 'private_card',
+      subject_id: ME,
+      created_at: '2026-09-20T12:00:00.000Z',
+      revoked_at: null,
+    });
+
+    const screen = await renderScreen();
+    await fireEvent.press(await screen.findByTestId('composer-attach'));
+    await fireEvent.press(await screen.findByTestId('share-sheet-card'));
+
+    await waitFor(() => expect(sharePrivateCard).toHaveBeenCalledWith(THEM));
+  });
+
+  it('disables album and private-card sharing with neutral copy outside an open thread — never a reason', async () => {
+    (getConversation as jest.Mock).mockResolvedValue(
+      conversation({ state: 'closed_block', blockedBy: THEM })
+    );
+
+    const screen = await renderScreen();
+    await fireEvent.press(await screen.findByTestId('composer-attach'));
+
+    const albumRow = await screen.findByTestId('share-sheet-album');
+    expect(albumRow.props.accessibilityState?.disabled).toBe(true);
+    const cardRow = screen.getByTestId('share-sheet-card');
+    expect(cardRow.props.accessibilityState?.disabled).toBe(true);
+
+    await fireEvent.press(albumRow);
+    expect(shareAlbum).not.toHaveBeenCalled();
+    for (const word of ['block', 'expired', 'deleted']) {
+      expect(screen.queryByText(new RegExp(word, 'i'))).toBeNull();
+    }
   });
 });

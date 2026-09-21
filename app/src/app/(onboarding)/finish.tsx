@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { completeOnboarding, getDateOfBirth } from '../../api/onboarding';
@@ -8,10 +7,21 @@ import { me } from '../../api/me';
 import { mapSupabaseError } from '../../api/errors';
 import { routeForMe, routeResultToHref } from '../../routing/stateToRoute';
 import { resolveOnboardingStep, stepToPath } from '../../onboarding/stepResolver';
+import { Button, Text } from '../../ui';
+import { colors, spacing } from '../../theme/tokens';
+import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
 
 /**
- * Review/finish step (onboarding-grid plan §1.4). Calls
- * `complete_onboarding()` and handles its three outcomes:
+ * Review/finish step (onboarding-grid plan §1.4). No `docs/design/screens/`
+ * mockup exists for this screen — none of the 24 screens show a review/
+ * finish state, and the design's own 8-segment progress bar never renders
+ * its 8th segment filled anywhere (`Onb-Location.html` tops out at 7 of 8).
+ * Restyled with the same tokens/components as the rest of the flow (no
+ * `OnboardingHeader` step bar, since there's no 8th-step mockup to match)
+ * rather than left unstyled, but the layout/copy here is this pass's own
+ * choice, not a transcription — flagged in the report.
+ *
+ * Calls `complete_onboarding()` and handles its three outcomes:
  *  - `'active'`: re-runs `me()` and routes via the existing `stateToRoute`
  *    mapping (lands on the grid).
  *  - `'closed_age'`: terminal, routes to the shared restricted screen.
@@ -40,7 +50,7 @@ export default function FinishScreen() {
       // complete_onboarding() only ever returns active/closed_age on
       // success; anything else here is unexpected — fall back to
       // re-resolving the right step rather than leaving the user stuck.
-      setErrorMessage("Something went wrong. Please try again.");
+      setErrorMessage('Something went wrong. Please try again.');
       await recoverToUnmetStep();
     },
     onError: async (error: unknown) => {
@@ -68,47 +78,30 @@ export default function FinishScreen() {
   }
 
   return (
-    <View style={styles.container} testID="finish-screen">
-      <Text style={styles.title}>Ready to go</Text>
+    <OnboardingScreen
+      testID="finish-screen"
+      footer={
+        recoveryPath ? (
+          <Button label="Go back and fix it" onPress={() => router.replace(recoveryPath as never)} testID="finish-recover" />
+        ) : (
+          <Button
+            label="Finish"
+            onPress={handleSubmit}
+            loading={mutation.isPending}
+            disabled={mutation.isPending}
+            testID="finish-submit"
+          />
+        )
+      }
+    >
+      <Text variant="headline" style={{ marginTop: spacing.huge }}>
+        ready to go
+      </Text>
       {errorMessage ? (
-        <Text testID="finish-error" style={styles.error}>
+        <Text testID="finish-error" variant="helper" color={colors.danger}>
           {errorMessage}
         </Text>
       ) : null}
-      {recoveryPath ? (
-        <Pressable
-          testID="finish-recover"
-          style={styles.button}
-          onPress={() => router.replace(recoveryPath as never)}
-        >
-          <Text style={styles.buttonText}>Go back and fix it</Text>
-        </Pressable>
-      ) : (
-        <Pressable
-          testID="finish-submit"
-          style={[styles.button, mutation.isPending && styles.buttonDisabled]}
-          disabled={mutation.isPending}
-          accessibilityState={{ disabled: mutation.isPending }}
-          onPress={handleSubmit}
-        >
-          {mutation.isPending ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Finish</Text>}
-        </Pressable>
-      )}
-    </View>
+    </OnboardingScreen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center', gap: 12 },
-  title: { fontSize: 20, fontWeight: '600', marginBottom: 8 },
-  error: { color: '#b00020', fontSize: 13 },
-  button: {
-    marginTop: 8,
-    backgroundColor: '#208AEF',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: { backgroundColor: '#a9c9e8' },
-  buttonText: { color: '#fff', fontWeight: '600' },
-});

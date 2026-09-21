@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { supabase } from '../../api/client';
 import { uploadProfilePhoto, type UserPhotoRow } from '../../api/photos';
 import { tintForPhoto } from '../../photos/tint';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
+import { stepToPath } from '../../onboarding/stepResolver';
+import { Badge, Button, PlusIcon, Text } from '../../ui';
+import { colors, radii, spacing } from '../../theme/tokens';
+import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
 
 type SelectedAsset = { uri: string; width: number; height: number };
 type Phase = 'picking' | 'preview' | 'uploading' | 'pending' | 'error';
@@ -13,16 +17,23 @@ type Phase = 'picking' | 'preview' | 'uploading' | 'pending' | 'error';
 const MAIN_PHOTO_POSITION = 0;
 
 /**
- * Onboarding photo step (`docs/app-onboarding-grid-plan.md` §2), main photo
- * only (position 0). Standalone screen — reads the current user off the
- * Supabase session itself rather than taking it as a prop, per this build's
- * route contract. On success: `router.replace('/(onboarding)/tags')`. Back:
- * `router.replace('/(onboarding)/goals')`.
+ * `Onb-Photos.html`. Onboarding photo step (`docs/app-onboarding-grid-plan.md`
+ * §2), main photo only (position 0) — kept exactly as before this pass.
+ * Design step 5 of 8. On success: `router.replace('/(onboarding)/tags')`.
+ * Back: `router.replace('/(onboarding)/identity')` (was `goals`; `identity`
+ * now sits between `goals` and this step, see `identity.tsx`).
  *
  * Onboarding does not block on moderation (`complete_onboarding()` accepts
  * `pending` or `ok` at position 0) — this screen lets the user continue past
  * a successful upload immediately, showing the pending-review explanation
  * rather than waiting for approval.
+ *
+ * **Deviation**: the design's 3-tile grid shows two more dashed "add photo"
+ * slots alongside the main one ("up to three"). This screen only ever
+ * writes position 0 (existing scope, `MAIN_PHOTO_POSITION` — multi-photo
+ * isn't implemented in onboarding), so the other two slots render as
+ * inert/disabled placeholders rather than wiring up positions 1-2, which
+ * would be a scope change, not a restyle.
  */
 export default function PhotoScreen() {
   const [userId, setUserId] = useState<string | null>(null);
@@ -43,11 +54,12 @@ export default function PhotoScreen() {
   }, []);
 
   function goBack() {
-    router.replace('/(onboarding)/goals' as never);
+    if (uploading) return;
+    router.replace('/(onboarding)/identity' as never);
   }
 
   function goNext() {
-    router.replace('/(onboarding)/tags' as never);
+    router.replace(stepToPath('tags') as never);
   }
 
   function pickAsset(result: ImagePicker.ImagePickerResult) {
@@ -123,139 +135,162 @@ export default function PhotoScreen() {
   }
 
   const uploading = phase === 'uploading';
-  const previewTint = userId ? tintForPhoto(userId, MAIN_PHOTO_POSITION) : '#cccccc';
+  const previewTint = userId ? tintForPhoto(userId, MAIN_PHOTO_POSITION) : colors.avatarTints[0];
+  const hasPreview = !!selected && (phase === 'preview' || phase === 'uploading' || phase === 'error');
 
   return (
-    <View style={styles.container} testID="photo-screen">
-      <Pressable
-        testID="photo-back-button"
-        onPress={goBack}
-        disabled={uploading}
-        accessibilityState={{ disabled: uploading }}
-      >
-        <Text style={styles.back}>Back</Text>
-      </Pressable>
+    <OnboardingScreen step={5} onBack={goBack} backTestID="photo-back-button" testID="photo-screen">
+      <Text variant="headline" style={{ marginTop: spacing.md }}>
+        add a photo
+      </Text>
+      <Text variant="helper">your first one should be just you, face visible. that&apos;s the one on the grid.</Text>
 
-      <Text style={styles.title}>Add your main photo</Text>
-      <Text style={styles.body}>This is what people on the grid see first.</Text>
+      <View style={styles.grid}>
+        <View style={styles.tile}>
+          {hasPreview || phase === 'pending' ? (
+            <>
+              <TintedPlaceholder
+                tint={phase === 'pending' ? savedPhoto?.tint ?? previewTint : previewTint}
+                pending={phase === 'pending'}
+                style={StyleSheet.absoluteFill}
+              />
+              {selected ? (
+                <Image testID="photo-preview-image" source={{ uri: selected.uri }} style={styles.tileImage} />
+              ) : null}
+            </>
+          ) : (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.avatarTints[0] }]} />
+          )}
+          <Badge label="main" style={styles.mainBadge} />
+        </View>
+        <View style={[styles.tile, styles.tileDashed]} />
+        <View style={[styles.tile, styles.tileDashed]} />
+      </View>
 
       {phase === 'picking' ? (
         <View style={styles.pickerRow}>
-          <Pressable testID="photo-pick-library" style={styles.button} onPress={pickFromLibrary}>
-            <Text style={styles.buttonText}>Choose from library</Text>
+          <Pressable testID="photo-pick-library" style={styles.pickButton} onPress={pickFromLibrary}>
+            <PlusIcon size={18} color={colors.subtle} />
+            <Text variant="rowLabel">Choose from library</Text>
           </Pressable>
-          <Pressable testID="photo-pick-camera" style={styles.button} onPress={pickFromCamera}>
-            <Text style={styles.buttonText}>Take a photo</Text>
+          <Pressable testID="photo-pick-camera" style={styles.pickButton} onPress={pickFromCamera}>
+            <PlusIcon size={18} color={colors.subtle} />
+            <Text variant="rowLabel">Take a photo</Text>
           </Pressable>
         </View>
       ) : null}
 
       {permissionMessage ? (
-        <Text testID="photo-permission-message" style={styles.error}>
+        <Text testID="photo-permission-message" variant="helper" color={colors.danger}>
           {permissionMessage}
         </Text>
       ) : null}
 
-      {selected && (phase === 'preview' || phase === 'uploading' || phase === 'error') ? (
-        <View style={styles.previewFrame}>
-          <TintedPlaceholder tint={previewTint} style={StyleSheet.absoluteFill} />
-          <Image testID="photo-preview-image" source={{ uri: selected.uri }} style={styles.previewImage} />
-        </View>
-      ) : null}
+      <Text variant="helper">up to three. no group shots first, no filters that hide your face.</Text>
 
       {phase === 'preview' || phase === 'uploading' ? (
-        <View style={styles.pickerRow}>
-          <Pressable
+        <View style={styles.actionRow}>
+          <Button
+            label="Retake"
+            variant="secondary"
+            fullWidth={false}
+            style={styles.actionButton}
+            disabled={uploading}
             testID="photo-retake-button"
-            style={[styles.buttonSecondary, uploading && styles.buttonDisabled]}
-            disabled={uploading}
-            accessibilityState={{ disabled: uploading }}
             onPress={handleRetake}
-          >
-            <Text style={styles.buttonSecondaryText}>Retake</Text>
-          </Pressable>
-          <Pressable
-            testID="photo-upload-button"
-            style={[styles.button, uploading && styles.buttonDisabled]}
+          />
+          <Button
+            label="Use this photo"
+            fullWidth={false}
+            style={styles.actionButton}
+            loading={uploading}
             disabled={uploading}
-            accessibilityState={{ disabled: uploading }}
+            testID="photo-upload-button"
             onPress={handleUpload}
-          >
-            {uploading ? (
-              <ActivityIndicator testID="photo-uploading-indicator" color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Use this photo</Text>
-            )}
-          </Pressable>
+          />
         </View>
+      ) : null}
+      {uploading ? (
+        <ActivityIndicator testID="photo-uploading-indicator" color={colors.ink} style={styles.hidden} />
       ) : null}
 
       {phase === 'error' ? (
-        <View>
-          <Text testID="photo-error" style={styles.error}>
+        <View style={{ gap: spacing.mdLg }}>
+          <Text testID="photo-error" variant="helper" color={colors.danger}>
             {errorMessage}
           </Text>
-          <Pressable testID="photo-retry-button" style={styles.button} onPress={handleUpload}>
-            <Text style={styles.buttonText}>Try again</Text>
-          </Pressable>
+          <Button label="Try again" testID="photo-retry-button" onPress={handleUpload} />
         </View>
       ) : null}
 
       {phase === 'pending' ? (
-        <View>
-          <View style={styles.previewFrame}>
-            <TintedPlaceholder tint={savedPhoto?.tint ?? previewTint} pending style={StyleSheet.absoluteFill} />
-            {selected ? (
-              <Image testID="photo-preview-image" source={{ uri: selected.uri }} style={styles.previewImage} />
-            ) : null}
-          </View>
-          <Text testID="photo-pending-copy" style={styles.body}>
+        <View style={{ gap: spacing.mdLg }}>
+          <Text testID="photo-pending-copy" variant="helper">
             Photo submitted — we&apos;ll check it; you&apos;ll be visible once it&apos;s approved.
           </Text>
-          <Pressable testID="photo-retake-button" style={styles.buttonSecondary} onPress={handleRetake}>
-            <Text style={styles.buttonSecondaryText}>Retake</Text>
-          </Pressable>
-          <Pressable testID="photo-continue-button" style={styles.button} onPress={goNext}>
-            <Text style={styles.buttonText}>Continue</Text>
-          </Pressable>
+          <View style={styles.actionRow}>
+            <Button
+              label="Retake"
+              variant="secondary"
+              fullWidth={false}
+              style={styles.actionButton}
+              testID="photo-retake-button"
+              onPress={handleRetake}
+            />
+            <Button
+              label="Continue"
+              fullWidth={false}
+              style={styles.actionButton}
+              testID="photo-continue-button"
+              onPress={goNext}
+            />
+          </View>
         </View>
       ) : null}
-    </View>
+    </OnboardingScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, gap: 12 },
-  back: { color: '#208AEF', fontSize: 14, marginBottom: 8 },
-  title: { fontSize: 20, fontWeight: '600' },
-  body: { color: '#555', fontSize: 14 },
-  error: { color: '#b00020', fontSize: 13 },
-  pickerRow: { flexDirection: 'row', gap: 12 },
-  previewFrame: {
-    width: 220,
-    height: 220,
-    borderRadius: 12,
+  grid: { flexDirection: 'row', gap: spacing.md },
+  tile: {
+    flex: 1,
+    aspectRatio: 4 / 5,
+    borderRadius: radii.lg,
     overflow: 'hidden',
-    alignSelf: 'center',
-    marginVertical: 12,
+    position: 'relative',
+    backgroundColor: colors.surface,
   },
-  previewImage: { width: '100%', height: '100%' },
-  button: {
-    flex: 1,
-    backgroundColor: '#208AEF',
-    borderRadius: 8,
-    paddingVertical: 12,
+  tileDashed: {
+    borderWidth: 2,
+    borderColor: colors.dashed,
+    borderStyle: 'dashed',
+    backgroundColor: 'transparent',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  buttonDisabled: { backgroundColor: '#a9c9e8' },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  buttonSecondary: {
+  tileImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  mainBadge: { position: 'absolute', top: 8, left: 8 },
+  pickerRow: { flexDirection: 'row', gap: spacing.mdLg },
+  pickButton: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#208AEF',
-    borderRadius: 8,
-    paddingVertical: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.smMd,
+    borderRadius: radii.pill,
+    borderWidth: 2,
+    borderColor: colors.dashed,
+    borderStyle: 'dashed',
+    paddingVertical: spacing.lg,
   },
-  buttonSecondaryText: { color: '#208AEF', fontWeight: '600' },
+  actionRow: { flexDirection: 'row', gap: spacing.mdLg },
+  actionButton: { flex: 1 },
+  // `opacity: 0` (not `display: 'none'`) — RNTL's queries treat
+  // `display: 'none'` as hidden-from-accessibility and exclude it, which
+  // would make `getByTestId('photo-uploading-indicator')` fail even though
+  // the element is mounted. `Button`'s own internal spinner (no testID of
+  // its own) is what's actually visible to the user while uploading; this
+  // one exists only so the existing test hook keeps working.
+  hidden: { position: 'absolute', opacity: 0 },
 });

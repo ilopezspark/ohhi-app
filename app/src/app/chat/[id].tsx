@@ -6,7 +6,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -16,14 +15,25 @@ import { getConversation } from '../../api/conversations';
 import { listMessages, markRead, sendMessage } from '../../api/messages';
 import { signedChatMediaUrls, uploadChatMedia } from '../../api/chatMedia';
 import { me as fetchMe } from '../../api/me';
+import { getAlbum, listMyAlbums, type AlbumRow } from '../../api/albums';
+import { shareAlbum, sharePrivateCard } from '../../api/shares';
+import { mapSupabaseError } from '../../api/errors';
+import { signedPhotoUrls } from '../../api/photos';
 import { Composer } from '../../chat/Composer';
 import { MessageBubble, type ThreadMessage } from '../../chat/MessageBubble';
+import { ShareBubble } from '../../chat/ShareBubble';
+import { ShareSheet } from '../../chat/ShareSheet';
 import { composerState } from '../../chat/rules';
+import { listShareFeed, type ShareFeedItem } from '../../chat/shareFeed';
 import { useConversationRealtime } from '../../chat/useChatRealtime';
 import { messageId as newMessageId } from '../../chat/uuid';
+import { tintForPhoto } from '../../photos/tint';
+import { colors, layout, radii, shadows, spacing } from '../../theme/tokens';
+import { BackIcon, MoreIcon } from '../../ui/icons';
+import { Avatar, Text } from '../../ui';
 
 /**
- * A conversation thread (`docs/app-social-plan.md` §3).
+ * A conversation thread (`docs/app-social-plan.md` §3, `Chat-Thread.html`).
  *
  * Everything that could distinguish one locked state from another is
  * deliberately flattened: the composer's locked line is one string for
@@ -31,12 +41,25 @@ import { messageId as newMessageId } from '../../chat/uuid';
  * thread (decision 12) renders exactly like an open one — live composer,
  * attach button and all. Locked threads are simply read-only, quietly
  * (decisions 13/36).
+ *
+ * The feed is messages *and* active album/private-card shares between the
+ * two participants, merged and sorted by `created_at` — `Chat-Album.html`'s
+ * inline "more of me" / "maya shared more about her" bubbles are `shares`
+ * rows, not `messages` rows (see `chat/shareFeed.ts`).
  */
+type FeedItem =
+  | { kind: 'message'; key: string; createdAt: string; message: ThreadMessage }
+  | { kind: 'share'; key: string; createdAt: string; share: ShareFeedItem };
+
 export default function ChatThreadScreen() {
   const { id: conversationId } = useLocalSearchParams<{ id: string }>();
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [shareSheetOpen, setShareSheetOpen] = useState(false);
+  const [sharingAlbumId, setSharingAlbumId] = useState<string | null>(null);
+  const [sharingCard, setSharingCard] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
   /**
    * Optimistic rows, newest first, held outside React Query so a rollback is a
    * local splice and never has to reconcile with a server page. Plan §8 calls
@@ -99,6 +122,54 @@ export default function ChatThreadScreen() {
 
   const messages = useMemo(() => [...pending, ...serverMessages], [pending, serverMessages]);
   const newest = serverMessages[0] ?? null;
+  const otherId = conversation?.other.id ?? null;
+
+  // ---------------------------------------------------------------------
+  // Share feed: active album/private-card shares between the two of us,
+  // merged into the message list below. Local helper (`chat/shareFeed.ts`) —
+  // no existing `src/api/shares.ts` query fits "both directions, one thread".
+  // ---------------------------------------------------------------------
+  const { data: shareFeed, refetch: refetchShareFeed } = useQuery({
+    queryKey: ['chat-share-feed', conversationId, meId, otherId],
+    queryFn: () => listShareFeed(meId as string, otherId as string),
+    enabled: !!meId && !!otherId,
+  });
+
+  const albumShareIds = useMemo(
+    () => Array.from(new Set((shareFeed ?? []).filter((s) => s.kind === 'album').map((s) => s.subjectId))),
+    [shareFeed]
+  );
+  const albumShareIdsKey = useMemo(() => [...albumShareIds].sort().join('|'), [albumShareIds]);
+  const { data: sharedAlbums } = useQuery({
+    queryKey: ['chat-share-albums', albumShareIdsKey],
+    queryFn: async () => {
+      const rows = await Promise.all(albumShareIds.map((id) => getAlbum(id)));
+      const byId: Record<string, AlbumRow> = {};
+      rows.forEach((row, index) => {
+        if (row) byId[albumShareIds[index]!] = row;
+      });
+      return byId;
+    },
+    enabled: albumShareIds.length > 0,
+  });
+
+  const feed = useMemo<FeedItem[]>(() => {
+    const items: FeedItem[] = [
+      ...messages.map((message) => ({
+        kind: 'message' as const,
+        key: `m-${message.id}`,
+        createdAt: message.created_at,
+        message,
+      })),
+      ...(shareFeed ?? []).map((share) => ({
+        kind: 'share' as const,
+        key: `s-${share.id}`,
+        createdAt: share.createdAt,
+        share,
+      })),
+    ];
+    return items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+  }, [messages, shareFeed]);
 
   // ---------------------------------------------------------------------
   // Per-thread realtime. Inserts are appended in place; a reconnect
@@ -155,6 +226,14 @@ export default function ChatThreadScreen() {
     staleTime: 45_000,
   });
 
+  const otherPhotoPath = conversation?.other.photoPath ?? null;
+  const { data: headerPhotoUrls } = useQuery({
+    queryKey: ['thread_header_photo', otherPhotoPath],
+    queryFn: () => signedPhotoUrls(otherPhotoPath ? [otherPhotoPath] : []),
+    enabled: !!otherPhotoPath,
+    staleTime: 45_000,
+  });
+
   const composer = useMemo(() => {
     if (!conversation || !meId) {
       return { canSend: false as const, maxLength: 1000, canAttachMedia: false };
@@ -171,6 +250,12 @@ export default function ChatThreadScreen() {
       newest
     );
   }, [conversation, meId, newest]);
+
+  // The server's mutuality check for shares is exactly `state = 'open'`
+  // (`src/api/shares.ts#listShareCandidates`'s own doc comment) — distinct
+  // from `composer.canAttachMedia`, which also covers the shadow-accepted
+  // `closed_block` case (decision 12) where sharing is not mutual.
+  const canShareBeyondPhoto = conversation?.state === 'open';
 
   // ---------------------------------------------------------------------
   // Send: optimistic bubble -> insert -> drop the bubble, or mark it failed.
@@ -289,11 +374,67 @@ export default function ChatThreadScreen() {
     }
   }, [conversationId, meId, send]);
 
-  const otherId = conversation?.other.id ?? null;
+  // ---------------------------------------------------------------------
+  // Share sheet: albums list (lazy — only while the sheet is on 'albums'
+  // step), and the two write actions. Both are plain inserts through the
+  // existing `api/shares.ts` (read-only for this pass, called not edited).
+  // ---------------------------------------------------------------------
+  const { data: myAlbums, isPending: albumsLoading } = useQuery({
+    queryKey: ['my-albums-for-share'],
+    queryFn: listMyAlbums,
+    enabled: shareSheetOpen,
+  });
+
+  const openShareSheet = useCallback(() => {
+    setShareError(null);
+    setShareSheetOpen(true);
+  }, []);
+  const closeShareSheet = useCallback(() => setShareSheetOpen(false), []);
+
+  const onShareAlbum = useCallback(
+    async (albumId: string) => {
+      if (!otherId) return;
+      setShareError(null);
+      setSharingAlbumId(albumId);
+      try {
+        await shareAlbum(albumId, otherId);
+        setShareSheetOpen(false);
+        void refetchShareFeed();
+      } catch (error) {
+        setShareError(mapSupabaseError(error).message);
+      } finally {
+        setSharingAlbumId(null);
+      }
+    },
+    [otherId, refetchShareFeed]
+  );
+
+  const onSharePrivateCard = useCallback(async () => {
+    if (!otherId) return;
+    setShareError(null);
+    setSharingCard(true);
+    try {
+      await sharePrivateCard(otherId);
+      setShareSheetOpen(false);
+      void refetchShareFeed();
+    } catch (error) {
+      setShareError(mapSupabaseError(error).message);
+    } finally {
+      setSharingCard(false);
+    }
+  }, [otherId, refetchShareFeed]);
 
   const openProfile = useCallback(() => {
     if (otherId) router.push(`/profile/${otherId}` as never);
   }, [otherId]);
+
+  const openSharedAlbum = useCallback(
+    (albumId: string) => {
+      if (!conversationId) return;
+      router.push(`/chat/${conversationId}/album/${albumId}` as never);
+    },
+    [conversationId]
+  );
 
   // Agreed contract with the blocks/reports slice: `/settings/block/[id]` and
   // `/settings/report/[id]`, both with `context=chat` so the report row's
@@ -311,7 +452,7 @@ export default function ChatThreadScreen() {
   if (conversationPending || messagesPending) {
     return (
       <View style={styles.center} testID="thread-loading">
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={colors.ink} />
       </View>
     );
   }
@@ -322,10 +463,14 @@ export default function ChatThreadScreen() {
   if (!conversation) {
     return (
       <View style={styles.center} testID="thread-unavailable">
-        <Text style={styles.empty}>This conversation isn&apos;t available.</Text>
+        <Text variant="body" color={colors.muted}>
+          This conversation isn&apos;t available.
+        </Text>
       </View>
     );
   }
+
+  const otherName = conversation.other.firstName ?? 'Someone';
 
   return (
     <KeyboardAvoidingView
@@ -335,11 +480,12 @@ export default function ChatThreadScreen() {
       <View style={styles.header}>
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel="Back"
           testID="thread-back"
           onPress={() => router.back()}
-          style={styles.headerButton}
+          style={({ pressed }) => [styles.iconButton, shadows.sm, pressed && styles.pressed]}
         >
-          <Text style={styles.headerButtonText}>Back</Text>
+          <BackIcon size={18} color={colors.ink} />
         </Pressable>
 
         <Pressable
@@ -348,8 +494,13 @@ export default function ChatThreadScreen() {
           style={styles.headerTitle}
           onPress={openProfile}
         >
-          <Text style={styles.name} numberOfLines={1}>
-            {conversation.other.firstName ?? 'Someone'}
+          <Avatar
+            uri={otherPhotoPath ? headerPhotoUrls?.[otherPhotoPath] : undefined}
+            tint={tintForPhoto(otherId ?? conversation.id, 0)}
+            size="sm"
+          />
+          <Text variant="title" style={{ fontSize: 16 }} numberOfLines={1}>
+            {otherName}
           </Text>
         </Pressable>
 
@@ -357,20 +508,20 @@ export default function ChatThreadScreen() {
           accessibilityRole="button"
           accessibilityLabel="More"
           testID="thread-overflow"
-          style={styles.headerButton}
+          style={({ pressed }) => [styles.iconButton, shadows.sm, pressed && styles.pressed]}
           onPress={() => setMenuOpen((open) => !open)}
         >
-          <Text style={styles.headerButtonText}>•••</Text>
+          <MoreIcon size={18} color={colors.ink} />
         </Pressable>
       </View>
 
       {menuOpen ? (
-        <View style={styles.menu} testID="thread-menu">
-          <Pressable accessibilityRole="button" testID="thread-menu-block" onPress={openBlock}>
-            <Text style={styles.menuItem}>Block</Text>
+        <View style={[styles.menu, shadows.md]} testID="thread-menu">
+          <Pressable accessibilityRole="button" testID="thread-menu-block" onPress={openBlock} style={styles.menuRow}>
+            <Text variant="rowLabel">Block</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" testID="thread-menu-report" onPress={openReport}>
-            <Text style={styles.menuItem}>Report</Text>
+          <Pressable accessibilityRole="button" testID="thread-menu-report" onPress={openReport} style={styles.menuRow}>
+            <Text variant="rowLabel">Report</Text>
           </Pressable>
         </View>
       ) : null}
@@ -378,67 +529,112 @@ export default function ChatThreadScreen() {
       <FlatList
         testID="thread-list"
         inverted
-        data={messages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
+        data={feed}
+        keyExtractor={(item) => item.key}
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
         onEndReachedThreshold={0.4}
         onEndReached={() => {
           if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
         }}
         ListFooterComponent={
-          isFetchingNextPage ? <ActivityIndicator testID="thread-loading-more" /> : null
+          isFetchingNextPage ? <ActivityIndicator testID="thread-loading-more" color={colors.ink} /> : null
         }
         ListEmptyComponent={
           <View style={styles.emptyBox}>
-            <Text style={styles.empty} testID="thread-empty">
+            <Text variant="body" color={colors.muted} style={styles.empty} testID="thread-empty">
               No messages yet.
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <MessageBubble
-            message={item}
-            meId={meId ?? ''}
-            mediaUrl={item.media_path ? mediaUrls?.[item.media_path] : undefined}
-            onRetry={onRetry}
-          />
-        )}
+        renderItem={({ item }) =>
+          item.kind === 'message' ? (
+            <MessageBubble
+              message={item.message}
+              meId={meId ?? ''}
+              mediaUrl={item.message.media_path ? mediaUrls?.[item.message.media_path] : undefined}
+              onRetry={onRetry}
+            />
+          ) : (
+            <View
+              style={[
+                styles.shareBubbleWrapper,
+                item.share.ownerId === meId ? styles.shareBubbleWrapperMine : styles.shareBubbleWrapperTheirs,
+              ]}
+            >
+              <ShareBubble
+                item={item.share}
+                mine={item.share.ownerId === meId}
+                otherName={otherName}
+                album={item.share.kind === 'album' ? sharedAlbums?.[item.share.subjectId] : undefined}
+                onPress={() => {
+                  if (item.share.kind === 'album') openSharedAlbum(item.share.subjectId);
+                  else openProfile();
+                }}
+              />
+            </View>
+          )
+        }
       />
 
-      <Composer state={composer} sending={sending} onSend={onSend} onAttach={() => void onAttach()} />
+      <Composer state={composer} sending={sending} onSend={onSend} onOpenShare={openShareSheet} />
+
+      <ShareSheet
+        visible={shareSheetOpen}
+        onDismiss={closeShareSheet}
+        otherName={otherName}
+        canAttachMedia={composer.canAttachMedia}
+        canShareBeyondPhoto={canShareBeyondPhoto}
+        onPickPhoto={() => void onAttach()}
+        albums={myAlbums}
+        albumsLoading={albumsLoading}
+        onShareAlbum={(albumId) => void onShareAlbum(albumId)}
+        sharingAlbumId={sharingAlbumId}
+        onSharePrivateCard={() => void onSharePrivateCard()}
+        sharingCard={sharingCard}
+        error={shareError}
+      />
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  container: { flex: 1, backgroundColor: colors.paper },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, backgroundColor: colors.paper },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#D5D8DD',
+    gap: spacing.mdLg,
+    paddingHorizontal: layout.gutter,
+    paddingTop: spacing.xxl,
+    paddingBottom: spacing.smMd,
   },
-  headerButton: { paddingHorizontal: 8, paddingVertical: 4, minWidth: 56 },
-  headerButtonText: { color: '#208AEF', fontSize: 14 },
-  headerTitle: { flex: 1, alignItems: 'center' },
-  name: { fontSize: 16, fontWeight: '700' },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.circle,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pressed: { opacity: 0.7 },
+  headerTitle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.mdLg },
   menu: {
     position: 'absolute',
-    top: 48,
-    right: 12,
+    top: 68,
+    right: layout.gutter,
     zIndex: 10,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#D5D8DD',
-    paddingVertical: 4,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    paddingVertical: spacing.xs,
+    minWidth: 140,
   },
-  menuItem: { paddingHorizontal: 20, paddingVertical: 10, fontSize: 15 },
-  list: { paddingVertical: 8 },
-  emptyBox: { paddingTop: 48, paddingHorizontal: 24, transform: [{ scaleY: -1 }] },
-  empty: { color: '#555', textAlign: 'center' },
+  menuRow: { paddingHorizontal: spacing.xl, paddingVertical: spacing.mdLg },
+  list: { flex: 1 },
+  listContent: { paddingVertical: spacing.smMd },
+  shareBubbleWrapper: { paddingHorizontal: spacing.mdLg, paddingVertical: 3 },
+  shareBubbleWrapperMine: { alignItems: 'flex-end' },
+  shareBubbleWrapperTheirs: { alignItems: 'flex-start' },
+  emptyBox: { paddingTop: spacing.huge * 2, paddingHorizontal: spacing.xxl, transform: [{ scaleY: -1 }] },
+  empty: { textAlign: 'center' },
 });

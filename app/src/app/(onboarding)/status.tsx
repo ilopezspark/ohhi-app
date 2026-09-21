@@ -1,12 +1,21 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { updateProfile } from '../../api/profile';
 import { mapSupabaseError } from '../../api/errors';
 import { validateStatusLine } from '../../onboarding/validation';
+import { stepToPath } from '../../onboarding/stepResolver';
+import { Button, Input, Text } from '../../ui';
+import { colors, spacing } from '../../theme/tokens';
+import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
 
-/** Status-line step (onboarding-grid plan §1.4), <=140 chars, skippable. */
+/**
+ * `Onb-Status.html`'s status-line field ("what are you up to?" — see
+ * `tags.tsx`'s doc comment on the design's combined-vs-split screen). Same
+ * design step (6 of 8) as `tags.tsx`. Status-line step (onboarding-grid plan
+ * §1.4), <=140 chars, skippable. Now routes on to `location` (was `finish`
+ * — `location` slots in after `status` per the design's own screen order).
+ */
 export default function StatusScreen() {
   const [statusLine, setStatusLine] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -15,7 +24,7 @@ export default function StatusScreen() {
 
   const mutation = useMutation({
     mutationFn: (value: string | null) => updateProfile({ status_line: value }),
-    onSuccess: () => router.replace('/(onboarding)/finish' as never),
+    onSuccess: () => router.replace(stepToPath('location') as never),
     onError: (error: unknown) => setErrorMessage(mapSupabaseError(error).message),
   });
 
@@ -32,63 +41,53 @@ export default function StatusScreen() {
     mutation.mutate(null);
   }
 
+  function goBack() {
+    router.replace('/(onboarding)/tags' as never);
+  }
+
   const continueDisabled = mutation.isPending || !!validationError;
 
   return (
-    <View style={styles.container} testID="status-screen">
-      <Text style={styles.title}>Anything you want people to know?</Text>
-      <TextInput
-        testID="status-input"
-        style={styles.input}
-        placeholder="Status (optional)"
+    <OnboardingScreen
+      step={6}
+      onBack={goBack}
+      backTestID="status-back"
+      testID="status-screen"
+      footer={
+        <>
+          <Button
+            label="continue"
+            onPress={handleContinue}
+            loading={mutation.isPending}
+            disabled={continueDisabled}
+            testID="status-continue"
+          />
+          <Button label="skip for now" variant="ghost" onPress={handleSkip} disabled={mutation.isPending} testID="status-skip" />
+        </>
+      }
+    >
+      <Text variant="headline" style={{ marginTop: spacing.md }}>
+        what are you up to?
+      </Text>
+      <Input
+        testID="status"
+        label="a status line (optional, change it anytime)"
+        placeholder="at the library till 10, anyone around?"
         multiline
         maxLength={200}
         value={statusLine}
         onChangeText={setStatusLine}
       />
       {validationError ? (
-        <Text testID="status-error" style={styles.error}>
+        <Text testID="status-error" variant="helper" color={colors.danger}>
           {validationError}
         </Text>
       ) : null}
-      {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-      <Pressable
-        testID="status-continue"
-        style={[styles.button, continueDisabled && styles.buttonDisabled]}
-        disabled={continueDisabled}
-        accessibilityState={{ disabled: continueDisabled }}
-        onPress={handleContinue}
-      >
-        {mutation.isPending ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
-      </Pressable>
-      <Pressable testID="status-skip" disabled={mutation.isPending} onPress={handleSkip}>
-        <Text style={styles.skipText}>Skip</Text>
-      </Pressable>
-    </View>
+      {errorMessage ? (
+        <Text testID="status-error-message" variant="helper" color={colors.danger}>
+          {errorMessage}
+        </Text>
+      ) : null}
+    </OnboardingScreen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center', gap: 12 },
-  title: { fontSize: 20, fontWeight: '600', marginBottom: 8 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    minHeight: 60,
-  },
-  error: { color: '#b00020', fontSize: 13 },
-  button: {
-    marginTop: 8,
-    backgroundColor: '#208AEF',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: { backgroundColor: '#a9c9e8' },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  skipText: { color: '#555', textAlign: 'center', marginTop: 12, fontSize: 14 },
-});

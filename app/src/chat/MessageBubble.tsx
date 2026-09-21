@@ -1,5 +1,7 @@
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, View } from 'react-native';
 import type { MessageRow } from '../api/conversations';
+import { colors, radii, shadows, spacing } from '../theme/tokens';
+import { Text } from '../ui';
 
 /**
  * A message as the thread renders it: a server row, or an optimistic one that
@@ -18,6 +20,7 @@ interface Props {
   onRetry?: (message: ThreadMessage) => void;
 }
 
+/** `.bubble`/`.me`/`.them` (`Chat-Thread.html`). Same testIDs as before this pass — only the visual language changed. */
 export function MessageBubble({ message, meId, mediaUrl, onRetry }: Props) {
   const mine = message.sender_id === meId;
 
@@ -43,7 +46,9 @@ export function MessageBubble({ message, meId, mediaUrl, onRetry }: Props) {
         ) : null}
 
         {message.body ? (
-          <Text style={[styles.body, mine && styles.bodyMine]}>{message.body}</Text>
+          <Text variant="body" color={mine ? colors.onDark : colors.ink}>
+            {message.body}
+          </Text>
         ) : null}
       </View>
 
@@ -60,7 +65,9 @@ export function MessageBubble({ message, meId, mediaUrl, onRetry }: Props) {
           {/* Generic by design: the trigger's refusals are deliberately
               indistinguishable from each other and from a dropped network
               (decision 24), so there is one string for all of them. */}
-          <Text style={styles.failed}>Couldn&apos;t send. Tap to retry.</Text>
+          <Text variant="captionMuted" style={styles.failed}>
+            Couldn&apos;t send. Tap to retry.
+          </Text>
         </Pressable>
       ) : null}
     </View>
@@ -68,15 +75,19 @@ export function MessageBubble({ message, meId, mediaUrl, onRetry }: Props) {
 }
 
 const styles = StyleSheet.create({
-  wrapper: { paddingHorizontal: 12, paddingVertical: 3, gap: 2 },
+  wrapper: { paddingHorizontal: spacing.mdLg, paddingVertical: 3, gap: 2 },
   wrapperMine: { alignItems: 'flex-end' },
   wrapperTheirs: { alignItems: 'flex-start' },
-  bubble: { maxWidth: '78%', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
-  bubbleMine: { backgroundColor: '#208AEF' },
-  bubbleTheirs: { backgroundColor: '#EDEFF2' },
-  body: { fontSize: 15, color: '#111' },
-  bodyMine: { color: '#fff' },
-  media: { width: 200, height: 200, borderRadius: 10, backgroundColor: '#DDE1E6' },
-  mediaPlaceholder: { backgroundColor: '#DDE1E6' },
-  failed: { fontSize: 11, color: '#666', paddingHorizontal: 4 },
+  bubble: {
+    maxWidth: '78%',
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.lgXl,
+    paddingVertical: spacing.mdLg,
+    gap: spacing.smMd,
+  },
+  bubbleMine: { backgroundColor: colors.ink, borderBottomRightRadius: spacing.smMd },
+  bubbleTheirs: { backgroundColor: colors.surface, borderBottomLeftRadius: spacing.smMd, ...shadows.xs },
+  media: { width: 200, height: 200, borderRadius: radii.sm, backgroundColor: colors.dashed },
+  mediaPlaceholder: { backgroundColor: colors.dashed },
+  failed: { paddingHorizontal: spacing.xs },
 });

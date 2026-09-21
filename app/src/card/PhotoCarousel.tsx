@@ -1,5 +1,16 @@
 import { useState } from 'react';
-import { Dimensions, FlatList, Image, StyleSheet, View, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native';
+import {
+  Dimensions,
+  FlatList,
+  Image,
+  StyleSheet,
+  View,
+  type LayoutChangeEvent,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { TintedPlaceholder } from '../photos/TintedPlaceholder';
 import { tintForPhoto } from '../photos/tint';
 
@@ -10,6 +21,13 @@ export interface PhotoCarouselProps {
   paths: string[];
   /** path -> signed URL (`signedPhotoUrls`). A missing entry falls back to the tint. */
   urls: Record<string, string>;
+  /**
+   * Overrides the default 1:1 square frame — `Profile.html`'s hero card is a
+   * full-bleed, edge-to-edge rectangle (`profile/[id].tsx`), not a square
+   * tile, so the profile screen passes `flex: 1` here instead of the grid's
+   * own aspect ratio.
+   */
+  style?: StyleProp<ViewStyle>;
   testID?: string;
 }
 
@@ -25,27 +43,37 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
  * never signed) swaps that page to `TintedPlaceholder`, the same broken-
  * image fallback the grid tile uses — never a retry loop, never a reason.
  */
-export function PhotoCarousel({ userId, paths, urls, testID }: PhotoCarouselProps) {
+export function PhotoCarousel({ userId, paths, urls, style, testID }: PhotoCarouselProps) {
   const [index, setIndex] = useState(0);
   const [failed, setFailed] = useState<Record<string, boolean>>({});
+  // Measured on layout rather than assumed from `Dimensions` — the hero card
+  // this renders inside (`Profile.html`) has its own side gutter, so the
+  // frame is narrower than the full screen width.
+  const [frameWidth, setFrameWidth] = useState(SCREEN_WIDTH);
+
+  function onLayout(e: LayoutChangeEvent) {
+    const width = e.nativeEvent.layout.width;
+    if (width > 0) setFrameWidth(width);
+  }
 
   if (paths.length === 0) {
     return (
-      <View style={styles.frame} testID={testID ?? 'photo-carousel'}>
+      <View style={[styles.frame, style]} onLayout={onLayout} testID={testID ?? 'photo-carousel'}>
         <TintedPlaceholder tint={tintForPhoto(userId, 0)} testID="photo-carousel-placeholder-0" />
       </View>
     );
   }
 
   function onMomentumScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
-    const width = e.nativeEvent.layoutMeasurement.width || SCREEN_WIDTH || 1;
+    const width = e.nativeEvent.layoutMeasurement.width || frameWidth || 1;
     setIndex(Math.round(e.nativeEvent.contentOffset.x / width));
   }
 
   return (
-    <View style={styles.frame} testID={testID ?? 'photo-carousel'}>
+    <View style={[styles.frame, style]} onLayout={onLayout} testID={testID ?? 'photo-carousel'}>
       <FlatList
         testID="photo-carousel-list"
+        style={styles.list}
         data={paths}
         horizontal
         pagingEnabled
@@ -56,7 +84,7 @@ export function PhotoCarousel({ userId, paths, urls, testID }: PhotoCarouselProp
           const url = urls[path];
           const showPhoto = !!url && !failed[path];
           return (
-            <View style={[styles.page, { width: SCREEN_WIDTH }]} testID={`photo-carousel-page-${i}`}>
+            <View style={[styles.page, { width: frameWidth }]} testID={`photo-carousel-page-${i}`}>
               {showPhoto ? (
                 <Image
                   testID={`photo-carousel-image-${i}`}
@@ -84,8 +112,9 @@ export function PhotoCarousel({ userId, paths, urls, testID }: PhotoCarouselProp
 }
 
 const styles = StyleSheet.create({
-  frame: { aspectRatio: 1, borderRadius: 16, overflow: 'hidden', backgroundColor: '#eee' },
-  page: { aspectRatio: 1 },
+  frame: { flex: 1, aspectRatio: 1, borderRadius: 16, overflow: 'hidden', backgroundColor: '#eee' },
+  list: { flex: 1 },
+  page: { flex: 1 },
   image: { width: '100%', height: '100%' },
   dots: {
     position: 'absolute',

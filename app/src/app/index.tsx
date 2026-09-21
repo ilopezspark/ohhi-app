@@ -31,7 +31,11 @@ export default function Index() {
     run().catch(() => {
       if (!cancelled) {
         SplashScreen.hideAsync().catch(() => {});
-        router.replace('/(auth)/email' as never);
+        // Same destination `resolveEntryHref`'s own no-session/failure path
+        // resolves to (`routeResultToHref({ screen: 'auth' })` ->
+        // `(auth)/welcome`) — this is the walking-skeleton's guarded "no
+        // screen exists to retry" fallback, not a second policy.
+        router.replace('/(auth)/welcome' as never);
       }
     });
 

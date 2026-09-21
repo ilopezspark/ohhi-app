@@ -53,7 +53,11 @@ export function routeResultToHref(result: RouteResult): {
 } {
   switch (result.screen) {
     case 'auth':
-      return { pathname: '/(auth)/email' };
+      // The design's `Main.html` welcome screen (`docs/design/system.md`'s
+      // screen->route map) sits in front of sign-in now — a no-session
+      // resolution lands here first, and `(auth)/welcome.tsx`'s own CTA is
+      // what pushes on to `(auth)/email`.
+      return { pathname: '/(auth)/welcome' };
     case 'onboarding':
       return { pathname: '/(onboarding)' };
     case 'grid':
@@ -61,6 +65,6 @@ export function routeResultToHref(result: RouteResult): {
     case 'restricted':
       return { pathname: '/restricted', params: { status: result.status } };
     default:
-      return { pathname: '/(auth)/email' };
+      return { pathname: '/(auth)/welcome' };
   }
 }

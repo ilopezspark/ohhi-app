@@ -91,6 +91,17 @@ describe('ProfileScreen', () => {
     await findByTestId('profile-identity');
   });
 
+  it('opens the "more about" details sheet (Profile-Details.html) from the identity row, gated the same way as the row itself', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card());
+    (getIdentity as jest.Mock).mockResolvedValue({ pronouns: 'she/her', orientation: ['bi'] });
+    const { findByTestId, queryByTestId } = await renderScreen();
+    await findByTestId('profile-identity');
+
+    expect(queryByTestId('profile-details-sheet')).toBeNull();
+    await fireEvent.press(await findByTestId('profile-identity-trigger'));
+    await findByTestId('profile-details-sheet');
+  });
+
   it('shows both Hi and Message as equal openers when there is no prior hi and no conversation', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: null, conversation_id: null }));
     const { findByTestId } = await renderScreen();
@@ -109,12 +120,28 @@ describe('ProfileScreen', () => {
     await waitFor(() => expect(sendHi).toHaveBeenCalledWith(TARGET));
   });
 
-  it('calls startConversation and navigates to the new thread when Message is tapped with no conversation yet', async () => {
+  it('opens the one-message sheet (not a direct startConversation call) when Message is tapped with no conversation yet', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: null, conversation_id: null }));
+    const { findByTestId, queryByTestId } = await renderScreen();
+    const cta = await findByTestId('profile-cta-message');
+
+    expect(queryByTestId('profile-message-sheet')).toBeNull();
+    await fireEvent.press(cta);
+
+    await findByTestId('profile-message-sheet');
+    expect(startConversation).not.toHaveBeenCalled();
+  });
+
+  it('calls startConversation and navigates to the new thread once the sheet\'s send is tapped', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: null, conversation_id: null }));
     (startConversation as jest.Mock).mockResolvedValue('conv-new');
     const { findByTestId } = await renderScreen();
     const cta = await findByTestId('profile-cta-message');
     await fireEvent.press(cta);
+
+    const send = await findByTestId('profile-message-sheet-send');
+    await fireEvent.press(send);
+
     await waitFor(() => expect(startConversation).toHaveBeenCalledWith(TARGET));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/chat/conv-new'));
   });
@@ -127,7 +154,7 @@ describe('ProfileScreen', () => {
     expect(queryByTestId('profile-cta-message')).toBeNull();
   });
 
-  it('shows Message only (no Hi) for a dismissed hi with no conversation', async () => {
+  it('shows Message only (no Hi) for a dismissed hi with no conversation, opening the one-message sheet', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: 'dismissed', conversation_id: null }));
     (startConversation as jest.Mock).mockResolvedValue('conv-new');
     const { findByTestId, queryByTestId } = await renderScreen();
@@ -135,6 +162,9 @@ describe('ProfileScreen', () => {
     expect(queryByTestId('profile-cta-hi')).toBeNull();
     const cta = await findByTestId('profile-cta-message');
     await fireEvent.press(cta);
+
+    const send = await findByTestId('profile-message-sheet-send');
+    await fireEvent.press(send);
     await waitFor(() => expect(startConversation).toHaveBeenCalledWith(TARGET));
   });
 
@@ -164,6 +194,10 @@ describe('ProfileScreen', () => {
     const { findByTestId } = await renderScreen();
     const cta = await findByTestId('profile-cta-message');
     await fireEvent.press(cta);
+
+    const send = await findByTestId('profile-message-sheet-send');
+    await fireEvent.press(send);
+
     await waitFor(() => expect(getProfileCard).toHaveBeenCalledTimes(2));
     await findByTestId('profile-message-error');
   });

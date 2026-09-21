@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listConversations, type ConversationListItem } from '../../api/conversations';
@@ -7,15 +7,23 @@ import { signedPhotoUrls } from '../../api/photos';
 import { me as fetchMe } from '../../api/me';
 import { ConversationRow } from '../../chat/ConversationRow';
 import { useMessageListRealtime } from '../../chat/useChatRealtime';
+import { colors, layout, spacing } from '../../theme/tokens';
+import { ChatIcon } from '../../ui/icons';
+import { EmptyState, Text } from '../../ui';
 
 /**
- * The chat list (`docs/app-social-plan.md` §3).
+ * The chat list (`docs/app-social-plan.md` §3, `Chat-List.html`).
  *
  * What is *not* here is as deliberate as what is: a `closed_block` thread
  * simply isn't in the data for the blocker (`can_read_conversation` drops it),
  * and for the blocked party it renders exactly like any other thread. Nothing
  * on this screen may ever explain a thread's absence or its state — the chip
  * says one neutral word for expired/deleted and says nothing at all otherwise.
+ *
+ * Deviation from `Chat-List.html`: the mockup's row subtitle ("· on campus" /
+ * "· nearby") is presence data `listConversations()` doesn't fetch (it isn't
+ * part of the conversations/messages/message_reads select this screen is
+ * scoped to) — not reproduced rather than fabricated.
  */
 export default function ChatsScreen() {
   const queryClient = useQueryClient();
@@ -108,7 +116,7 @@ export default function ChatsScreen() {
   if (isPending) {
     return (
       <View style={styles.center} testID="chats-loading">
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={colors.ink} />
       </View>
     );
   }
@@ -116,7 +124,9 @@ export default function ChatsScreen() {
   if (isError) {
     return (
       <View style={styles.center} testID="chats-error">
-        <Text>Something went wrong. Pull to refresh to try again.</Text>
+        <Text variant="body" color={colors.muted}>
+          Something went wrong. Pull to refresh to try again.
+        </Text>
       </View>
     );
   }
@@ -128,19 +138,30 @@ export default function ChatsScreen() {
       testID="chats-list"
       data={data}
       keyExtractor={(item) => item.id}
+      style={styles.screen}
       contentContainerStyle={styles.list}
       ListHeaderComponent={
         <View style={styles.header}>
-          <Text style={styles.title}>Chats</Text>
-        </View>
-      }
-      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={onRefresh} />}
-      ListEmptyComponent={
-        <View style={styles.emptyBox}>
-          <Text style={styles.empty} testID="chats-empty">
-            No conversations yet. Say hi to someone on the grid.
+          <Text variant="headline" style={styles.title}>
+            chat
           </Text>
         </View>
+      }
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={onRefresh} tintColor={colors.ink} />}
+      ListEmptyComponent={
+        <EmptyState
+          testID="chats-empty"
+          icon={<ChatIcon size={40} color={colors.faint} />}
+          title="no chats yet"
+          message="Say hi to someone on the grid to start one."
+        />
+      }
+      ListFooterComponent={
+        data.length > 0 ? (
+          <Text variant="helper" style={styles.footerHint}>
+            chats you don&apos;t answer in 7 days quietly close.
+          </Text>
+        ) : null
       }
       renderItem={({ item }) => (
         <ConversationRow
@@ -155,10 +176,10 @@ export default function ChatsScreen() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  list: { paddingBottom: 24 },
-  header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
-  title: { fontSize: 20, fontWeight: '700' },
-  emptyBox: { paddingTop: 64, paddingHorizontal: 24 },
-  empty: { color: '#555', textAlign: 'center' },
+  screen: { flex: 1, backgroundColor: colors.paper },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.paper },
+  list: { paddingHorizontal: layout.gutter, paddingBottom: spacing.xxl, flexGrow: 1 },
+  header: { paddingTop: spacing.smMd, paddingBottom: spacing.smMd },
+  title: { fontSize: 32 },
+  footerHint: { textAlign: 'center', paddingTop: spacing.xl },
 });

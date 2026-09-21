@@ -1,18 +1,33 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { me } from '../../../api/me';
 import { REPORT_CATEGORIES, REPORT_NOTE_MAX_LENGTH, submitReport, type ReportCategory } from '../../../api/reports';
 import { mapSupabaseError } from '../../../api/errors';
 import { ConfirmButton } from '../../../settings/ConfirmButton';
+import { Button, Input, Text } from '../../../ui';
+import { colors, radii, shadows, spacing } from '../../../theme/tokens';
 
 /**
- * `/settings/report/[id]` — the report form (plan §4). `context`/`context_id`
- * (from the query params `context` and `conversationId`, matching the
- * profile card's and chat's calling contract) populate `context_type`/
- * `context_id` on the insert. No severity control anywhere here — decision 9
- * computes it server-side unconditionally.
+ * `/settings/report/[id]` renders `Profile-Report.html`'s content: a
+ * "report x" title, one chip per category (styled as `.chip` rows with a
+ * radio dot, matching the mockup's `<label class="chip">…<input
+ * type="radio">` rows), the optional note field, and a confirm button.
+ *
+ * Deviation: the mockup's button reads "send report & block" — this build's
+ * `submitReport()` (plan §4) only ever inserts into `reports`; there is no
+ * combined report+block RPC, and adding an extra `blockUser()` call here
+ * would silently change behaviour a passing test
+ * (`settings-report-screen.test.tsx`) already pins to "submit only". Kept
+ * as "submit report", not the mockup's literal copy.
+ *
+ * `context`/`context_id` (from the query params `context` and
+ * `conversationId`, matching the profile card's and chat's calling
+ * contract) populate `context_type`/`context_id` on the insert. No severity
+ * control anywhere here — decision 9 computes it server-side
+ * unconditionally.
  *
  * Decision 47 / plan open question 4: the entry point is hidden whenever
  * `me().status !== 'active'`, since the `reports` insert requires
@@ -58,20 +73,26 @@ export default function ReportScreen() {
   // Decision 47: hidden, not a failed submit, for a non-active caller.
   if (meQuery.data?.status !== 'active') {
     return (
-      <View style={styles.center} testID="report-hidden">
-        <Text style={styles.hiddenText}>Reporting isn&apos;t available right now.</Text>
-      </View>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.center} testID="report-hidden">
+          <Text variant="body" color={colors.muted} style={styles.centerText}>
+            Reporting isn&apos;t available right now.
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (submitted) {
     return (
-      <View style={styles.center} testID="report-thanks">
-        <Text style={styles.thanksTitle}>Thanks — we&apos;ll review this.</Text>
-        <Pressable testID="report-done" style={styles.doneButton} onPress={() => router.back()}>
-          <Text style={styles.doneButtonText}>Done</Text>
-        </Pressable>
-      </View>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.center} testID="report-thanks">
+          <Text variant="titleLg" style={styles.centerText}>
+            Thanks — we&apos;ll review this.
+          </Text>
+          <Button testID="report-done" label="Done" onPress={() => router.back()} fullWidth={false} />
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -80,88 +101,92 @@ export default function ReportScreen() {
   const canSubmit = !!category && !noteTooLong && !mutation.isPending;
 
   return (
-    <View style={styles.container} testID="report-screen">
-      <Text style={styles.title}>Report this profile</Text>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.container} testID="report-screen">
+        <Text variant="titleLg">Report this profile</Text>
 
-      <View style={styles.categoryList} testID="report-category-list">
-        {REPORT_CATEGORIES.map((option) => {
-          const selected = category === option.value;
-          return (
-            <Pressable
-              key={option.value}
-              testID={`report-category-${option.value}`}
-              accessibilityRole="radio"
-              accessibilityState={{ selected }}
-              style={[styles.categoryItem, selected && styles.categoryItemSelected]}
-              onPress={() => setCategory(option.value)}
-            >
-              <Text style={[styles.categoryText, selected && styles.categoryTextSelected]}>{option.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+        <View style={styles.categoryList} testID="report-category-list">
+          {REPORT_CATEGORIES.map((option) => {
+            const selected = category === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                testID={`report-category-${option.value}`}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+                style={[styles.categoryItem, shadows.sm, selected && styles.categoryItemSelected]}
+                onPress={() => setCategory(option.value)}
+              >
+                <Text variant="rowLabel" color={selected ? colors.onDark : colors.ink} style={styles.categoryText}>
+                  {option.label}
+                </Text>
+                <View style={[styles.radio, selected && styles.radioSelected]} />
+              </Pressable>
+            );
+          })}
+        </View>
 
-      <TextInput
-        testID="report-note"
-        style={styles.note}
-        placeholder="Anything else we should know? (optional)"
-        multiline
-        maxLength={REPORT_NOTE_MAX_LENGTH + 50}
-        value={note}
-        onChangeText={setNote}
-      />
-      {noteTooLong ? (
-        <Text style={styles.error} testID="report-note-error">{`Keep it under ${REPORT_NOTE_MAX_LENGTH} characters.`}</Text>
-      ) : null}
+        <Input
+          testID="report-note"
+          placeholder="Anything else we should know? (optional)"
+          multiline
+          maxLength={REPORT_NOTE_MAX_LENGTH + 50}
+          value={note}
+          onChangeText={setNote}
+        />
+        {noteTooLong ? (
+          <Text variant="helper" color={colors.danger} testID="report-note-error">{`Keep it under ${REPORT_NOTE_MAX_LENGTH} characters.`}</Text>
+        ) : null}
 
-      {errorMessage ? (
-        <Text style={styles.error} testID="report-error">
-          {errorMessage}
+        {errorMessage ? (
+          <Text variant="helper" color={colors.danger} testID="report-error">
+            {errorMessage}
+          </Text>
+        ) : null}
+
+        <ConfirmButton
+          testID="report-submit"
+          label="Submit report"
+          busy={mutation.isPending}
+          disabled={!category || noteTooLong}
+          onPress={() => canSubmit && mutation.mutate()}
+        />
+        <Text
+          testID="report-cancel"
+          variant="rowLabel"
+          color={colors.muted}
+          style={styles.cancel}
+          onPress={() => (mutation.isPending ? undefined : router.back())}
+        >
+          Cancel
         </Text>
-      ) : null}
-
-      <ConfirmButton
-        testID="report-submit"
-        label="Submit report"
-        busy={mutation.isPending}
-        disabled={!category || noteTooLong}
-        onPress={() => canSubmit && mutation.mutate()}
-      />
-      <Text testID="report-cancel" style={styles.cancel} onPress={() => (mutation.isPending ? undefined : router.back())}>
-        Cancel
-      </Text>
-    </View>
+        <Text variant="helper" style={styles.footerHint}>
+          reports go to a person, not a bot. every account here is tied to a real ID, so this matters.
+        </Text>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, gap: 12 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  title: { fontSize: 20, fontWeight: '700' },
-  categoryList: { gap: 8 },
+  safe: { flex: 1, backgroundColor: colors.paper },
+  container: { flex: 1, padding: spacing.xlXxl, gap: spacing.lg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, gap: spacing.lg },
+  centerText: { textAlign: 'center' },
+  categoryList: { gap: spacing.smMd },
   categoryItem: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
   },
-  categoryItemSelected: { borderColor: '#208AEF', backgroundColor: '#eaf4ff' },
-  categoryText: { fontSize: 15, color: '#222' },
-  categoryTextSelected: { color: '#208AEF', fontWeight: '600' },
-  note: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    minHeight: 80,
-    fontSize: 15,
-  },
-  error: { color: '#B00020', fontSize: 13 },
-  cancel: { textAlign: 'center', color: '#555', fontSize: 15, marginTop: 4 },
-  hiddenText: { color: '#666', fontSize: 15, textAlign: 'center' },
-  thanksTitle: { fontSize: 18, fontWeight: '600', textAlign: 'center' },
-  doneButton: { backgroundColor: '#208AEF', borderRadius: 8, paddingHorizontal: 24, paddingVertical: 10 },
-  doneButtonText: { color: '#fff', fontWeight: '600' },
+  categoryItemSelected: { backgroundColor: colors.ink },
+  categoryText: { flexShrink: 1 },
+  radio: { width: 16, height: 16, borderRadius: radii.circle, borderWidth: 2, borderColor: colors.dashed },
+  radioSelected: { borderColor: colors.onDark, backgroundColor: colors.onDark },
+  cancel: { textAlign: 'center', marginTop: spacing.xs },
+  footerHint: { textAlign: 'center' },
 });

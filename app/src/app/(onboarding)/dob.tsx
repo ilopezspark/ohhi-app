@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { setDateOfBirth } from '../../api/onboarding';
@@ -7,6 +6,9 @@ import { mapSupabaseError } from '../../api/errors';
 import { DEFAULT_CAMPUS_TIMEZONE, isEighteen } from '../../onboarding/age';
 import { isWeb } from '../../onboarding/platform';
 import { stepToPath } from '../../onboarding/stepResolver';
+import { Button, Input, Text } from '../../ui';
+import { colors, spacing } from '../../theme/tokens';
+import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
 
 // Native-only; on web this stays unloaded (see the platform branch below), so
 // the web bundle/tests never need to touch the native module at all.
@@ -19,13 +21,24 @@ if (!isWeb()) {
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * DOB step (onboarding-grid plan §1.4). Write-once — `(onboarding)/index`
- * only routes here when `getDateOfBirth()` came back null, so this screen
- * doesn't re-check that itself. The 18+ hint below is local, non-authoritative
- * UX only (see `onboarding/age.ts`): the value is written either way and
- * `complete_onboarding()` (called from `finish`) is the real, campus-timezone
- * gate — an under-18 account still gets routed to the restricted screen from
- * there, not blocked here.
+ * `Onb-Basics.html`'s birthday field, split out into its own step (the
+ * design combines first name + grad year + birthday on one "a few basics"
+ * screen; `docs/design/system.md`'s screen->route map already documents
+ * this app splitting it into `dob.tsx` + `name.tsx` — unchanged by this
+ * pass). Design step 2 of 8 (`name.tsx` shares the same step number, same
+ * reasoning). Write-once — `(onboarding)/index` only routes here when
+ * `getDateOfBirth()` came back null, so this screen doesn't re-check that
+ * itself. The 18+ hint below is local, non-authoritative UX only (see
+ * `onboarding/age.ts`): the value is written either way and
+ * `complete_onboarding()` (called from `finish`) is the real,
+ * campus-timezone gate — an under-18 account still gets routed to the
+ * restricted screen from there, not blocked here.
+ *
+ * No back button (a deviation from the design, which shows one on every
+ * onboarding screen): this is the flow's true entry point — there is
+ * nothing before it in the onboarding stack to return to, and the
+ * screen-to-screen navigation here is `router.replace`, same as before this
+ * pass, so a back target would have nowhere real to land.
  */
 export default function DobScreen() {
   const [dob, setDob] = useState<string | null>(null);
@@ -66,12 +79,26 @@ export default function DobScreen() {
   const submitDisabled = !isValid || mutation.isPending;
 
   return (
-    <View style={styles.container} testID="dob-screen">
-      <Text style={styles.title}>When&apos;s your birthday?</Text>
+    <OnboardingScreen
+      step={2}
+      testID="dob-screen"
+      footer={
+        <Button
+          label="continue"
+          onPress={handleSubmit}
+          loading={mutation.isPending}
+          disabled={submitDisabled}
+          testID="dob-submit"
+        />
+      }
+    >
+      <Text variant="headline" style={{ marginTop: spacing.md }}>
+        when&apos;s your birthday?
+      </Text>
       {isWeb() || !DateTimePicker ? (
-        <TextInput
-          testID="dob-input"
-          style={styles.input}
+        <Input
+          testID="dob"
+          label="birthday"
           placeholder="YYYY-MM-DD"
           autoCapitalize="none"
           autoCorrect={false}
@@ -87,22 +114,18 @@ export default function DobScreen() {
           onChange={handleNativeChange}
         />
       )}
+      <Text variant="helper">you need to be 18 to use ohhi. we don&apos;t show your age or birthday to anyone.</Text>
       {underEighteenHint ? (
-        <Text testID="dob-under-eighteen-hint" style={styles.hint}>
+        <Text testID="dob-under-eighteen-hint" variant="helper" color={colors.danger}>
           {underEighteenHint}
         </Text>
       ) : null}
-      {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-      <Pressable
-        testID="dob-submit"
-        style={[styles.button, submitDisabled && styles.buttonDisabled]}
-        disabled={submitDisabled}
-        accessibilityState={{ disabled: submitDisabled }}
-        onPress={handleSubmit}
-      >
-        {mutation.isPending ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
-      </Pressable>
-    </View>
+      {errorMessage ? (
+        <Text testID="dob-error" variant="helper" color={colors.danger}>
+          {errorMessage}
+        </Text>
+      ) : null}
+    </OnboardingScreen>
   );
 }
 
@@ -112,27 +135,3 @@ function toDateOnly(date: Date): string {
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center', gap: 12 },
-  title: { fontSize: 20, fontWeight: '600', marginBottom: 8 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  hint: { color: '#555', fontSize: 13 },
-  error: { color: '#b00020', fontSize: 13 },
-  button: {
-    marginTop: 8,
-    backgroundColor: '#208AEF',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: { backgroundColor: '#a9c9e8' },
-  buttonText: { color: '#fff', fontWeight: '600' },
-});

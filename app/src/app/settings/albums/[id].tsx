@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { me } from '../../../api/me';
@@ -18,6 +19,7 @@ import {
 import { listSharesForSubject, listShareCandidates, revokeShare, shareAlbum, type ShareCandidate, type ShareRow } from '../../../api/shares';
 import { mapSupabaseError } from '../../../api/errors';
 import { ConfirmButton } from '../../../settings/ConfirmButton';
+import { colors, fontFamilies, radii, spacing } from '../../../theme/tokens';
 
 const NAME_MAX_LENGTH = 60;
 
@@ -25,6 +27,11 @@ const NAME_MAX_LENGTH = 60;
  * `/settings/albums/[id]` — album detail (plan §5). Owner view: rename,
  * add/remove photos, delete album, share/revoke. Viewer view (reached from
  * "shared with me"): read-only photos, no owner controls.
+ *
+ * No dedicated mockup covers this screen (the 24 screens have a list view,
+ * `Me-Albums.html`, but no detail view) — restyled onto the shared colour/
+ * type tokens only, structure unchanged, rather than inventing a new
+ * detail-screen layout.
  */
 export default function AlbumDetailScreen() {
   const params = useLocalSearchParams<{ id: string }>();
@@ -155,6 +162,7 @@ export default function AlbumDetailScreen() {
   const shareableCandidates = candidates.filter((c) => !sharedUserIds.has(c.userId));
 
   return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
     <FlatList
       testID="album-detail-screen"
       style={styles.container}
@@ -264,39 +272,66 @@ export default function AlbumDetailScreen() {
       }
       ListEmptyComponent={<Text style={styles.empty}>No photos yet.</Text>}
     />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  unavailable: { color: '#555', fontSize: 15, textAlign: 'center' },
-  header: { padding: 16, gap: 10 },
-  title: { fontSize: 20, fontWeight: '700' },
+  safe: { flex: 1, backgroundColor: colors.paper },
+  container: { flex: 1, backgroundColor: colors.paper },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, backgroundColor: colors.paper },
+  unavailable: { color: colors.muted, fontSize: 15, textAlign: 'center', fontFamily: fontFamilies.outfit },
+  header: { padding: spacing.lgXl, gap: spacing.md },
+  title: { fontSize: 20, fontFamily: fontFamilies.outfitBold, color: colors.ink },
   renameRow: { flexDirection: 'row' },
-  nameInput: { flex: 1, fontSize: 20, fontWeight: '700', borderBottomWidth: 1, borderBottomColor: '#ccc', paddingVertical: 4 },
-  error: { color: '#B00020', fontSize: 13 },
+  nameInput: {
+    flex: 1,
+    fontSize: 20,
+    fontFamily: fontFamilies.outfitBold,
+    color: colors.ink,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+    paddingVertical: spacing.xs,
+  },
+  error: { color: colors.danger, fontSize: 13, fontFamily: fontFamilies.outfit },
   secondaryButton: {
     alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: '#208AEF',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.smMd,
   },
-  secondaryButtonText: { color: '#208AEF', fontWeight: '600' },
-  photoRow: { gap: 4, paddingHorizontal: 16 },
+  secondaryButtonText: { color: colors.signal, fontFamily: fontFamilies.outfitSemiBold },
+  photoRow: { gap: spacing.xs, paddingHorizontal: spacing.lgXl },
   photoCell: { flex: 1 / 3, aspectRatio: 1, margin: 2, position: 'relative' },
-  photoImage: { width: '100%', height: '100%', borderRadius: 6 },
-  photoPlaceholder: { width: '100%', height: '100%', borderRadius: 6, backgroundColor: '#eee' },
-  pendingBadge: { position: 'absolute', bottom: 4, left: 4, right: 4, fontSize: 9, color: '#fff', backgroundColor: 'rgba(0,0,0,0.6)', textAlign: 'center', borderRadius: 4, paddingVertical: 1 },
-  removeButton: { position: 'absolute', top: 2, right: 2, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4, paddingHorizontal: 4 },
-  removeButtonText: { color: '#fff', fontSize: 10 },
-  footer: { padding: 16, gap: 10 },
-  sectionTitle: { fontSize: 15, fontWeight: '600', marginTop: 10 },
-  empty: { color: '#777', fontSize: 13 },
-  shareRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e2e2e2' },
-  shareText: { fontSize: 14, color: '#222' },
-  shareAction: { fontSize: 14, color: '#208AEF', fontWeight: '600' },
-  revokeText: { fontSize: 14, color: '#B00020' },
+  photoImage: { width: '100%', height: '100%', borderRadius: radii.sm / 2 },
+  photoPlaceholder: { width: '100%', height: '100%', borderRadius: radii.sm / 2, backgroundColor: colors.tint },
+  pendingBadge: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    right: 4,
+    fontSize: 9,
+    color: colors.onDark,
+    backgroundColor: colors.overlay,
+    textAlign: 'center',
+    borderRadius: 4,
+    paddingVertical: 1,
+    fontFamily: fontFamilies.outfitSemiBold,
+  },
+  removeButton: { position: 'absolute', top: 2, right: 2, backgroundColor: colors.overlay, borderRadius: 4, paddingHorizontal: 4 },
+  removeButtonText: { color: colors.onDark, fontSize: 10 },
+  footer: { padding: spacing.lgXl, gap: spacing.md },
+  sectionTitle: { fontSize: 15, fontFamily: fontFamilies.outfitSemiBold, color: colors.ink, marginTop: spacing.md },
+  empty: { color: colors.subtle, fontSize: 13, fontFamily: fontFamilies.outfit },
+  shareRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.smMd,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line,
+  },
+  shareText: { fontSize: 14, color: colors.ink, fontFamily: fontFamilies.outfit },
+  shareAction: { fontSize: 14, color: colors.signal, fontFamily: fontFamilies.outfitSemiBold },
+  revokeText: { fontSize: 14, color: colors.danger, fontFamily: fontFamilies.outfit },
 });

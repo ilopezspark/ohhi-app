@@ -62,6 +62,9 @@ describe('GoalsScreen', () => {
     await fireEvent.press(getByTestId('goals-submit'));
 
     await waitFor(() => expect(setUserGoals).toHaveBeenCalledWith(['friends', 'study']));
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(onboarding)/photo'));
+    // Design step order (docs/design/system.md, index.html's contact sheet):
+    // basics -> here for -> about you -> photos. `identity.tsx` now slots in
+    // between goals and photo.
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(onboarding)/identity'));
   });
 });

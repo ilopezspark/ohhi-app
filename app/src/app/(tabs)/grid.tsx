@@ -9,7 +9,6 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -21,12 +20,17 @@ import { listMyPhotos, signedPhotoUrls } from '../../api/photos';
 import { startAndOpenVerification } from '../../api/verification';
 import { Banner } from '../../grid/Banner';
 import { GridTile } from '../../grid/GridTile';
+import { VerifySheet } from '../../grid/VerifySheet';
 import { notVisibleReason, REASON_COPY } from '../../grid/visibility';
 import { LOCATION_PERMISSION_EXPLAINER, usePresence, usePresenceStore } from '../../presence';
 import { getRealtimeManager, type HereNowEvent } from '../../realtime';
+import { BellIcon, EmptyState, SearchIcon, Text } from '../../ui';
+import { colors, radii, shadows, spacing } from '../../theme/tokens';
 
 /**
- * The grid (`docs/app-onboarding-grid-plan.md` §3–§5).
+ * The grid (`Grid.html`/`Grid-Empty.html`/`Grid-Verify.html`,
+ * `docs/design/system.md`; behaviour from `docs/app-onboarding-grid-plan.md`
+ * §3–§5).
  *
  * Refresh policy, read from the schema rather than assumed (§3):
  * - full refetch on mount, pull-to-refresh, app foreground, and a 75s poll
@@ -40,10 +44,19 @@ import { getRealtimeManager, type HereNowEvent } from '../../realtime';
  *
  * The RPC's own ordering (`tier asc, here_now desc, last_active_at desc`) is
  * never re-sorted here; rows render exactly as returned.
+ *
+ * Deviations from the design, see `app/README.md`'s "Grid and profile
+ * design" section for the full list: the roam pill's "change" action and the
+ * header bell are both non-functional (no campus switching, no notifications
+ * feed exist in this app); the here-now/pause toggles have no home in the
+ * design's `Grid.html` at all (that pair lives on `Me.html` conceptually)
+ * but are kept here, restyled, since removing them would drop real behaviour
+ * the brief requires keeping.
  */
 export default function GridScreen() {
   const queryClient = useQueryClient();
   const [verifyBusy, setVerifyBusy] = useState(false);
+  const [verifySheetOpen, setVerifySheetOpen] = useState(false);
 
   const { data: meData } = useQuery({ queryKey: ['me'], queryFn: fetchMe });
   const campusId = meData?.campus_id ?? null;
@@ -181,7 +194,7 @@ export default function GridScreen() {
     try {
       await startAndOpenVerification();
     } catch {
-      // Generic by design (decision 24) — the banner just stops spinning and
+      // Generic by design (decision 24) — the sheet just stops spinning and
       // the user can try again. Never surface why.
     } finally {
       setVerifyBusy(false);
@@ -190,6 +203,11 @@ export default function GridScreen() {
       void queryClient.invalidateQueries({ queryKey: ['me'] });
     }
   }, [queryClient]);
+
+  const onVerifySheetConfirm = useCallback(async () => {
+    await onVerify();
+    setVerifySheetOpen(false);
+  }, [onVerify]);
 
   const onEnableLocation = useCallback(async () => {
     const result = await presence.requestPermission();
@@ -211,11 +229,14 @@ export default function GridScreen() {
 
   const runReasonAction = useCallback(
     (action: 'verify' | 'enable_location' | 'resume' | null) => {
-      if (action === 'verify') void onVerify();
+      // The design (`Grid-Verify.html`) replaces the old direct-to-Persona
+      // jump with an in-app sheet that offers a real "just look around for
+      // now" dismissal — something the old single-button banner never had.
+      if (action === 'verify') setVerifySheetOpen(true);
       if (action === 'enable_location') void onEnableLocation();
       if (action === 'resume') void onResume();
     },
-    [onVerify, onEnableLocation, onResume]
+    [onEnableLocation, onResume]
   );
 
   const onRefresh = useCallback(() => {
@@ -233,32 +254,84 @@ export default function GridScreen() {
   // §3.1 note 3: the paused banner already says this, so don't say it twice.
   const showReasonBanner = !!reasonCopy && reason !== 'paused';
 
+  const data = rows ?? [];
+  const visibleCount = data[0]?.visible_count ?? data.length;
+  const hereNowCount = data[0]?.here_now_count ?? data.filter((row) => row.here_now).length;
+
   const header = (
     <View>
-      <View style={styles.header}>
-        <Text style={styles.title}>{meData?.campus_label ?? 'Grid'}</Text>
-        <View style={styles.headerControls}>
-          <Pressable
-            testID="here-now-toggle"
-            accessibilityRole="switch"
-            accessibilityState={{ checked: presence.hereNow }}
-            onPress={() => void presence.setHereNow(!presence.hereNow).catch(() => {})}
-            style={[styles.control, presence.hereNow && styles.controlOn]}
-          >
-            <Text style={[styles.controlText, presence.hereNow && styles.controlTextOn]}>
-              {presence.hereNow ? 'Here now' : "I'm here now"}
-            </Text>
-          </Pressable>
-          <Pressable
-            testID="pause-toggle"
-            accessibilityRole="switch"
-            accessibilityState={{ checked: presence.paused }}
-            onPress={() => void presence.setPaused(!presence.paused).catch(() => {})}
-            style={styles.control}
-          >
-            <Text style={styles.controlText}>{presence.paused ? 'Resume' : 'Pause'}</Text>
-          </Pressable>
+      <View style={styles.topRow}>
+        <Text variant="wordmark">ohhi</Text>
+        <Pressable
+          testID="grid-bell"
+          accessibilityRole="button"
+          accessibilityLabel="Notifications"
+          style={[styles.iconButton, shadows.sm]}
+        >
+          <BellIcon size={20} color={colors.ink} />
+        </Pressable>
+      </View>
+
+      {/* No campus-switching feature exists — "change" is decorative, matching the
+          brief ("wire `change` to nothing or the campus label only"). */}
+      <Pressable
+        testID="grid-roam-pill"
+        accessibilityRole="button"
+        accessibilityLabel="Your grid, by campus"
+        style={[styles.roamPill, shadows.sm]}
+      >
+        <SearchIcon size={18} color={colors.ink} />
+        <View style={styles.roamText}>
+          <Text variant="captionMuted" color={colors.subtle}>
+            your grid is from
+          </Text>
+          <Text variant="rowLabel">
+            {meData?.campus_label ?? 'your campus'}
+            {meData?.campus_slug ? (
+              <Text variant="rowLabel" color={colors.subtle}>{`  ·  ${meData.campus_slug.toUpperCase()}`}</Text>
+            ) : null}
+          </Text>
         </View>
+        <Text variant="caption" color={colors.signal}>
+          change
+        </Text>
+      </Pressable>
+
+      <View style={styles.countRow}>
+        <Text variant="title">
+          {visibleCount} people around,{' '}
+          <Text variant="title" color={colors.signal}>
+            {hereNowCount} here right now
+          </Text>
+        </Text>
+        <Text variant="captionMuted" color={colors.subtle}>
+          closest first
+        </Text>
+      </View>
+
+      <View style={styles.utilityRow}>
+        <Pressable
+          testID="here-now-toggle"
+          accessibilityRole="switch"
+          accessibilityState={{ checked: presence.hereNow }}
+          onPress={() => void presence.setHereNow(!presence.hereNow).catch(() => {})}
+          style={[styles.utilityChip, shadows.sm, presence.hereNow && styles.utilityChipOn]}
+        >
+          <Text variant="caption" color={presence.hereNow ? colors.onDark : colors.muted}>
+            {presence.hereNow ? 'Here now' : "I'm here now"}
+          </Text>
+        </Pressable>
+        <Pressable
+          testID="pause-toggle"
+          accessibilityRole="switch"
+          accessibilityState={{ checked: presence.paused }}
+          onPress={() => void presence.setPaused(!presence.paused).catch(() => {})}
+          style={[styles.utilityChip, shadows.sm]}
+        >
+          <Text variant="caption" color={colors.muted}>
+            {presence.paused ? 'Resume' : 'Pause'}
+          </Text>
+        </Pressable>
       </View>
 
       {presence.paused ? (
@@ -278,7 +351,7 @@ export default function GridScreen() {
           actionTestID="grid-not-visible-action"
           message={reasonCopy.message}
           actionLabel={reasonCopy.actionLabel}
-          busy={verifyBusy && reasonCopy.action === 'verify'}
+          busy={verifyBusy && reasonCopy.action === 'verify' && verifySheetOpen}
           onAction={reasonCopy.action ? () => runReasonAction(reasonCopy.action) : undefined}
         />
       ) : null}
@@ -298,7 +371,7 @@ export default function GridScreen() {
   if (isPending) {
     return (
       <View style={styles.center} testID="grid-loading">
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={colors.ink} />
       </View>
     );
   }
@@ -306,66 +379,112 @@ export default function GridScreen() {
   if (isError) {
     return (
       <View style={styles.center} testID="grid-error">
-        <Text>Something went wrong. Pull to refresh to try again.</Text>
+        <Text variant="body">Something went wrong. Pull to refresh to try again.</Text>
       </View>
     );
   }
 
-  const data = rows ?? [];
-
   return (
-    <FlatList
-      testID="grid-list"
-      data={data}
-      numColumns={2}
-      keyExtractor={(row) => row.user_id}
-      ListHeaderComponent={header}
-      contentContainerStyle={styles.list}
-      columnWrapperStyle={data.length > 0 ? styles.column : undefined}
-      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={onRefresh} />}
-      ListEmptyComponent={
-        <View style={styles.emptyBox}>
-          <Text style={styles.empty} testID="grid-empty">
-            No one&apos;s around right now — check back later.
-          </Text>
-        </View>
-      }
-      renderItem={({ item }) => (
-        <GridTile
-          row={item}
-          photoUrl={item.photo_path ? photoUrls?.[item.photo_path] : undefined}
-          countyLabel={presence.countyLabel}
-          onPress={openProfile}
-        />
-      )}
-    />
+    <View style={styles.screen}>
+      <FlatList
+        testID="grid-list"
+        data={data}
+        numColumns={2}
+        keyExtractor={(row) => row.user_id}
+        ListHeaderComponent={header}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={onRefresh} />}
+        ListEmptyComponent={
+          <EmptyState
+            testID="grid-empty"
+            title="quiet right now."
+            message="check back after class. we'll nudge you when someone new shows up — turn that on."
+            icon={
+              <View style={styles.emptyIcon}>
+                <SearchIcon size={36} color={colors.subtle} />
+              </View>
+            }
+          />
+        }
+        renderItem={({ item }) => (
+          <GridTile
+            row={item}
+            photoUrl={item.photo_path ? photoUrls?.[item.photo_path] : undefined}
+            countyLabel={presence.countyLabel}
+            onPress={openProfile}
+          />
+        )}
+      />
+
+      <VerifySheet
+        visible={verifySheetOpen}
+        busy={verifyBusy}
+        onVerify={onVerifySheetConfirm}
+        onDismiss={() => setVerifySheetOpen(false)}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  list: { paddingBottom: 24 },
-  column: { paddingHorizontal: 6 },
-  header: {
+  screen: { flex: 1, backgroundColor: colors.paper },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.paper },
+  list: { paddingHorizontal: spacing.smMd, paddingBottom: spacing.xxl },
+  topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingTop: spacing.xxl,
+    paddingHorizontal: spacing.smMd,
+    marginBottom: spacing.lg,
   },
-  title: { fontSize: 20, fontWeight: '700' },
-  headerControls: { flexDirection: 'row', gap: 8 },
-  control: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#D5D8DD',
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.circle,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  controlOn: { backgroundColor: '#208AEF', borderColor: '#208AEF' },
-  controlText: { fontSize: 13, color: '#333' },
-  controlTextOn: { color: '#fff', fontWeight: '600' },
-  emptyBox: { paddingTop: 64, paddingHorizontal: 24 },
-  empty: { color: '#555', textAlign: 'center' },
+  roamPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill,
+    paddingVertical: spacing.mdLg,
+    paddingHorizontal: spacing.lgXl,
+    marginHorizontal: spacing.smMd,
+    marginBottom: spacing.lg,
+  },
+  roamText: { flex: 1, gap: 1 },
+  countRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingHorizontal: spacing.smMd,
+    marginBottom: spacing.smMd,
+  },
+  utilityRow: {
+    flexDirection: 'row',
+    gap: spacing.smMd,
+    paddingHorizontal: spacing.smMd,
+    marginBottom: spacing.smMd,
+  },
+  utilityChip: {
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.mdLg,
+    paddingVertical: spacing.smMd,
+  },
+  utilityChipOn: { backgroundColor: colors.ink },
+  emptyIcon: {
+    width: 96,
+    height: 96,
+    borderRadius: radii.circle,
+    backgroundColor: colors.tint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.85,
+  },
 });

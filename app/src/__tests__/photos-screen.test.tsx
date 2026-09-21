@@ -159,9 +159,11 @@ describe('PhotoScreen', () => {
     consoleErrorSpy.mockRestore();
   });
 
-  it('navigates back to goals when back is pressed', async () => {
+  it('navigates back to identity when back is pressed', async () => {
+    // `identity` now sits between `goals` and `photo` in the design's step
+    // order (docs/design/system.md) — see identity.tsx's own doc comment.
     const { getByTestId } = await render(<PhotoScreen />);
     await fireEvent.press(getByTestId('photo-back-button'));
-    expect(mockReplace).toHaveBeenCalledWith('/(onboarding)/goals');
+    expect(mockReplace).toHaveBeenCalledWith('/(onboarding)/identity');
   });
 });

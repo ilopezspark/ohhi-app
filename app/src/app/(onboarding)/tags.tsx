@@ -1,16 +1,23 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { me } from '../../api/me';
 import { getUserTags, listTagsForCampus, setUserTags, type Tag } from '../../api/tags';
 import { mapSupabaseError } from '../../api/errors';
 import { MAX_TAGS } from '../../onboarding/validation';
+import { Button, Chip, Text } from '../../ui';
+import { colors, spacing } from '../../theme/tokens';
+import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
 
 /**
- * Tags step (onboarding-grid plan §1.4), 0-3 chips, skippable (decision 14).
- * The photo step routes here on success; this screen routes to `status` on
- * either Continue or Skip.
+ * `Onb-Status.html`'s tag-chip field ("pick up to three tags"). The design
+ * combines a status line and tags on one "status & tags" screen; the app
+ * keeps them as separate steps (`tags.tsx` then `status.tsx`, unchanged by
+ * this pass — `docs/design/system.md` already documents this split). Both
+ * screens share the design's step 6 of 8. Tags step (onboarding-grid plan
+ * §1.4), 0-3 chips, skippable (decision 14). The photo step routes here on
+ * success; this screen routes to `status` on either Continue or Skip.
  */
 export default function TagsScreen() {
   const [tags, setTags] = useState<Tag[]>([]);
@@ -74,74 +81,59 @@ export default function TagsScreen() {
     mutation.mutate([]);
   }
 
+  function goBack() {
+    router.replace('/(onboarding)/photo' as never);
+  }
+
   if (!loaded) {
     return (
-      <View style={styles.container} testID="tags-screen">
-        <ActivityIndicator size="large" />
-      </View>
+      <OnboardingScreen step={6} onBack={goBack} backTestID="tags-back" testID="tags-screen">
+        <ActivityIndicator size="large" color={colors.ink} />
+      </OnboardingScreen>
     );
   }
 
   return (
-    <View style={styles.container} testID="tags-screen">
-      <Text style={styles.title}>Add up to 3 tags</Text>
-      {loadError ? <Text style={styles.error}>{loadError}</Text> : null}
-      <View style={styles.chipRow}>
+    <OnboardingScreen
+      step={6}
+      onBack={goBack}
+      backTestID="tags-back"
+      testID="tags-screen"
+      footer={
+        <>
+          <Button label="continue" onPress={handleContinue} loading={mutation.isPending} disabled={mutation.isPending} testID="tags-continue" />
+          <Button label="skip for now" variant="ghost" onPress={handleSkip} disabled={mutation.isPending} testID="tags-skip" />
+        </>
+      }
+    >
+      <Text variant="headline" style={{ marginTop: spacing.md }}>
+        pick up to three tags
+      </Text>
+      {loadError ? (
+        <Text testID="tags-load-error" variant="helper" color={colors.danger}>
+          {loadError}
+        </Text>
+      ) : null}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.smMd }}>
         {tags.map((tag) => {
           const isSelected = selected.includes(tag.id);
           return (
-            <Pressable
+            <Chip
               key={tag.id}
               testID={`tag-chip-${tag.id}`}
-              accessibilityState={{ selected: isSelected }}
-              style={[styles.chip, isSelected && styles.chipSelected]}
+              label={tag.label}
+              selected={isSelected}
               onPress={() => toggle(tag.id)}
-            >
-              <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>{tag.label}</Text>
-            </Pressable>
+            />
           );
         })}
       </View>
-      {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-      <Pressable
-        testID="tags-continue"
-        style={[styles.button, mutation.isPending && styles.buttonDisabled]}
-        disabled={mutation.isPending}
-        accessibilityState={{ disabled: mutation.isPending }}
-        onPress={handleContinue}
-      >
-        {mutation.isPending ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
-      </Pressable>
-      <Pressable testID="tags-skip" disabled={mutation.isPending} onPress={handleSkip}>
-        <Text style={styles.skipText}>Skip</Text>
-      </Pressable>
-    </View>
+      <Text variant="helper">these show on your tile so people have something to say hi about.</Text>
+      {errorMessage ? (
+        <Text testID="tags-error" variant="helper" color={colors.danger}>
+          {errorMessage}
+        </Text>
+      ) : null}
+    </OnboardingScreen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center', gap: 12 },
-  title: { fontSize: 20, fontWeight: '600', marginBottom: 8 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    borderWidth: 1,
-    borderColor: '#208AEF',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  chipSelected: { backgroundColor: '#208AEF' },
-  chipText: { color: '#208AEF', fontSize: 14 },
-  chipTextSelected: { color: '#fff' },
-  error: { color: '#b00020', fontSize: 13 },
-  button: {
-    marginTop: 8,
-    backgroundColor: '#208AEF',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: { backgroundColor: '#a9c9e8' },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  skipText: { color: '#555', textAlign: 'center', marginTop: 12, fontSize: 14 },
-});

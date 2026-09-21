@@ -1,13 +1,30 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { updateProfile } from '../../api/profile';
 import { mapSupabaseError } from '../../api/errors';
 import { validateFirstName, validateGradYear } from '../../onboarding/validation';
 import { stepToPath } from '../../onboarding/stepResolver';
+import { Button, Input, Text } from '../../ui';
+import { colors, spacing } from '../../theme/tokens';
+import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
 
-/** First-name + optional grad-year step (onboarding-grid plan §1.4). */
+/**
+ * `Onb-Basics.html`'s first-name + grad-year fields (the design's birthday
+ * field is the separate `dob.tsx` step — see that screen's doc comment).
+ * Design step 2 of 8, same as `dob.tsx`.
+ *
+ * **Deviation**: the design shows grad year as a fixed row of 5 year chips
+ * ('26/'27/'28/'29/"later"). Kept as the existing free-text numeric field
+ * instead — the app validates a much wider range (`GRAD_YEAR_MIN`/`MAX`,
+ * current year ±10, `onboarding/validation.ts`) than 5 discrete chips could
+ * express, and narrowing that would be a behaviour change, not a restyle.
+ *
+ * Errors render as their own `Text` below each `Input` (rather than through
+ * `Input`'s own `error` prop, which has no testID of its own) so the
+ * existing `name-error`/`grad-year-error` testIDs `name.test.tsx` asserts
+ * on keep working.
+ */
 export default function NameScreen() {
   const [firstName, setFirstName] = useState('');
   const [gradYear, setGradYear] = useState('');
@@ -36,67 +53,59 @@ export default function NameScreen() {
     mutation.mutate();
   }
 
+  function goBack() {
+    router.replace('/(onboarding)/dob' as never);
+  }
+
   return (
-    <View style={styles.container} testID="name-screen">
-      <Text style={styles.title}>What should we call you?</Text>
-      <TextInput
-        testID="name-input"
-        style={styles.input}
+    <OnboardingScreen
+      step={2}
+      onBack={goBack}
+      backTestID="name-back"
+      testID="name-screen"
+      footer={
+        <Button
+          label="continue"
+          onPress={handleSubmit}
+          loading={mutation.isPending}
+          disabled={submitDisabled}
+          testID="name-submit"
+        />
+      }
+    >
+      <Text variant="headline" style={{ marginTop: spacing.md }}>
+        a few basics
+      </Text>
+      <Input
+        testID="name"
+        label="first name, how you want it shown"
         placeholder="First name"
         value={firstName}
         onChangeText={setFirstName}
       />
       {nameError ? (
-        <Text testID="name-error" style={styles.error}>
+        <Text testID="name-error" variant="helper" color={colors.danger}>
           {nameError}
         </Text>
       ) : null}
-      <TextInput
-        testID="grad-year-input"
-        style={styles.input}
+      <Input
+        testID="grad-year"
+        label="grad year"
         placeholder="Grad year (optional)"
         keyboardType="number-pad"
         value={gradYear}
         onChangeText={setGradYear}
       />
       {gradYearError ? (
-        <Text testID="grad-year-error" style={styles.error}>
+        <Text testID="grad-year-error" variant="helper" color={colors.danger}>
           {gradYearError}
         </Text>
       ) : null}
-      {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-      <Pressable
-        testID="name-submit"
-        style={[styles.button, submitDisabled && styles.buttonDisabled]}
-        disabled={submitDisabled}
-        accessibilityState={{ disabled: submitDisabled }}
-        onPress={handleSubmit}
-      >
-        {mutation.isPending ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
-      </Pressable>
-    </View>
+      {errorMessage ? (
+        <Text testID="name-error-message" variant="helper" color={colors.danger}>
+          {errorMessage}
+        </Text>
+      ) : null}
+    </OnboardingScreen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center', gap: 12 },
-  title: { fontSize: 20, fontWeight: '600', marginBottom: 8 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  error: { color: '#b00020', fontSize: 13 },
-  button: {
-    marginTop: 8,
-    backgroundColor: '#208AEF',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: { backgroundColor: '#a9c9e8' },
-  buttonText: { color: '#fff', fontWeight: '600' },
-});

@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 jest.mock('expo-router', () => ({
@@ -57,6 +57,7 @@ import { gridForMe } from '../api/grid';
 import { me } from '../api/me';
 import { getMyPresence } from '../api/presence';
 import { listMyPhotos, signedPhotoUrls } from '../api/photos';
+import { startAndOpenVerification } from '../api/verification';
 import GridScreen from '../app/(tabs)/grid';
 
 const CAMPUS = '11111111-2222-3333-4444-555555555555';
@@ -353,5 +354,46 @@ describe('GridScreen — presence wiring', () => {
       (signedPhotoUrls as jest.Mock).mock.calls,
     ]);
     expect(serialised).not.toMatch(/latitude|longitude|"lat"|"lng"|coords/i);
+  });
+});
+
+describe('GridScreen — the in-app verify sheet (Grid-Verify.html)', () => {
+  it('opens the sheet instead of jumping straight to Persona when the not-visible action is tapped', async () => {
+    (me as jest.Mock).mockResolvedValue(meRow({ verification_status: 'email_verified' }));
+    const { getByTestId, queryByTestId } = await renderScreen();
+    await waitFor(() => expect(getByTestId('grid-not-visible-action')).toBeTruthy());
+
+    expect(queryByTestId('grid-verify-sheet')).toBeNull();
+    fireEvent.press(getByTestId('grid-not-visible-action'));
+
+    await waitFor(() => expect(getByTestId('grid-verify-sheet')).toBeTruthy());
+    expect(startAndOpenVerification).not.toHaveBeenCalled();
+  });
+
+  it('starts verification only once "verify now" is tapped inside the sheet, then closes it', async () => {
+    (me as jest.Mock).mockResolvedValue(meRow({ verification_status: 'email_verified' }));
+    (startAndOpenVerification as jest.Mock).mockResolvedValue(undefined);
+    const { getByTestId, queryByTestId } = await renderScreen();
+    await waitFor(() => expect(getByTestId('grid-not-visible-action')).toBeTruthy());
+
+    fireEvent.press(getByTestId('grid-not-visible-action'));
+    await waitFor(() => expect(getByTestId('grid-verify-sheet-verify')).toBeTruthy());
+    fireEvent.press(getByTestId('grid-verify-sheet-verify'));
+
+    await waitFor(() => expect(startAndOpenVerification).toHaveBeenCalled());
+    await waitFor(() => expect(queryByTestId('grid-verify-sheet')).toBeNull());
+  });
+
+  it('"just look around for now" dismisses the sheet without starting verification', async () => {
+    (me as jest.Mock).mockResolvedValue(meRow({ verification_status: 'email_verified' }));
+    const { getByTestId, queryByTestId } = await renderScreen();
+    await waitFor(() => expect(getByTestId('grid-not-visible-action')).toBeTruthy());
+
+    fireEvent.press(getByTestId('grid-not-visible-action'));
+    await waitFor(() => expect(getByTestId('grid-verify-sheet-dismiss')).toBeTruthy());
+    fireEvent.press(getByTestId('grid-verify-sheet-dismiss'));
+
+    await waitFor(() => expect(queryByTestId('grid-verify-sheet')).toBeNull());
+    expect(startAndOpenVerification).not.toHaveBeenCalled();
   });
 });
