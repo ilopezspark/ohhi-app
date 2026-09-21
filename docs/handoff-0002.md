@@ -162,6 +162,21 @@ is repaired (three rows, `…000001`/`…000002`/`…000003`). Decision 33 (bloc
 identity) was added. Nothing is deployed yet — no Vault secrets exist, no `supabase functions
 deploy` has run, and Persona is not configured.
 
+**Deployed — 21 September 2026.** `identity` and `purge-drain` deployed to the hosted project
+(`yvmxyynxpheudnyoveqx`), both `ACTIVE` at version 1. Unauthenticated boot checks returned `401`
+from each function's own gate (JWT check for `identity`, shared-secret check for `purge-drain`),
+not a `5xx`, so both are booting cleanly. `verification` is **PINNED: Persona setup** — held back,
+not deployed, until Persona is configured (Inquiry Template, webhook, signing secret). Remaining
+before Step 8 can close: hosted smoke checks for `identity` (PUT/GET with a real user JWT) and the
+`purge-drain` manual trigger (checklist items 7-8 below) — both need either a person with the
+`PURGE_DRAIN_SECRET` value or a real test user, so they are not done yet. Also note:
+`PURGE_DRAIN_DB_URL` was not found among this project's function secrets during the deploy pass
+(only the platform-provided `SUPABASE_DB_URL` fallback is set) — `purge-drain` will still run off
+that fallback per its README, but the dedicated pooler URL is worth setting explicitly. The
+`purge_drain_url` Vault value could not be diffed against the real deployed URL in this pass — the
+read-only SQL role used for verification lacks permission to decrypt Vault secrets; re-check step 5
+below with a privileged role.
+
 ### Deploy checklist
 
 1. Create the Vault secrets `identity` needs (SQL editor or psql, privileged role):
