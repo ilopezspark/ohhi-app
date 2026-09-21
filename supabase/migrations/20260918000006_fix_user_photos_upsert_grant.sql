@@ -39,7 +39,6 @@
 -- PostgREST's generated SET clause re-assert the same user_id the row (and
 -- the authenticated request) already carries.
 --
--- THIS MIGRATION HAS NOT BEEN APPLIED TO THE HOSTED PROJECT
--- (yvmxyynxpheudnyoveqx). Apply it there to actually fix the bug.
+-- Applied to the hosted project (yvmxyynxpheudnyoveqx) on 21 September 2026.
 
 grant update (user_id) on public.user_photos to authenticated;
