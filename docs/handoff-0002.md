@@ -1,10 +1,17 @@
 # Handoff: migration 0002 fix pass
 
-State as of 18 September 2026, branch `migration-0002-fixes`. Steps 1-6 of the remaining-work
-list below are done. The hosted runner is green at 98/98, and the hosted project's state
-matches the on-disk migration (down-script re-applied, then the fixed migration re-applied,
-then the runner). Only steps 7 (commit and merge to `main`) and 8 (the identity/private-card
-edge function and the verification webhook handler) remain.
+State as of 21 September 2026, branch `main` (HEAD `b9e094e`). Migrations 0001-0008 are applied
+to the hosted project with a clean history (eight rows, local = remote); 0005 and 0008 are
+testing-only domain additions (`sayohhi.com`, `sparkncode.com`) to be reverted before launch
+with their down-scripts. All three edge functions (`identity`, `purge-drain`, `verification`)
+are deployed; the Persona webhook is registered and its three secrets are set, but the Persona
+end-to-end test event has not been confirmed yet. The Expo app (`app/`) is built through the
+full design — walking skeleton, onboarding slice, the grid with on-device tiering and presence,
+and the social slice (card, hi's, chat, blocks, reports, albums/shares, identity/card editors,
+settings, delete account) — 452 Jest tests, `tsc` clean, web export clean; it runs on web via
+`npx expo start`, with no device or EAS build made yet. Two test accounts exist on the hosted
+project (both `active`, marked verified and photo-approved by direct data updates for testing),
+but the grid, hi's and chat flows have not yet been exercised end to end between them.
 
 ## What is here
 
@@ -134,34 +141,54 @@ and in the hosted project; the hosted runner is 98/98 green as of 18 September 2
 
 ## Remaining work, in order
 
-1. ~~Diff the migration against the list above and confirm each of A–L is present and
-   correct.~~ Done — A-L confirmed, M-O found and fixed.
-2. ~~Update the down-script for any new objects (storage_purge_queue, his_update_guard, the
-   album_photos guard, touch_activity).~~ Done.
-3. ~~Re-apply: down-script, then the migration, both via `apply_migration`.~~ Done.
-4. ~~Extend the pgTAP file with an assertion per fix; mirror into the hosted runner; remove the
-   runner's workaround; update plan(N).~~ Done — plan(98), 38 groups.
-5. ~~Run the hosted runner until green; confirm no `tmp_test_run` history row and
-   `select count(*) from public.profiles` is 0 afterwards.~~ Done — 98/98, confirmed clean.
-6. ~~Update `docs/migration-0002-plan.md` (§3 moderation_state service-role-only, §6
-   `touch_activity`, §9 purge queue) and the README migration log if needed.~~ Done — this
-   pass; see the "Open decision" note above for the one item left unresolved (the stale
-   migration-history rows).
-7. Commit and merge to `main`.
-8. The identity/private-card edge function, the verification webhook handler, and purge-drain
-   (decisions 19 and 8). Code is built and tested; nothing is deployed. See "Step 8 status"
-   below.
-9. Migration 0004 (`20260918000004_waitlist_and_dob.sql`) — `public.request_waitlist(text)` and
-   the `users_private.date_of_birth` owner update grant (decisions 34/35) — exists and is
-   applied to the hosted project as version `20260918000004 after the CLI history repair`, name `waitlist_and_dob`;
-   `supabase/tests/hosted/0004_hosted_run.sql` is green at 20/20 with no history row left
-   behind. Migration history is now four rows, local = remote.
-10. Migration 0007 (`20260918000007_timezone_and_privilege_checks.sql`) — the `campuses.timezone`
-   select grant, plus a comments-only audit finding no other table exposed to 0006's
-   upsert-privilege defect — is applied to the hosted project as version `20260918000007 after the CLI history repair`, name
-   `timezone_and_privilege_checks`; `supabase/tests/hosted/0007_hosted_run.sql` is green at 27/27
-   with no history row left behind. Migration history is seven rows; local file versions and the
-   recorded remote versions differ for 0007 and need the usual `supabase migration repair`.
+(a) Exercise the two-account flows end to end — grid visibility, hi's, and chat, between the two
+    test accounts — and fix whatever breaks.
+(b) Confirm the Persona end-to-end test event: send a test event from the Persona dashboard and
+    confirm the function logs `verification_webhook_applied` with a verified signature (README's
+    "Persona dashboard steps" §5).
+(c) Moderation console: a design pass first, then build it as a separate staff web app with its
+    own service-role access — photo approval and report handling are manual SQL until it exists.
+(d) Release prep: EAS builds, push sending, revert migrations 0005 and 0008 with their
+    down-scripts, flip CLC to `live`, and load the real county polygon so the `county` tier
+    becomes reachable.
+
+## Known follow-ups
+
+- CLC's `county_boundary` is NULL, so the `county` tier is unreachable until a real polygon is
+  loaded (see release prep above).
+- The photo tint (`src/photos/tint.ts`) is a deterministic hash, not a sampled colour — see
+  "Photos" in `app/README.md`.
+- The identity/card vocabularies (`identity/validate.ts`, `src/settings/vocab.ts`) are
+  placeholders pending the real taxonomy (decision 21).
+- Unread in chat is a dot, not a count — an exact count needs a view/RPC (see "Unread and
+  previews" in `app/README.md`).
+- Scrubbed `auth.users` rows keep their `identities` array; the Admin API has no field to clear
+  it (`purge-drain` README).
+- Several Persona endpoint/field details in `providers/persona.ts` are marked
+  `TODO(persona): confirm` — run a real Persona sandbox event through the function before relying
+  on it in production (tracked by item (b) above).
+- No push sending exists yet.
+- The moderation console does not exist, so photo approval and report handling are manual SQL
+  for now (tracked by item (c) above).
+
+## Testing with two accounts
+
+- **Location**: spoof a position near `42.36, -88.01` (CLC's centroid) using the browser's
+  sensors panel — Chrome DevTools, three-dot menu, More tools, Sensors, Location, "Other...".
+  See "Testing on web (browser geolocation prompt)" in `app/README.md` for tier radii and
+  reload/timing notes.
+- **Approving photos and marking an account verified**: done via a direct data update, not
+  through the app. Because `execute_sql` runs read-only, use `apply_migration` for the update,
+  and set the bypass flag in the same statement batch so the moderation/profile guards don't
+  reject it:
+  ```sql
+  select set_config('app.bypass_profiles_guard', 'on', true);
+  -- the update(s) that approve photos / mark the account verified
+  ```
+- **Clean up after**: any data update run through `apply_migration` leaves a row in the migration
+  history. Remove it afterwards with
+  `supabase migration repair --status reverted <version>` so the history stays a true record of
+  schema changes only.
 
 ## Step 8 status
 
@@ -243,7 +270,10 @@ below with a privileged role.
      `session_url`.
    - `purge-drain`: the manual trigger in step 7 doubles as its hosted smoke check.
 
-### Known follow-ups
+### Step 8 loose ends
+
+(Superseded by the "Known follow-ups" section above, which covers the same items app-wide; kept
+here for the deploy-pass-specific detail.)
 
 - The `identities` array on a scrubbed `auth.users` row cannot be cleared via the Admin API —
   supabase-js's `updateUserById` has no field for it. `purge-drain`'s scrub randomizes

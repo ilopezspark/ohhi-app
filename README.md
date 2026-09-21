@@ -11,7 +11,7 @@ things in it are not negotiable: no stored coordinates (§4), server-enforced in
 
 | Path | What it is |
 | --- | --- |
-| `app/` | The Expo app (walking skeleton): auth (email OTP) -> `begin_signup()` -> `me()` -> route by status -> an empty grid screen. See `app/README.md`. |
+| `app/` | The Expo app, built through the full design: auth (email OTP), onboarding, the grid with on-device tiering and presence, and the social slice (profile card, hi's, chat, blocks, reports, albums/shares, identity/card editors, settings, delete account). See `app/README.md`. |
 | `supabase/migrations/` | Postgres schema, RLS, seeds. Applied in filename order. |
 | `supabase/tests/` | pgTAP acceptance tests for the migrations, run with `supabase test db`. |
 | `supabase/tests/hosted/` | The hosted test runner (a DO block that always rolls back) and the down-script used to re-apply a migration against the hosted project during a fix pass. |
@@ -20,7 +20,7 @@ things in it are not negotiable: no stored coordinates (§4), server-enforced in
 | docs/migration-0002-plan.md | Design for the core schema migration, implemented in `20260918000002_core_schema.sql`. |
 | docs/handoff-0002.md | State and remaining work for the migration 0002 fix pass. |
 
-The Expo app, edge functions, and the moderation console are added in later build steps.
+The moderation console is not built yet — see `docs/handoff-0002.md`'s remaining-work list.
 
 ## Supabase
 
