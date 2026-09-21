@@ -11,6 +11,7 @@ things in it are not negotiable: no stored coordinates (§4), server-enforced in
 
 | Path | What it is |
 | --- | --- |
+| `app/` | The Expo app (walking skeleton): auth (email OTP) -> `begin_signup()` -> `me()` -> route by status -> an empty grid screen. See `app/README.md`. |
 | `supabase/migrations/` | Postgres schema, RLS, seeds. Applied in filename order. |
 | `supabase/tests/` | pgTAP acceptance tests for the migrations, run with `supabase test db`. |
 | `supabase/tests/hosted/` | The hosted test runner (a DO block that always rolls back) and the down-script used to re-apply a migration against the hosted project during a fix pass. |
