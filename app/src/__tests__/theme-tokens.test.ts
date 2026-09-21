@@ -68,8 +68,33 @@ describe('theme/tokens.ts internal consistency', () => {
     }
   });
 
-  it('danger reuses signalPressed (the screens never distinguish the two)', () => {
-    expect(colors.danger).toBe(colors.signalPressed);
+  it('danger is a distinct colour from signalPressed (product-owner ruling, decision 51)', () => {
+    expect(colors.danger).not.toBe(colors.signalPressed);
+    expect(colors.danger.toUpperCase()).toBe('#C2382B');
+  });
+
+  it('danger clears WCAG AA (4.5:1) contrast on paper and on surface', () => {
+    // Relative-luminance contrast ratio (WCAG 2.x), computed directly so this
+    // fails the moment `colors.danger` or `colors.paper`/`colors.surface` drift
+    // away from an accessible pairing, rather than trusting a hand-checked number.
+    const srgbToLinear = (channel: number) => {
+      const c = channel / 255;
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    const relativeLuminance = (hex: string) => {
+      const value = hex.replace('#', '');
+      const r = parseInt(value.slice(0, 2), 16);
+      const g = parseInt(value.slice(2, 4), 16);
+      const b = parseInt(value.slice(4, 6), 16);
+      return 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
+    };
+    const contrastRatio = (hexA: string, hexB: string) => {
+      const [lighter, darker] = [relativeLuminance(hexA), relativeLuminance(hexB)].sort((a, b) => b - a);
+      return (lighter + 0.05) / (darker + 0.05);
+    };
+
+    expect(contrastRatio(colors.danger, colors.paper)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(colors.danger, colors.surface)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('radii.pill is the CSS 999px pill radius used by every button/chip/input', () => {

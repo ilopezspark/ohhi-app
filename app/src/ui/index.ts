@@ -11,3 +11,4 @@ export * from './Banner';
 export * from './TabBar';
 export * from './Header';
 export * from './EmptyState';
+export * from './icons';

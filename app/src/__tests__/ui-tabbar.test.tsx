@@ -28,4 +28,20 @@ describe('ui/TabBarIcon', () => {
     const { toJSON } = await render(<TabBarIcon name="grid" color={colors.ink} size={32} />);
     expect(toJSON()).not.toBeNull();
   });
+
+  it.each([
+    ['grid', 'icon-grid'],
+    ['his', 'icon-his'],
+    ['chat', 'icon-chat'],
+    ['me', 'icon-person'],
+  ] as [TabIconName, string][])(
+    'renders the real ui/icons SVG glyph for %s, not a View-based approximation (decision 52)',
+    async (name, expectedTestId) => {
+      const { getByTestId } = await render(<TabBarIcon name={name} color={colors.ink} />);
+      // react-native-svg parses `viewBox` into `minX`/`minY`/`vbWidth`/`vbHeight` rather than
+      // exposing it back verbatim.
+      const svg = getByTestId(expectedTestId).props;
+      expect([svg.minX, svg.minY, svg.vbWidth, svg.vbHeight]).toEqual([0, 0, 24, 24]);
+    }
+  );
 });

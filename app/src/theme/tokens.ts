@@ -69,13 +69,13 @@ export const colors = {
 
   // --- brand / interactive states ---------------------------------------
   /**
-   * Link/pressed state of `signal`. Two different roles collapse onto this one value in the
-   * screens: it is the plain-`<a>` link colour on every "full" screen (`a{color:#D4460F}`) AND
-   * the delete-account destructive-text colour (`Settings.html`) AND report/block accents. `Grid.html` /
-   * `Profile.html` / `index.html` instead use `signal` (`#FF5A1F`) as their link colour with `#D4460F` as
-   * *its* hover — i.e. the two screens groups disagree about which of these two is the resting link
-   * colour. `signalPressed` is used here for both "pressed/hover" and "danger" since the screens never
-   * distinguish them (see system.md deviations).
+   * Link/pressed state of `signal`. In the screens themselves this one value did triple duty: the
+   * plain-`<a>` link colour on every "full" screen (`a{color:#D4460F}`), the delete-account
+   * destructive-text colour (`Settings.html`), and report/block accents. `Grid.html` / `Profile.html` /
+   * `index.html` instead use `signal` (`#FF5A1F`) as their link colour with `#D4460F` as *its* hover —
+   * i.e. the two screen groups disagree about which of these two is the resting link colour. Per the
+   * product owner's 21 September 2026 ruling (deviation 4 / decision 51), links keep `signal`/
+   * `signalPressed`; `danger` below is now a separate colour for destructive actions.
    */
   signalPressed: '#D4460F',
   /** `a:hover` on the "full" screens only (`#B93A0A`) — the sole extra press state, one step past `signalPressed`. Rare; not otherwise used. */
@@ -84,8 +84,17 @@ export const colors = {
   // --- semantic ----------------------------------------------------------
   /** Verified-student badge / verification chip fill. No other green exists in the screens. */
   success: '#B9C6A8',
-  /** Same value as `signalPressed` — the screens have no colour dedicated to "danger" distinct from "pressed link". */
-  danger: '#D4460F',
+  /**
+   * Muted red, distinct from `signalPressed`. Product-owner ruling, 21 September 2026 (deviation 4 /
+   * decision 51, `docs/decisions.md`): the screens never distinguished "pressed link" from "danger" —
+   * both collapsed onto `#D4460F` — but that reads as an orange-family colour that's too close to
+   * `signal`/`signalPressed` to read as a warning on its own. `#C2382B` is a desaturated red that sits
+   * apart from the brand's orange family while staying in the same warm, muted palette as the rest of
+   * the screens. Contrast on `paper` (#F7F3EC): 4.88:1. Contrast on `surface` (#FFFFFF): 5.39:1. Both
+   * clear WCAG AA's 4.5:1 minimum for normal text. `Button`'s `destructive` variant and any other
+   * danger-toned text use this; links stay on `signal`/`signalPressed` per the same ruling.
+   */
+  danger: '#C2382B',
   /**
    * Not present in any of the 24 screens — no warning/caution colour appears anywhere. Proposed
    * value (not extracted) so the app's existing warning banner tone (`src/grid/Banner.tsx`) has
@@ -134,14 +143,14 @@ export type ColorToken = keyof typeof colors;
 // ---------------------------------------------------------------------------
 
 /**
- * Font families. Both are loaded via Google Fonts `<link>`s in every screen
- * (`family=Outfit:wght@400;500;600;800` everywhere, plus
- * `family=JetBrains+Mono:wght@500` on the 19 "full" screens) but **JetBrains
- * Mono is never actually applied anywhere** — grep across all 24 screens
- * finds zero `font-family: 'JetBrains…'` declarations. It is loaded and
- * unused in every screen that links it (verification codes, timestamps and
- * the `CLC` campus code all render in Outfit). `mono` below is therefore a
- * *reserved* style, not an extracted one — see system.md.
+ * Font families. Outfit is loaded via Google Fonts `<link>`s in every screen
+ * (`family=Outfit:wght@400;500;600;800`). 19 of the 24 screens also link
+ * `family=JetBrains+Mono:wght@500`, but grep across all 24 finds zero
+ * `font-family: 'JetBrains…'` declarations — it was loaded and never applied
+ * anywhere (verification codes, timestamps and the `CLC` campus code all
+ * render in Outfit). Product-owner ruling, 21 September 2026 (deviation 2 /
+ * decision 50, `docs/decisions.md`): drop it outright rather than keep a
+ * reserved variant for it. Outfit is the only family in this app.
  */
 export const fontFamilies = {
   outfit: 'Outfit_400Regular',
@@ -150,7 +159,6 @@ export const fontFamilies = {
   /** Used 26 times across the screens (names, sheet titles) despite the Google Fonts `<link>` never requesting weight 700 — a second deviation, see system.md. */
   outfitBold: 'Outfit_700Bold',
   outfitExtraBold: 'Outfit_800ExtraBold',
-  jetBrainsMono: 'JetBrainsMono_500Medium',
 } as const;
 
 export interface TypeStyle {
@@ -282,18 +290,6 @@ export const typography = {
     lineHeight: 14,
     letterSpacing: 0,
     color: colors.subtle,
-  },
-  /**
-   * Reserved, not extracted (see `fontFamilies` doc comment) — proposed for whatever the screens
-   * loaded JetBrains Mono for and never used: verification codes, the campus short-code, timestamps.
-   */
-  mono: {
-    fontFamily: fontFamilies.jetBrainsMono,
-    fontSize: 13,
-    fontWeight: '500',
-    lineHeight: 16,
-    letterSpacing: 0,
-    color: colors.ink,
   },
 } as const satisfies Record<string, TypeStyle>;
 

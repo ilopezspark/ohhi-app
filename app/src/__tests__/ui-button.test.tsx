@@ -35,6 +35,16 @@ describe('ui/Button', () => {
     );
   });
 
+  it('destructive uses the dedicated danger colour, distinct from signalPressed (decision 51)', async () => {
+    const { getByText } = await render(<Button label="delete my account" variant="destructive" />);
+    const node = getByText('delete my account');
+    expect(colors.danger).not.toBe(colors.signalPressed);
+    expect([node.props.style].flat()).toEqual(expect.arrayContaining([expect.objectContaining({ color: colors.danger })]));
+    expect([node.props.style].flat()).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ color: colors.signalPressed })])
+    );
+  });
+
   it('shows a spinner and blocks onPress while loading', async () => {
     const onPress = jest.fn();
     const { getByTestId, queryByText } = await render(<Button testID="btn" label="send" loading onPress={onPress} />);

@@ -3,8 +3,11 @@
 Built from the 23 screens (390x844, `Main.html` is the 24th file but is the same
 contact-sheet's "welcome" entry) in `docs/design/screens/`. This doc is the
 reference; the code is `app/src/theme/tokens.ts`, `app/src/theme/index.ts` and
-`app/src/ui/*`. **No screen under `app/src/app/` was changed by this pass** —
-this is the system for the owner to review before anything gets restyled.
+`app/src/ui/*`. **No screen under `app/src/app/` was restyled**, with one
+exception: `(tabs)/_layout.tsx` now wires up the real tab-bar icons per the
+product owner's 21 September 2026 ruling on deviation 7 (decision 52,
+`docs/decisions.md`) — every other screen is still exactly as it was before
+that review.
 
 All 24 screens share one inline `<style>` block almost verbatim (`Main.html`,
 `Grid.html`, `Profile.html` link a trimmed version without the
@@ -30,14 +33,14 @@ except where explicitly marked "proposed."
 | `onDark` | `#F7F3EC` | text on `ink`/`signal` fills (reuses `paper`) |
 | `subtle` | `#8A857C` | tertiary/meta text (timestamps, counts) |
 | `faint` | `#9A958B` | inactive tab colour |
-| `signalPressed` | `#D4460F` | link colour on "full" screens *and* danger/pressed (see deviations) |
+| `signalPressed` | `#D4460F` | link colour on "full" screens *and* pressed state |
 | `signalPressedDark` | `#B93A0A` | `a:hover` on "full" screens only — rare |
 | `success` | `#B9C6A8` | verified-student badge, verification chip |
-| `danger` | `#D4460F` | same value as `signalPressed` — no dedicated danger colour exists |
-| `warning` | `#C77B3B` | **proposed, not extracted** — no warning colour appears in any screen |
+| `danger` | `#C2382B` | **product-owner ruling (decision 51)** — a muted red distinct from `signalPressed`, for `Button`'s `destructive` variant and other danger-toned text. 4.88:1 contrast on `paper`, 5.39:1 on `surface`. Links stay on `signal`/`signalPressed`. |
+| `warning` | `#C77B3B` | **proposed, not extracted, kept as-is** — no warning colour appears in any screen |
 | `overlay` | `rgba(35,33,31,0.45)` | sheet backdrop dim |
 | `silhouette` | `rgba(35,33,31,0.16)` | placeholder-avatar SVG fill |
-| `avatarTints` | 9 hex values | curated placeholder-tile palette (grid tiles, `Main.html`, `Profile.html` hero) — see `tokens.ts` |
+| `avatarTints` | 9 hex values | curated placeholder-tile palette (grid tiles, `Main.html`, `Profile.html` hero); `src/photos/tint.ts#tintForPhoto()` now hashes onto this set (product-owner ruling, deviation 6) — see `tokens.ts` |
 
 ## Type scale
 
@@ -55,7 +58,10 @@ except where explicitly marked "proposed."
 | `label` | 12/600 | `.field label` |
 | `caption` | 12/600 | `.chip` text — same metrics as `label` by coincidence, kept separate since components override colour per-state |
 | `captionMuted` | 11/600 | Timestamps ("2m", "1h"), tag-pill labels, tab-bar label |
-| `mono` | 13/500, JetBrains Mono | **Reserved, not extracted** — see "JetBrains Mono" deviation below |
+
+There is no `mono` variant: the product owner's ruling (decision 50) dropped
+JetBrains Mono outright rather than keep a reserved-but-unused type-scale
+entry for it. Outfit is the only typeface.
 
 Font families: Outfit 400/500/600/800 (as given), plus 700 (used 26 times,
 see deviation below). All loaded via `expo-font` + `@expo-google-fonts/outfit`
@@ -97,7 +103,8 @@ in `app/src/app/_layout.tsx`, with a splash-screen hold until they resolve.
 | `Badge` / `Dot` | `ui/Badge.tsx` | "here now" tile badge, "private" album badge, verified-student check (`Grid.html`); `Dot` = the unread/here-now indicator dot |
 | `Sheet` | `ui/Sheet.tsx` | `.dim` + `.sheet` + `.handle` — `Grid-Verify.html`, `Profile-Message.html`, `Profile-Report.html`, `Chat-Share.html`. Static/presentational only — no `Modal`, no gesture wiring; the screen that uses it owns mounting/animation. |
 | `Banner` / `Toast` | `ui/Banner.tsx` | `Banner` = the tinted info-panel ("a few rules" in `Me-Albums.html`, "be normal about it" in `Profile-Details.html`, "the rest lives in more about me" in `Onb-Identity.html`). `Toast` is a floating variant with no direct screen mockup, offered for ephemeral confirmations. |
-| `TabBar` (`tabBarScreenOptions`, `TabBarIcon`) | `ui/TabBar.tsx` | `Grid.html`/`Chat-List.html`/`Me.html`'s shared bottom tab bar, as an Expo Router `screenOptions` object |
+| `TabBar` (`tabBarScreenOptions`, `TabBarIcon`) | `ui/TabBar.tsx` | `Grid.html`/`Chat-List.html`/`Me.html`'s shared bottom tab bar, as an Expo Router `screenOptions` object; `TabBarIcon` renders the real `ui/icons` SVGs (decision 52) |
+| `Icon` (+ 16 named glyphs) | `ui/icons/Icon.tsx` | Every hand-drawn line icon ported from `docs/design/screens/*.html` via `react-native-svg` (decision 52) — `back`, `more`, `person`, `plus`, `send`, `grid`, `his`, `chat`, `camera`, `album`, `bell`, `search`, `check`, `lock`, `settings`, `pin` |
 | `Header` / `BackButton` | `ui/Header.tsx` | `.back` + `.h1` row every non-tab screen opens with |
 | `EmptyState` | `ui/EmptyState.tsx` | `Grid-Empty.html`'s centred icon/headline/helper/action stack |
 
@@ -129,60 +136,89 @@ in `app/src/app/_layout.tsx`, with a splash-screen hold until they resolve.
 | `Me-Albums.html` | `settings/albums/index.tsx` | |
 | `Settings.html` | `settings/notifications.tsx` + `settings/account.tsx` (+ others) | The design's single "settings" screen (notifications, blocked, school email, legal links, log out, delete account) is split across several route files in the app; there's no single screen matching it 1:1. |
 
-## Proposed deviations (flagged, not resolved)
+## Proposed deviations — product-owner rulings (21 September 2026)
 
-These are conflicts between the design screens and the app's recorded
+Conflicts between the design screens and the app's recorded
 decisions/behaviour, or internal inconsistencies within the screens
-themselves. None are resolved by this pass — product-owner call.
+themselves. Deviations 2, 4, 6 and 7 are **resolved** below (decisions 50-52,
+`docs/decisions.md`); 1, 3, 5 and 8 were reviewed and kept at their applied
+default — no code change beyond confirming the default holds.
 
 1. **`Profile-Details.html` shows pronouns/orientation unconditionally.** The
    shared "more about maya" card renders "pronouns: she/her" and "i'm: bi"
    with no visible gate. `settings/identity.tsx`'s own doc comment says
-   `is_public` is off by default and gates exactly this data — worth
-   confirming the mockup assumes `is_public: true` for "maya" rather than
-   showing a genuine bypass.
-2. **JetBrains Mono is loaded but never used.** 19 of the 24 screens link
-   `family=JetBrains+Mono:wght@500`; zero of them apply it in any
-   `font-family` declaration — verification codes, timestamps and the `CLC`
-   campus code all render in Outfit. `typography.mono` is a reserved variant,
-   not an extracted one. Worth asking the owner what it was meant for before
-   using it anywhere.
+   `is_public` is off by default and gates exactly this data.
+   **Applied default: gate kept.** The mockup assumes `is_public: true` for
+   "maya"; `is_public`'s off-by-default behaviour is not a bug and is
+   unchanged.
+2. **RESOLVED — JetBrains Mono is loaded but never used.** 19 of the 24
+   screens link `family=JetBrains+Mono:wght@500`; zero of them apply it in
+   any `font-family` declaration — verification codes, timestamps and the
+   `CLC` campus code all render in Outfit.
+   **Ruling (decision 50): dropped outright.** `@expo-google-fonts/jetbrains-mono`
+   is uninstalled, its loading removed from `_layout.tsx`, and
+   `typography.mono`/`fontFamilies.jetBrainsMono` deleted from
+   `theme/tokens.ts`. Outfit is the only typeface in the app.
 3. **Weight 700 is used but never loaded.** The screens' own Google Fonts
    `<link>` only requests `Outfit:wght@400;500;600;800` — no 700 — yet 26
-   inline styles set `font-weight: 700` (names, sheet titles). Browsers
-   synthesize/fall back for this; this kit loads `Outfit_700Bold` for real
-   instead of reproducing the gap.
-4. **Two different link/danger colours, never reconciled.** `Grid.html`/
-   `Profile.html`/`index.html` use `signal` (`#FF5A1F`) as the resting link
-   colour with `#D4460F` as its hover. Every "full" (chip/sheet) screen
-   inverts this: `#D4460F` is the resting link colour, `#B93A0A` its hover.
-   `#D4460F` is *also* the only danger colour (`Settings.html`'s "delete my
-   account"). This kit's `colors.signalPressed`/`colors.danger` collapse onto
-   one value since the screens never distinguish "pressed" from "danger" —
-   worth a real danger colour if that's not intentional.
+   inline styles set `font-weight: 700` (names, sheet titles).
+   **Applied default: 700 loaded.** This kit loads `Outfit_700Bold` for real
+   (`fontFamilies.outfitBold`) rather than reproducing the browser
+   synthesize/fallback gap — unchanged by this pass.
+4. **RESOLVED — two different link/danger colours, never reconciled.**
+   `Grid.html`/`Profile.html`/`index.html` use `signal` (`#FF5A1F`) as the
+   resting link colour with `#D4460F` as its hover. Every "full" (chip/sheet)
+   screen inverts this: `#D4460F` is the resting link colour, `#B93A0A` its
+   hover. `#D4460F` was *also* the only danger colour (`Settings.html`'s
+   "delete my account").
+   **Ruling (decision 51): a real danger colour.** `colors.danger` is now
+   `#C2382B`, a muted red distinct from `colors.signalPressed` (`#D4460F`) —
+   4.88:1 contrast on `paper`, 5.39:1 on `surface`, both clearing WCAG AA's
+   4.5:1 minimum for normal text. `Button`'s `destructive` variant and other
+   danger-toned text use it. Links stay on `signal`/`signalPressed`,
+   unchanged.
 5. **No warning colour exists anywhere in the 24 screens.** The app's
-   existing `src/grid/Banner.tsx` has a `tone="warning"` (the paused banner);
-   `colors.warning` here is a proposed value, not extracted.
-6. **The avatar/tile tint palette is curated in the design, hashed in code.**
-   The screens use a fixed set of 9 tones (`colors.avatarTints`);
-   `src/photos/tint.ts#tintForPhoto()` instead hashes the user id to an
-   arbitrary HSL hue. These will never visually match unless
-   `tintForPhoto()`'s output is later constrained to (or replaced by) this
-   set.
-7. **No icon library is installed** (matching the existing convention —
-   `(tabs)/_layout.tsx` already uses plain-`Text` glyphs, not
-   `@expo/vector-icons`). The screens' icons are hand-drawn SVG line icons;
-   `ui/TabBar.tsx`'s `TabBarIcon` approximates their silhouettes with plain
-   `View`s. This task's brief only installs the two font packages, so
-   `react-native-svg` was deliberately not added — flag if a closer icon
-   match is wanted later.
+   existing `src/grid/Banner.tsx` has a `tone="warning"` (the paused banner).
+   **Applied default: proposed value kept.** `colors.warning` (`#C77B3B`)
+   stays as originally proposed, not extracted — unchanged by this pass.
+6. **RESOLVED — the avatar/tile tint palette is curated in the design,
+   hashed in code.** The screens use a fixed set of 9 tones
+   (`colors.avatarTints`); `src/photos/tint.ts#tintForPhoto()` instead hashed
+   the user id to an arbitrary HSL hue, so tiles never matched the design.
+   **Ruling: constrain to the curated set.** `tintForPhoto()` now hashes the
+   user id + photo position onto an index into `colors.avatarTints`, same
+   determinism as before. `user_photos.tint` values already stored on the
+   hosted Sayohhi project were computed by the old (arbitrary-hue) function
+   and are **not backfilled** — this column is a display fallback, not a
+   source of truth, so old rows just keep their old hue until the next
+   write.
+7. **RESOLVED — no icon library was installed.** The screens' icons are
+   hand-drawn SVG line icons; `ui/TabBar.tsx`'s `TabBarIcon` previously
+   approximated their silhouettes with plain `View`s.
+   **Ruling (decision 52): `react-native-svg` installed.** Every icon used
+   across the 24 screens was extracted, de-duplicated, and ported as typed
+   components under `app/src/ui/icons/` (`<Icon name="..." />` plus named
+   exports — `BackIcon`, `MoreIcon`, `PersonIcon`, `PlusIcon`, `SendIcon`,
+   `GridIcon`, `HisIcon`, `ChatIcon`, `CameraIcon`, `AlbumIcon`, `BellIcon`,
+   `SearchIcon`, `CheckIcon`, `LockIcon`, `SettingsIcon`, `PinIcon`),
+   preserving each icon's stroke width/caps/joins/viewBox. `TabBarIcon` and
+   `(tabs)/_layout.tsx` (the one screen-layout file this pass touched) now
+   render the real icons. Two things named in the brief don't exist as
+   distinct icons in the 24 screens and weren't invented: the "here-now dot"
+   is a plain CSS dot, not an SVG (already `ui/Badge.tsx`'s `Dot`), and no
+   "close"/X icon appears anywhere (sheets dismiss via a backdrop tap, never
+   an explicit close button).
 8. **No dark theme.** None of the 24 screens declare
    `prefers-color-scheme` or a dark variant; `theme/index.ts`'s `theme` is
-   light-only. `ThemeProvider`/`useTheme()` exist so a second theme can be
-   added later without call sites changing.
+   light-only.
+   **Applied default: light only.** `ThemeProvider`/`useTheme()` still exist
+   so a second theme can be added later without call sites changing —
+   unchanged by this pass.
 
 ## Deferred to product-owner review
 
-Per the task: **no screen under `app/src/app/` was changed by this pass.**
-The tokens and component kit above are ready for that swap once the owner
-signs off on the deviations list.
+The deviations above are now settled per the 21 September 2026 rulings
+(decisions 50-52, `docs/decisions.md`). Per the task brief for this pass: no
+screen under `app/src/app/` was restyled, except `(tabs)/_layout.tsx` for
+decision 52's real tab-bar icons. The rest of the tokens and component kit
+are ready for a future pass to swap the app's screens over to them.

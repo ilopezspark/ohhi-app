@@ -99,6 +99,18 @@ recorded first.
 |---|----------|--------|
 | 49 | Card openers | Hi and Message are equal openers from the card; after either, the sender is locked out with that person until the other side responds (hi back, or a reply to the first message). |
 
+## Design (21 September 2026)
+
+Product-owner rulings on `docs/design/system.md`'s "Proposed deviations," applied to the design
+kit (`app/src/theme/`, `app/src/ui/*`). No screen under `app/src/app/` was restyled by this pass,
+except `(tabs)/_layout.tsx` for decision 52's tab-bar icons.
+
+| # | Decision | Answer |
+|---|----------|--------|
+| 50 | JetBrains Mono (deviation 2) | Dropped outright: `@expo-google-fonts/jetbrains-mono` uninstalled, its loading removed from `_layout.tsx`, and `typography.mono`/`fontFamilies.jetBrainsMono` deleted from `theme/tokens.ts`. It was loaded but never applied in any of the 24 screens. Outfit is the only typeface in the app. |
+| 51 | Distinct danger colour (deviation 4) | `colors.danger` is now `#C2382B`, a muted red distinct from `colors.signalPressed` (`#D4460F`) — 4.88:1 contrast on `paper`, 5.39:1 on `surface`, both clearing WCAG AA's 4.5:1 minimum. `Button`'s `destructive` variant and other danger-toned text use it. Links keep `colors.signal`/`signalPressed`, unchanged. |
+| 52 | Icons ported from the design SVGs (deviation 7) | `react-native-svg` installed; every hand-drawn icon used across `docs/design/screens/*.html` extracted, de-duplicated, and ported as typed components under `app/src/ui/icons/` (`<Icon name="..." />` plus named exports), preserving each icon's stroke width/caps/joins/viewBox. `ui/TabBar.tsx`'s `TabBarIcon` and `(tabs)/_layout.tsx` now render the real icons instead of the earlier `View`-based/emoji approximations. "here-now dot" wasn't a distinct icon (already `ui/Badge.tsx`'s `Dot`); no "close" icon exists anywhere in the 24 screens, so none was invented. |
+
 ## Consequences for the app build
 
 Migration 0004 adds the `request_waitlist(email)` RPC (decision 34) and the owner's

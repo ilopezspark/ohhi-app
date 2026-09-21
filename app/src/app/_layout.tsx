@@ -10,7 +10,6 @@ import {
   Outfit_700Bold,
   Outfit_800ExtraBold,
 } from '@expo-google-fonts/outfit';
-import { JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import { ThemeProvider } from '../theme';
 import { touchActivity } from '../api/presence';
@@ -27,16 +26,17 @@ export default function RootLayout() {
   // own Google Fonts <link> never requesting it (see `theme/tokens.ts`'s
   // `fontFamilies` doc comment — loaded here anyway so `Text`'s `title`
   // variant renders as designed rather than falling back to a synthetic
-  // bold). JetBrains Mono 500 is loaded for parity with every screen that
-  // links it, even though none of them actually apply it yet (`theme/tokens.ts`'s
-  // `mono` variant is reserved, not extracted).
+  // bold). JetBrains Mono is not loaded: the product owner's 21 September
+  // 2026 ruling on deviation 2 (`docs/design/system.md`) confirmed it was
+  // loaded-but-unused dead weight in every one of the 24 screens (decision
+  // 50, `docs/decisions.md`) — Outfit is the only typeface anywhere in the
+  // app.
   const [fontsLoaded, fontsError] = useFonts({
     Outfit_400Regular,
     Outfit_500Medium,
     Outfit_600SemiBold,
     Outfit_700Bold,
     Outfit_800ExtraBold,
-    JetBrainsMono_500Medium,
   });
 
   useEffect(() => {
