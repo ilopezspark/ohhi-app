@@ -442,20 +442,26 @@ unverified, stale, `away`, no `ok` photo, paused, or blocked, all indistinguisha
 renders one neutral "This profile isn't available" screen, never a reason. A null identity
 (404) silently collapses the pronouns/orientation row.
 
-**CTA state machine** (`src/card/cta.ts`, pure function, `docs/app-social-plan.md` §1's table):
+**CTA state machine** (`src/card/cta.ts`, pure function, `docs/app-social-plan.md` §1's table).
+Decision 49: Hi and Message are two equal openers, not a primary/fallback pair — after either is
+sent, the sender is locked out with that person until the other side responds (a hi back, or a
+reply to the opener's first message).
 
 | `conversation_id` | `my_hi_state` | CTA |
 |---|---|---|
 | set | any | `message` → "Message", navigates to `/chat/[conversationId]` |
-| null | null | `hi` → "Hi", calls `sendHi` |
-| null | `sent` | `hi_sent` → "Hi sent" (disabled) |
+| null | null | `hi_and_message` → "Hi" + "Message" together; "Hi" calls `sendHi`, "Message" calls `startConversation(targetId)` then navigates to `/chat/[conversationId]` |
+| null | `sent` | `hi_sent` → "Hi sent" (disabled), no "Message" — locked out of both openers until they respond |
 | null | `answered` | `message_pending` → transitional `hi_back()` race; the screen refetches the card once and expects `conversation_id` to be populated |
-| null | `dismissed`/`expired` | `none` → no CTA rendered at all |
+| null | `dismissed`/`expired` | `message_opener` → "Message" only, no "Hi" — `enforce_hi_rules()` still refuses a repeat hi, but `start_conversation` doesn't check `his` state at all (only a block or an existing conversation refuse it), so Message stays offered |
 
-No separate "message first" CTA was added beyond this table: §1's own table (which the build
-note also cites) enumerates exactly these five states with no message-first row, and
-`start_conversation` remains reachable elsewhere (it's the non-hi entry point §3 describes for
-the thread/chat side, not the card).
+`CtaButton` (`src/card/CtaButton.tsx`) renders 0/1/2 buttons off `cta.kind` — `hi_and_message`
+is the only state with two — and `ProfileScreen` owns both mutations: `sendHi` and a
+`startConversation` mutation whose `onSuccess` navigates to the new thread and whose `onError`
+refetches the card once, since the likeliest refusal ("a conversation already exists for this
+pair") means the read was stale and a fresh one resolves straight to `message`. Every
+`startConversation` refusal is already mapped through `mapSupabaseError` (never "blocked" —
+`api/conversations.ts`).
 
 The tier word reuses `src/grid/tierLabel.ts`'s `tierWord()` without a county label — same
 generic "in the county" fallback the grid uses — rather than pull the presence/geolocation

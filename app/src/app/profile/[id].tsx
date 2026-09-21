@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getProfileCard } from '../../api/profileCard';
 import { getIdentity } from '../../api/identity';
 import { sendHi } from '../../api/his';
+import { startConversation } from '../../api/conversations';
 import { signedPhotoUrls } from '../../api/photos';
 import { GOAL_OPTIONS } from '../../api/goals';
 import { PhotoCarousel } from '../../card/PhotoCarousel';
@@ -75,8 +76,32 @@ export default function ProfileScreen() {
     },
   });
 
-  function onMessage(conversationId: string) {
-    router.push(`/chat/${conversationId}` as never);
+  // Decision 49: Message is the other equal opener. With no conversation yet
+  // (`hi_and_message`/`message_opener`) it has to create one first; with a
+  // conversation already known (`message`) it just navigates. A refusal here
+  // is mapped through `mapSupabaseError` already (never "blocked" —
+  // `api/conversations.ts`'s `startConversation`) — the one thing this
+  // screen adds is a single refetch, since the likeliest refusal
+  // ("a conversation already exists for this pair") means the card's read
+  // was stale and a fresh one will resolve straight to `message`.
+  const messageMutation = useMutation({
+    mutationFn: () => startConversation(targetId),
+    onSuccess: (conversationId) => {
+      router.push(`/chat/${conversationId}` as never);
+    },
+    onError: () => {
+      void cardQuery.refetch();
+    },
+  });
+
+  function onMessage() {
+    if (cta.kind === 'message') {
+      router.push(`/chat/${cta.conversationId}` as never);
+      return;
+    }
+    if (cta.kind === 'hi_and_message' || cta.kind === 'message_opener') {
+      messageMutation.mutate();
+    }
   }
 
   if (cardQuery.isPending) {
@@ -144,9 +169,15 @@ export default function ProfileScreen() {
             {hiMutation.error instanceof Error ? hiMutation.error.message : "That didn't work."}
           </Text>
         ) : null}
+        {messageMutation.isError ? (
+          <Text style={styles.errorText} testID="profile-message-error">
+            {messageMutation.error instanceof Error ? messageMutation.error.message : "That didn't work."}
+          </Text>
+        ) : null}
         <CtaButton
           cta={cta}
-          busy={hiMutation.isPending || cta.kind === 'message_pending'}
+          hiBusy={hiMutation.isPending}
+          messageBusy={messageMutation.isPending || cta.kind === 'message_pending'}
           onHi={() => hiMutation.mutate()}
           onMessage={onMessage}
         />

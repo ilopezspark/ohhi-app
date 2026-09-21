@@ -45,16 +45,21 @@ territory).
 
 **CTA state machine.** `profile_card_for` only reports hi's the *viewer* sent
 (`from_user_id = caller`); an incoming hi from the target is invisible here and surfaces only
-on the Hi's tab (§2) — a card opened from a hi-received context still shows "Hi", which is
-correct (open question 1).
+on the Hi's tab (§2) — a card opened from a hi-received context still shows "Hi" + "Message",
+which is correct (open question 1).
+
+Decision 49: Hi and Message are two equal, low-friction openers, offered together, not a
+primary/fallback pair. After either is sent, the sender is locked out with that person until
+the other side responds — a hi back, or a reply to the opener's first message (§3's
+`awaiting_reply` composer gate covers the message side once a conversation exists).
 
 | `conversation_id` | `my_hi_state` | CTA |
 |---|---|---|
 | set | any | "Message" → thread. |
-| null | null | "Hi" → insert into `his` (§2). |
-| null | `sent` | "Hi sent" (disabled) — decision 6 forbids a repeat while open. |
+| null | null | "Hi" + "Message", both openers → "Hi" inserts into `his` (§2); "Message" calls `start_conversation` then the opener's first message, same as §3. |
+| null | `sent` | "Hi sent" (disabled), no "Message" — decision 6 forbids a repeat hi while open, and the sender is locked out of *both* openers with this person until they respond. |
 | null | `answered` | Transitional: `hi_back()` sets this and creates the conversation in one transaction; a stale read racing the two selects should refetch once and treat as "Message". |
-| null | `dismissed`/`expired` | No CTA (or disabled, no tooltip) — a resend would fail server-side (decision 6); don't offer it. |
+| null | `dismissed`/`expired` | "Message" only, no "Hi" — `enforce_hi_rules()` still refuses a repeat hi (decision 6), but `start_conversation` has no such check (only a block or an existing conversation refuse it, neither true here), so the Message opener stays offered. |
 
 A block never reaches this table — the card is zero rows first.
 

@@ -93,6 +93,12 @@ recorded first.
 | 47 | Report entry point for paused users | Hidden whenever `me().status !== 'active'`, since the `reports` insert requires `is_active`. |
 | 48 | Card/identity chip vocabularies | Editors render whatever `validate.ts` exports from the `identity` edge function at build/deploy time, never copy baked into the plan docs' examples. |
 
+## Social (21 September 2026)
+
+| # | Decision | Answer |
+|---|----------|--------|
+| 49 | Card openers | Hi and Message are equal openers from the card; after either, the sender is locked out with that person until the other side responds (hi back, or a reply to the first message). |
+
 ## Consequences for the app build
 
 Migration 0004 adds the `request_waitlist(email)` RPC (decision 34) and the owner's

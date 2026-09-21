@@ -9,12 +9,14 @@ jest.mock('../api/client', () => ({ supabase: {}, SUPABASE_URL: 'https://example
 jest.mock('../api/profileCard', () => ({ getProfileCard: jest.fn() }));
 jest.mock('../api/identity', () => ({ getIdentity: jest.fn() }));
 jest.mock('../api/his', () => ({ sendHi: jest.fn() }));
+jest.mock('../api/conversations', () => ({ startConversation: jest.fn() }));
 jest.mock('../api/photos', () => ({ signedPhotoUrls: jest.fn() }));
 
 import { router, useLocalSearchParams } from 'expo-router';
 import { getProfileCard } from '../api/profileCard';
 import { getIdentity } from '../api/identity';
 import { sendHi } from '../api/his';
+import { startConversation } from '../api/conversations';
 import { signedPhotoUrls } from '../api/photos';
 import ProfileScreen from '../app/profile/[id]';
 
@@ -89,49 +91,81 @@ describe('ProfileScreen', () => {
     await findByTestId('profile-identity');
   });
 
-  it('shows the Hi CTA when there is no prior hi and no conversation', async () => {
+  it('shows both Hi and Message as equal openers when there is no prior hi and no conversation', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: null, conversation_id: null }));
     const { findByTestId } = await renderScreen();
-    const cta = await findByTestId('profile-cta');
-    expect(cta.props.accessibilityState?.disabled).toBeFalsy();
+    const hiCta = await findByTestId('profile-cta-hi');
+    const messageCta = await findByTestId('profile-cta-message');
+    expect(hiCta.props.accessibilityState?.disabled).toBeFalsy();
+    expect(messageCta.props.accessibilityState?.disabled).toBeFalsy();
   });
 
   it('sends a hi when the Hi CTA is tapped', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: null, conversation_id: null }));
     (sendHi as jest.Mock).mockResolvedValue(undefined);
     const { findByTestId } = await renderScreen();
-    const cta = await findByTestId('profile-cta');
+    const cta = await findByTestId('profile-cta-hi');
     await fireEvent.press(cta);
     await waitFor(() => expect(sendHi).toHaveBeenCalledWith(TARGET));
   });
 
-  it('shows a disabled "Hi sent" CTA when my_hi_state is sent', async () => {
-    (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: 'sent', conversation_id: null }));
+  it('calls startConversation and navigates to the new thread when Message is tapped with no conversation yet', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: null, conversation_id: null }));
+    (startConversation as jest.Mock).mockResolvedValue('conv-new');
     const { findByTestId } = await renderScreen();
-    const cta = await findByTestId('profile-cta');
-    expect(cta.props.accessibilityState?.disabled).toBe(true);
+    const cta = await findByTestId('profile-cta-message');
+    await fireEvent.press(cta);
+    await waitFor(() => expect(startConversation).toHaveBeenCalledWith(TARGET));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/chat/conv-new'));
   });
 
-  it('renders no CTA for a dismissed hi with no conversation', async () => {
+  it('shows a disabled "Hi sent" CTA with no Message button when my_hi_state is sent — locked out of both openers', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: 'sent', conversation_id: null }));
+    const { findByTestId, queryByTestId } = await renderScreen();
+    const cta = await findByTestId('profile-cta-hi');
+    expect(cta.props.accessibilityState?.disabled).toBe(true);
+    expect(queryByTestId('profile-cta-message')).toBeNull();
+  });
+
+  it('shows Message only (no Hi) for a dismissed hi with no conversation', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: 'dismissed', conversation_id: null }));
+    (startConversation as jest.Mock).mockResolvedValue('conv-new');
     const { findByTestId, queryByTestId } = await renderScreen();
     await findByTestId('profile-screen');
-    expect(queryByTestId('profile-cta')).toBeNull();
+    expect(queryByTestId('profile-cta-hi')).toBeNull();
+    const cta = await findByTestId('profile-cta-message');
+    await fireEvent.press(cta);
+    await waitFor(() => expect(startConversation).toHaveBeenCalledWith(TARGET));
   });
 
-  it('renders no CTA for an expired hi with no conversation', async () => {
+  it('shows Message only (no Hi) for an expired hi with no conversation', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: 'expired', conversation_id: null }));
     const { findByTestId, queryByTestId } = await renderScreen();
     await findByTestId('profile-screen');
-    expect(queryByTestId('profile-cta')).toBeNull();
+    expect(queryByTestId('profile-cta-hi')).toBeNull();
+    await findByTestId('profile-cta-message');
   });
 
   it('navigates to the chat thread when Message is tapped with an existing conversation', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: 'sent', conversation_id: 'conv-1' }));
-    const { findByTestId } = await renderScreen();
-    const cta = await findByTestId('profile-cta');
+    const { findByTestId, queryByTestId } = await renderScreen();
+    expect(queryByTestId('profile-cta-hi')).toBeNull();
+    const cta = await findByTestId('profile-cta-message');
     await fireEvent.press(cta);
     expect(router.push).toHaveBeenCalledWith('/chat/conv-1');
+    expect(startConversation).not.toHaveBeenCalled();
+  });
+
+  it('refetches the card once when startConversation is refused, without leaking why', async () => {
+    (getProfileCard as jest.Mock)
+      .mockResolvedValueOnce(card({ my_hi_state: null, conversation_id: null }))
+      .mockResolvedValueOnce(card({ my_hi_state: null, conversation_id: 'conv-existing' }));
+    (startConversation as jest.Mock).mockRejectedValue(new Error("That didn't work."));
+    const { findByTestId } = await renderScreen();
+    const cta = await findByTestId('profile-cta-message');
+    await fireEvent.press(cta);
+    await waitFor(() => expect(getProfileCard).toHaveBeenCalledTimes(2));
+    await findByTestId('profile-message-error');
   });
 
   it('navigates to the block route with context=profile from the overflow menu', async () => {
