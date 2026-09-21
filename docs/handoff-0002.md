@@ -148,9 +148,82 @@ and in the hosted project; the hosted runner is 98/98 green as of 18 September 2
    pass; see the "Open decision" note above for the one item left unresolved (the stale
    migration-history rows).
 7. Commit and merge to `main`.
-8. Next deliverables after that: the identity/private-card edge function and the
-   verification webhook handler (decisions 19 and 8). Migration 0003
-   (`20260918000003_edge_support.sql`) now exists and is applied to the hosted project
-   (history version `20260918000003 after the CLI history repair`, hosted runner 41/41 green); it builds the SQL half of
-   all three edge functions, so only the Deno functions themselves, the four Vault secrets,
-   and their deploys remain.
+8. The identity/private-card edge function, the verification webhook handler, and purge-drain
+   (decisions 19 and 8). Code is built and tested; nothing is deployed. See "Step 8 status"
+   below.
+
+## Step 8 status
+
+Code built and tested, not deployed. On 21 September 2026 the three edge functions were built
+and unit-tested: `identity` (81 tests, on Opus), `verification` (62 tests), `purge-drain` (28
+tests); `deno lint`/`deno check` clean on all three. Committed in 8b95232. Migration 0003
+(`20260918000003_edge_support.sql`) is applied to the hosted project and the migration history
+is repaired (three rows, `…000001`/`…000002`/`…000003`). Decision 33 (blocks hide public
+identity) was added. Nothing is deployed yet — no Vault secrets exist, no `supabase functions
+deploy` has run, and Persona is not configured.
+
+### Deploy checklist
+
+1. Create the Vault secrets `identity` needs (SQL editor or psql, privileged role):
+   - `ohhi_identity_key_v1` — `openssl rand -base64 32`, AES-256-GCM key for `user_identity`.
+   - `ohhi_card_key_v1` — `openssl rand -base64 32`, AES-256-GCM key for `user_private_card`.
+2. Create the Vault secrets `purge-drain` needs:
+   - `purge_drain_url` — this function's deployed URL
+     (`https://<project-ref>.functions.supabase.co/purge-drain`); fill in accurately once step 4
+     has deployed it and the real URL is known.
+   - `purge_drain_secret` — the same random value used for `PURGE_DRAIN_SECRET` below.
+3. Mirror secrets into each function (names only — `verification` has no Vault step, its three
+   secrets come straight from Persona):
+   - `identity`: `supabase secrets set OHHI_IDENTITY_KEY_V1 OHHI_CARD_KEY_V1`
+   - `verification`: `supabase secrets set PERSONA_API_KEY PERSONA_WEBHOOK_SECRET PERSONA_INQUIRY_TEMPLATE_ID`
+     (optional `PERSONA_API_BASE_URL`, only for a sandbox/staging Persona environment)
+   - `purge-drain`: `supabase secrets set PURGE_DRAIN_SECRET PURGE_DRAIN_DB_URL`
+     (`PURGE_DRAIN_DB_URL` optional, falls back to `SUPABASE_DB_URL`)
+4. Deploy all three:
+   - `supabase functions deploy identity`
+   - `supabase functions deploy verification`
+   - `supabase functions deploy purge-drain`
+5. Go back and confirm `purge_drain_url` (step 2) matches the function's real deployed URL.
+6. Persona dashboard steps (`supabase/functions/verification/README.md`):
+   - Create or confirm the Inquiry Template used for identity verification; copy its id into
+     `PERSONA_INQUIRY_TEMPLATE_ID`.
+   - Under Webhooks, add an endpoint at
+     `https://<project-ref>.supabase.co/functions/v1/verification/webhook`.
+   - Copy the webhook's signing secret into `PERSONA_WEBHOOK_SECRET`.
+   - Subscribe the endpoint to `inquiry.approved`, `inquiry.declined`, and
+     `inquiry.marked-for-review`.
+   - Send a test event from the dashboard; confirm the function logs
+     `verification_webhook_applied`, not a signature or parse warning.
+7. Manual purge-drain smoke test:
+   ```sh
+   curl -i -X POST "https://<project-ref>.functions.supabase.co/purge-drain" \
+     -H "x-purge-drain-secret: <the PURGE_DRAIN_SECRET value>" \
+     -H "content-type: application/json" \
+     -d '{}'
+   ```
+   Expect `200` with the `purge_runs` counts as JSON (`claimed`/`drained_ok`/`drained_failed`/
+   `dead_lettered`/`auth_scrubbed`/`error`); `500` only means the run itself hit errors, not that
+   the call failed outright.
+8. Hosted smoke checks, one per function:
+   - `identity`: `PUT /functions/v1/identity` then `GET /functions/v1/identity/:user_id` with a
+     real user JWT; repeat for `/identity/card`. Confirm the error shape
+     (`{"error":{"code":"…","message":"…"}}`) on a bad or missing token.
+   - `verification`: `POST /functions/v1/verification/start` with a real user JWT; expect `200`
+     (`verification_id`/`provider`/`session_url`/`attempt`) or `409` with a reusable
+     `session_url`.
+   - `purge-drain`: the manual trigger in step 7 doubles as its hosted smoke check.
+
+### Known follow-ups
+
+- The `identities` array on a scrubbed `auth.users` row cannot be cleared via the Admin API —
+  supabase-js's `updateUserById` has no field for it. `purge-drain`'s scrub randomizes
+  email/phone and clears metadata but leaves `identities` untouched (`purge-drain` README).
+- Several Persona endpoint/field details in `providers/persona.ts` are marked
+  `TODO(persona): confirm` (session-creation endpoint, hosted-flow URL field, resume-session
+  endpoint, the DOB JSON path on a webhook). Run one real Persona sandbox event through the
+  function before relying on it in production.
+- The chip vocabularies in `identity/validate.ts` are placeholders pending the real taxonomy
+  (decision 21); replace them wholesale once product defines it.
+- No integration tests have run against the hosted project — the Vault and function secrets
+  above don't exist yet, so `/start`, the identity routes, and the purge-drain trigger are only
+  covered by unit tests against mocked DB/provider fakes, not a live hosted request.
