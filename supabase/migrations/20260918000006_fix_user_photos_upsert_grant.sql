@@ -1,0 +1,45 @@
+-- OhHi v1 · migration 0006 · fix the user_photos upsert grant
+--
+-- Defect: onboarding's photo upload (`uploadProfilePhoto` in
+-- app/src/api/photos.ts) calls
+-- `supabase.from('user_photos').upsert({ user_id, position, storage_path,
+-- tint }, { onConflict: 'user_id,position' })`. PostgREST's merge-duplicates
+-- upsert always compiles to
+-- `insert into user_photos (...) ... on conflict (user_id, position) do
+-- update set user_id = excluded.user_id, position = excluded.position,
+-- storage_path = excluded.storage_path, tint = excluded.tint` — it includes
+-- *every* payload column, including the on_conflict target columns, in the
+-- generated `do update set` list, even though their values never actually
+-- change on a real conflict. Postgres checks UPDATE privilege against every
+-- column named in that SET clause at parse time, regardless of whether a
+-- conflict occurs at runtime — so this fails even on a brand-new row with
+-- no existing conflict.
+--
+-- Migration 0002 (core_schema, §"user_photos") granted
+-- `update (position, storage_path, tint)` but omitted `user_id`, one of the
+-- two on_conflict target columns. Every upload therefore fails with
+-- "permission denied for table user_photos" (SQLSTATE 42501), which
+-- app/src/api/errors.ts's mapSupabaseError() turns into the generic
+-- RefusedError ("That didn't work.") — the onboarding photo screen's
+-- "try again" failure.
+--
+-- Reproduced on the hosted project (yvmxyynxpheudnyoveqx) 2026-09-21: every
+-- POST /storage/v1/object/profile-photos/{uid}/0.jpg returns 200 (the
+-- upload itself succeeds), followed by
+-- POST /rest/v1/user_photos?on_conflict=user_id%2Cposition&select=* → 403,
+-- with postgres_logs showing "permission denied for table user_photos" at
+-- the same timestamp. public.user_photos was empty and storage.objects held
+-- the uploaded file, confirming the upload/upsert ordering in photos.ts is
+-- correct and the failure is entirely in this grant.
+--
+-- Fix: extend the owner's UPDATE grant to include user_id. This does not
+-- widen what a client can actually change — "user_photos owner update"'s
+-- `using`/`with check (user_id = auth.uid())` (migration 0002) still forbid
+-- reassigning a row to a different user. The column grant only lets
+-- PostgREST's generated SET clause re-assert the same user_id the row (and
+-- the authenticated request) already carries.
+--
+-- THIS MIGRATION HAS NOT BEEN APPLIED TO THE HOSTED PROJECT
+-- (yvmxyynxpheudnyoveqx). Apply it there to actually fix the bug.
+
+grant update (user_id) on public.user_photos to authenticated;

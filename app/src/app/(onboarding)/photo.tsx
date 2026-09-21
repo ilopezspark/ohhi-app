@@ -102,7 +102,14 @@ export default function PhotoScreen() {
       });
       setSavedPhoto(row);
       setPhase('pending');
-    } catch {
+    } catch (err) {
+      // Log the real cause in dev only — the user-facing copy below stays
+      // generic on purpose (api/errors.ts's RefusedError/UnknownError
+      // convention), so this is the only place the underlying error (e.g. a
+      // Postgres/PostgREST error code) is ever visible.
+      if (__DEV__) {
+        console.error('[onboarding/photo] upload failed', err);
+      }
       setErrorMessage("That didn't work. Please try again.");
       setPhase('error');
     }

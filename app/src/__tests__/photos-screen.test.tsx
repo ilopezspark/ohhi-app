@@ -142,6 +142,23 @@ describe('PhotoScreen', () => {
     expect(mockUploadProfilePhoto).toHaveBeenCalledTimes(2);
   });
 
+  it('logs the underlying error to the console in dev, but keeps the user-facing copy generic', async () => {
+    const underlyingError = { message: 'permission denied for table user_photos', code: '42501' };
+    mockUploadProfilePhoto.mockRejectedValueOnce(underlyingError);
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { getByTestId } = await render(<PhotoScreen />);
+    await fireEvent.press(getByTestId('photo-pick-library'));
+    await waitFor(() => expect(getByTestId('photo-upload-button')).toBeTruthy());
+    await fireEvent.press(getByTestId('photo-upload-button'));
+
+    await waitFor(() => expect(getByTestId('photo-error')).toBeTruthy());
+    expect(getByTestId('photo-error').props.children).toBe("That didn't work. Please try again.");
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('upload failed'), underlyingError);
+
+    consoleErrorSpy.mockRestore();
+  });
+
   it('navigates back to goals when back is pressed', async () => {
     const { getByTestId } = await render(<PhotoScreen />);
     await fireEvent.press(getByTestId('photo-back-button'));
