@@ -1,16 +1,21 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
+import { currentUserId } from './session';
 import type { Database } from '../types/database';
 
 export type OnboardingCompletionStatus = Database['public']['Enums']['user_status'];
 
 /**
- * Owner select on `users_private.date_of_birth` is granted (migration
- * 0002 §10). Presence of a value (not the value itself) is what gates the
- * DOB onboarding step — `me()` doesn't report this field at all.
+ * `users_private` is owner-only to select (migration 0002 §10), so this
+ * filter is defense-in-depth rather than closing a live leak — but every
+ * "my row" read in this layer filters explicitly on the owner column rather
+ * than leaning on RLS alone (see `src/__tests__/api-owner-filter.test.ts`).
+ * Presence of a value (not the value itself) is what gates the DOB
+ * onboarding step — `me()` doesn't report this field at all.
  */
 export async function getDateOfBirth(): Promise<string | null> {
-  const { data, error } = await supabase.from('users_private').select('date_of_birth').maybeSingle();
+  const uid = await currentUserId();
+  const { data, error } = await supabase.from('users_private').select('date_of_birth').eq('user_id', uid).maybeSingle();
   if (error) throw mapSupabaseError(error);
   return data?.date_of_birth ?? null;
 }
@@ -28,12 +33,8 @@ export async function getDateOfBirth(): Promise<string | null> {
  * returning `closed_age` from the `finish` step.
  */
 export async function setDateOfBirth(dob: string): Promise<void> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not signed in.');
-
-  const { error } = await supabase.from('users_private').update({ date_of_birth: dob }).eq('user_id', user.id);
+  const uid = await currentUserId();
+  const { error } = await supabase.from('users_private').update({ date_of_birth: dob }).eq('user_id', uid);
   if (error) throw mapSupabaseError(error);
 }
 

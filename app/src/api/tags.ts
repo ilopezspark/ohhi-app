@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
+import { currentUserId } from './session';
 import type { Database } from '../types/database';
 
 export type Tag = Pick<Database['public']['Tables']['tags']['Row'], 'id' | 'label' | 'category' | 'campus_id'>;
@@ -20,10 +21,18 @@ export async function listTagsForCampus(campusId: string | null): Promise<Tag[]>
   return data ?? [];
 }
 
+/**
+ * `user_tags` is readable by owner OR same-campus-and-not-blocked (migration
+ * 0002 §9, so profile cards can show tag chips) — an unfiltered read here
+ * can return another readable user's tags instead of the caller's own, so
+ * the caller's id is always filtered explicitly.
+ */
 export async function getUserTags(): Promise<UserTag[]> {
+  const uid = await currentUserId();
   const { data, error } = await supabase
     .from('user_tags')
     .select('tag_id, position')
+    .eq('user_id', uid)
     .order('position', { ascending: true });
   if (error) throw mapSupabaseError(error);
   return data ?? [];
@@ -43,17 +52,18 @@ export async function setUserTags(tagIds: string[]): Promise<void> {
     throw new Error('At most 3 tags are allowed.');
   }
 
-  const { error: deleteError } = await supabase.from('user_tags').delete().not('tag_id', 'is', null);
+  const uid = await currentUserId();
+
+  const { error: deleteError } = await supabase
+    .from('user_tags')
+    .delete()
+    .eq('user_id', uid)
+    .not('tag_id', 'is', null);
   if (deleteError) throw mapSupabaseError(deleteError);
 
   if (tagIds.length === 0) return;
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not signed in.');
-
-  const rows = tagIds.map((tagId, index) => ({ user_id: user.id, tag_id: tagId, position: index }));
+  const rows = tagIds.map((tagId, index) => ({ user_id: uid, tag_id: tagId, position: index }));
   const { error: insertError } = await supabase.from('user_tags').insert(rows);
   if (insertError) throw mapSupabaseError(insertError);
 }

@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
+import { currentUserId } from './session';
 
 export type ProfileUpdate = {
   first_name?: string;
@@ -11,15 +12,23 @@ export type ProfileUpdate = {
  * `first_name` isn't reported by `me()` (only counts of goals/tags/photos
  * are) — onboarding's name step and the resume flow both need it, so it's
  * read directly off `profiles` under the owner select grant.
+ *
+ * `profiles` is readable by owner OR same-campus-and-not-blocked (migration
+ * 0002 §10, so profile cards work) — an unfiltered `.maybeSingle()` here
+ * would throw once a second readable row exists, and could return someone
+ * else's name, so the caller's own id is always filtered explicitly.
  */
 export async function getFirstName(): Promise<string | null> {
-  const { data, error } = await supabase.from('profiles').select('first_name').maybeSingle();
+  const uid = await currentUserId();
+  const { data, error } = await supabase.from('profiles').select('first_name').eq('id', uid).maybeSingle();
   if (error) throw mapSupabaseError(error);
   return data?.first_name ?? null;
 }
 
+/** Same "owner or same-campus" select policy as `getFirstName` — see its comment. */
 export async function getStatusLine(): Promise<string | null> {
-  const { data, error } = await supabase.from('profiles').select('status_line').maybeSingle();
+  const uid = await currentUserId();
+  const { data, error } = await supabase.from('profiles').select('status_line').eq('id', uid).maybeSingle();
   if (error) throw mapSupabaseError(error);
   return data?.status_line ?? null;
 }
@@ -30,11 +39,7 @@ export async function getStatusLine(): Promise<string | null> {
  * `verification_status` are never client-writable, not even by the owner.
  */
 export async function updateProfile(patch: ProfileUpdate): Promise<void> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not signed in.');
-
-  const { error } = await supabase.from('profiles').update(patch).eq('id', user.id);
+  const uid = await currentUserId();
+  const { error } = await supabase.from('profiles').update(patch).eq('id', uid);
   if (error) throw mapSupabaseError(error);
 }

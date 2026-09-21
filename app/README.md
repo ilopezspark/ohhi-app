@@ -412,3 +412,338 @@ resubscribe and teardown), `grid-visibility.test.ts` (every §3.1 priority branc
 copy rules), and `grid-screen.test.tsx` (tiles, tier words, here-now, tags, signed URL vs
 placeholder, empty state, paused state, one case per banner reason, the broadcast merge and
 its unknown-`user_id` drop, all against a mocked `api/`).
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Profile card and hi's section below — added for the profile-card and   -->
+<!-- hi's build (`docs/app-social-plan.md` §1–§2). Please keep further      -->
+<!-- additions after this point in their own clearly delimited section.     -->
+<!-- ---------------------------------------------------------------------- -->
+
+## Profile card and hi's
+
+`docs/app-social-plan.md` §1–§2, §8–§9. Built alongside two other slices (chat, and
+blocks/reports/albums/shares/editors/settings) landing in the same pass — this section covers
+only the profile card and hi's pieces.
+
+### Tabs
+
+`(tabs)/_layout.tsx` now registers all four tabs, in order: `grid`, `his`, `chats`,
+`settings`. `chats.tsx` and `settings.tsx` are the other two agents' files; no icon library is
+installed (`@expo/vector-icons` isn't a dependency), so `tabBarIcon` renders a plain text
+glyph, matching the rest of the app's icon-free style.
+
+### `profile/[id]`
+
+Replaces the grid-tap placeholder. Reads `profile_card_for(target)`
+(`api/profileCard.ts`) and the `identity` edge function's `GET /identity/:user_id`
+(`api/identity.ts`) in parallel — the identity fetch always fires alongside the card, since the
+card carries no `is_public`-equivalent flag to gate on. A null card (zero rows — inactive,
+unverified, stale, `away`, no `ok` photo, paused, or blocked, all indistinguishable by design)
+renders one neutral "This profile isn't available" screen, never a reason. A null identity
+(404) silently collapses the pronouns/orientation row.
+
+**CTA state machine** (`src/card/cta.ts`, pure function, `docs/app-social-plan.md` §1's table):
+
+| `conversation_id` | `my_hi_state` | CTA |
+|---|---|---|
+| set | any | `message` → "Message", navigates to `/chat/[conversationId]` |
+| null | null | `hi` → "Hi", calls `sendHi` |
+| null | `sent` | `hi_sent` → "Hi sent" (disabled) |
+| null | `answered` | `message_pending` → transitional `hi_back()` race; the screen refetches the card once and expects `conversation_id` to be populated |
+| null | `dismissed`/`expired` | `none` → no CTA rendered at all |
+
+No separate "message first" CTA was added beyond this table: §1's own table (which the build
+note also cites) enumerates exactly these five states with no message-first row, and
+`start_conversation` remains reachable elsewhere (it's the non-hi entry point §3 describes for
+the thread/chat side, not the card).
+
+The tier word reuses `src/grid/tierLabel.ts`'s `tierWord()` without a county label — same
+generic "in the county" fallback the grid uses — rather than pull the presence/geolocation
+controller into the profile card just to decode `campuses.county_label`, which isn't part of
+this screen's job.
+
+Overflow menu (`src/card/OverflowMenu.tsx`): Block and Report, navigating to
+`/settings/block/[id]` and `/settings/report/[id]` (the other agent's routes) as
+`` `/settings/${kind}/${targetId}?context=profile` `` — a plain string `router.push` cast `as
+never`, the same pattern `(tabs)/grid.tsx` already uses for `/profile/[id]`, so this doesn't
+depend on how the other screen destructures its params.
+
+### `(tabs)/his`
+
+The Hi's tab (decision 15): received hi's (`to_user_id = me`, `state = 'sent'`, newest first),
+each with the sender's first name/photo, a hi-back button (`hi_back()`, navigates to
+`/chat/[conversationId]`), and a dismiss button (optimistic, with rollback on refusal — no
+confirmation, no undo, decision 6). No realtime in v1 (plan §10) — refetches via
+`useFocusEffect` (re-exported by `expo-router`) and pull-to-refresh only.
+
+`api/his.ts`'s `listReceivedHis()` joins the sender's name and main photo in one PostgREST
+`select` (`profiles!his_from_user_id_fkey(first_name, user_photos(storage_path, position))`)
+rather than fetching a full `profile_card_for` row per hi — the select policies that make the
+join possible (owner-or-same-campus-and-not-blocked on `profiles`; owner-or-ok-and-not-blocked
+on `user_photos`) are already satisfied by the fact that the `his` row itself only exists
+between an unblocked, resolvable pair. A sender row that doesn't resolve degrades that row's
+`firstName`/`photoPath` to `null` rather than failing the whole list.
+
+### Tests
+
+`card-cta.test.ts` (pure CTA function, every `my_hi_state` × `conversation_id` combination),
+`card-api.test.ts` (`getProfileCard`, mocked client, zero-row → null), `card-identity.test.ts`
+(`getIdentity`, mocked `fetch`, 404 → null, non-404 throws), `card-screen.test.tsx` (loading,
+null-card, visible-card, identity-404-hides-row, every CTA branch, overflow menu → block/report
+navigation), `his-api.test.ts` (`sendHi` payload is exactly `{from_user_id, to_user_id}`,
+`dismissHi` payload is exactly `{state: 'dismissed'}`, the received-hi join and its
+sender-row-missing/multi-photo fallbacks, `hiBack`), `his-screen.test.tsx` (empty state, row
+rendering, focus refetch, optimistic dismiss + rollback, hi-back navigation).
+
+Deviation: no packages were added and `package.json` wasn't touched — everything here is built
+on dependencies already in the project (`@tanstack/react-query`, `expo-router`'s bundled
+`useFocusEffect`, plain `react-native` primitives for the carousel/chips/menu instead of an
+icon or carousel library).
+
+<!-- BEGIN: Chat (conversations and messages) -->
+## Chat (conversations and messages)
+
+The social slice's conversation list and thread, per `docs/app-social-plan.md` §3 (with §8's
+error/optimism table and §9's test plan). Owned files: `src/app/(tabs)/chats.tsx`,
+`src/app/chat/[id].tsx`, `src/api/{conversations,messages,chatMedia}.ts`, `src/chat/*`, and
+`src/__tests__/chat-*`. `src/realtime/index.ts` gained a chat subscription API alongside the
+grid's campus-presence one; nothing existing there changed behaviour.
+
+### Composer rules (`src/chat/rules.ts`)
+
+`composerState(conversation, meId, lastMessage)` is the client mirror of
+`public.enforce_message_rules()`, so the composer never lets the user hit a refusal it could
+have predicted. The server stays authoritative — this is an affordance decision, not a
+security one.
+
+| `state` | Role | Opener already sent? | Result |
+|---|---|---|---|
+| `awaiting_reply` | opener | no | send, **240** chars, no media |
+| `awaiting_reply` | opener | yes | locked, "Waiting for a reply." |
+| `awaiting_reply` | recipient | no | locked, "Waiting for them to say hi first." |
+| `awaiting_reply` | recipient | yes | send, 1000 chars, no media (the reply is what opens the thread) |
+| `open` | either | — | send, 1000 chars, **media enabled** |
+| `closed_block` | `blocked_by` (the blocker) | — | locked (unreachable: `can_read_conversation` hides the row) |
+| `closed_block` | the blocked party | — | **send, media enabled — identical to `open`** (decision 12 shadow-accept) |
+| `expired` | either | — | locked, read-only |
+| `closed_deleted` | either | — | locked, read-only |
+| any | non-participant | — | locked (defensive) |
+
+Two deliberate departures from a literal reading of the trigger:
+
+- **`awaiting_opener` is stricter than the server.** After `hi_back()` the thread exists with
+  the original sender as `opened_by_id` and no messages. The trigger would accept a message
+  from the recipient (step 3 only fires for the opener) and `advance_conversation` would flip
+  it straight to `open` — but plan §2/§3 say that side gets no compose box until the opener
+  speaks. Product rule, enforced only here.
+- **Media stays attachable in a shadow-accepted thread.** The trigger and the `chat-media`
+  write policy both require `state = 'open'`, so such a send fails. Disabling the button
+  would be the tell decision 12 exists to prevent, so the failure surfaces as the same
+  generic "Couldn't send. Tap to retry." as a dropped connection.
+
+`closed` and `expired` share one locked string, and the list chip is the single word
+"Closed" for `expired`/`closed_deleted` and **nothing at all** for a shadow-accepted thread —
+a distinguishing banner would leak what decision 13 hides.
+
+### Unread and previews: what one request can derive
+
+`listConversations()` is **four constant-cost requests, never N+1**:
+
+1. `conversations` with two embeds — `messages` (referenced-table `order` + `limit(1)`, which
+   PostgREST applies *per parent row*, giving the latest message per conversation in one
+   round trip) and `message_reads` (owner-only by RLS, so at most my own row);
+2. `profiles` (`id, first_name` — the table is column-granted) batched with `.in()`;
+3. `user_photos` at `position = 0`, batched the same way (`conversations` has no FK to it, so
+   it can never be an embed);
+4. `photos.signedPhotoUrls` for whichever paths came back.
+
+A refused `profiles`/`user_photos` row is not an error — it is the ordinary
+indistinguishable-refusal convention, and the row still renders with a neutral fallback name.
+No N+1 fallback was needed: the embed is not refused.
+
+**Unread is a boolean, not a count.** `message_reads` stores one `last_read_at` per
+(user, conversation) and nothing else, so "has unread" is derivable client-side from
+`last_message_at`, my `last_read_at` and the last sender — exactly what plan §3 specifies. An
+exact *number* is not: it needs a per-conversation `count(*) where created_at > last_read_at`,
+which PostgREST cannot express per parent row. That would need a view/RPC
+(e.g. `conversation_list_for_me()` returning the count) or one extra request per unread
+thread. Neither exists, so the badge is a dot.
+
+`message_reads` is owner-only in every direction, so **no "seen by" indicator is buildable**
+on this schema.
+
+### Chat media
+
+`chat-media/{conversation_id}/{message_id}.jpg`, the exact path both storage policies parse.
+Upload precedes the insert — the write policy checks the conversation's state, not the row's
+existence, and `messages` has no client update grant, which rules out inserting then patching
+`media_path` in. The message id is therefore minted client-side (`src/chat/uuid.ts`:
+`crypto.randomUUID` where available, else a `Math.random` v4 — it is a primary key, never a
+secret or a capability, and no crypto package was added). Resize/EXIF-strip reuses
+`src/photos/resize.ts`. An upload that succeeds before a failed insert **leaks the object**;
+decision 37 accepts that for v1 and defers the sweep to the purge-queue infrastructure.
+
+### Realtime
+
+`src/realtime/index.ts` gained `subscribeConversation(id, handlers)` (postgres_changes INSERT
+on `public.messages`, server-side `conversation_id=eq.<id>`, one channel per open thread) and
+`subscribeMessageList(handlers)` (the same, unfiltered — **RLS is the filter**, so a blocker's
+channel never receives the blocked party's inserts). These are ordinary channels, not private
+ones: `config.private` governs broadcast authorization, not row-level replication. Both
+re-auth and signal an invalidation on foreground, and unsubscribe on unmount.
+`unsubscribeAll()` tears down presence plus chat together and is what `resetRealtimeManager()`
+now calls; `unsubscribe()` keeps its narrower campus-presence-only meaning.
+
+The chat list patches the affected row in place from the event and only refetches for a
+conversation it does not already hold (a first contact).
+
+### Tests
+
+`chat-rules.test.ts` (the full state x role x last-sender table above, the shared
+closed/expired copy, the chip's silence on a shadow-accepted thread, unread and preview),
+`chat-api.test.ts` (the list's embed order/limit, one request per table at any list length,
+`sendMessage` sending only `id/conversation_id/sender_id/body/media_path` and never
+`created_at`, `markRead` writing only the three columns `message_reads_guard` and the owner
+policies allow and using the last message's server timestamp, the `chat-media` path and
+upload options, generic error mapping for both `42501` and bare trigger exceptions),
+`chat-realtime.test.ts` (filtered vs. unfiltered subscriptions, payload validation, per-thread
+teardown, foreground invalidation, `unsubscribeAll`), `chat-list-screen.test.tsx` (previews,
+unread badge, chips, in-place realtime patch vs. refetch, empty state, navigation) and
+`chat-thread-screen.test.tsx` (every composer state, optimistic send and rollback-to-retry,
+upload-before-insert, read marking, pagination cursor, profile link, Block/Report routes).
+<!-- END: Chat (conversations and messages) -->
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Settings, blocks, reports, albums, editors section below — added for   -->
+<!-- that build (`docs/app-social-plan.md` §4-§9). Please keep further      -->
+<!-- additions after this point in their own clearly delimited section.     -->
+<!-- ---------------------------------------------------------------------- -->
+
+<!-- BEGIN: Settings, blocks, reports, albums, editors -->
+## Settings, blocks, reports, albums, editors
+
+`docs/app-social-plan.md` §4-§9, built alongside the profile-card/hi's and chat slices landing
+in the same pass. Routes: `(tabs)/settings.tsx` (the fourth tab, registered by the profile-card
+agent's `(tabs)/_layout.tsx`) and everything under `settings/` — `block/[id]`, `report/[id]`,
+`albums/index`, `albums/[id]`, `identity`, `card`, `notifications`, `account`.
+
+### Blocks and reports
+
+`/settings/block/[id]` and `/settings/report/[id]` take `id` (target user, path) and `context`
+(`profile` | `chat`, query) exactly per the contract the profile card's `OverflowMenu` and chat
+use (`router.push('/settings/${kind}/${targetId}?context=profile')`); chat additionally passes
+`conversationId`, read into `reports.context_id` when `context === 'chat'`.
+
+Block is confirmation-gated, not optimistic (plan §8): `blockUser`/`unblockUser`
+(`api/blocks.ts`) are plain inserts/deletes, and the screen navigates to `/(tabs)/settings`
+only once the insert resolves. Unblock copy states plainly that it does not reopen a
+`closed_block` thread (decision 36) — no trigger reverses the close, no RPC exists for it.
+
+Report (`api/reports.ts`) inserts exactly `(reporter_id, subject_id, category, note,
+context_type, context_id)` — `state`/`severity`/`resolved_at`/`action_taken` are never sent,
+matching the column grant. No severity control anywhere in the UI; `set_report_severity()`
+computes it unconditionally server-side. The entry point gates on `me().status === 'active'`
+(decision 47) and renders a neutral "not available" state rather than a hidden route, since a
+non-active user can still reach the URL directly. `reports.note` has no DB length check
+(checked: no `char_length` constraint in the migration) — `REPORT_NOTE_MAX_LENGTH = 500` is a
+client-side-only cap, called out as a judgment call in `api/reports.ts`'s doc comment.
+
+Blocked-users list lives inline in `(tabs)/settings.tsx`, not as a separate route (none was
+named in this build's file list). It shows a best-effort name: blocking someone makes
+`private.is_blocked` true for the pair, which the `profiles` select policy also checks — so a
+blocked user's own profile row becomes unreadable to the blocker too. `listBlockedUsers`
+embeds `profiles!blocks_blocked_id_fkey(first_name)`; PostgREST returns `null` for that nested
+object under RLS rather than erroring, and the row falls back to "Blocked user".
+
+### Albums and shares
+
+`api/albums.ts`: album CRUD (rename is column-limited to `name`, matching the owner update
+grant), album-photo upload-then-insert (`album-photos` bucket, `{user_id}/{album_id}/
+{photo_id}.jpg` — `photo_id` is a locally generated v4-shaped id used only for path
+uniqueness, since `album_photos.id` is server-assigned and not in the owner's insert grant),
+never sending `moderation_state`. Pending photos render a "Pending review" badge for the owner
+(the owner select ignores moderation state); the shared-viewer path (`listSharedAlbumPhotos`)
+is the same query, filtered to `ok` by RLS instead of by the client.
+
+`api/shares.ts`'s `enforce_share_rules()` requires: subject ownership (album owned by the
+sharer, or `subject_id = owner_id` for `private_card`), a **mutual** conversation
+(`private.conversation_is_mutual` — both participants have sent at least one message), and not
+blocked. `advance_conversation()`'s trigger flips a conversation's `state` from
+`awaiting_reply` to `open` at exactly the moment the non-opener sends their first message —
+which is precisely the mutual condition — so `listShareCandidates()` scopes the picker to the
+caller's own `state = 'open'` conversations rather than counting distinct senders per
+candidate client-side. `settings/albums/[id].tsx`'s "Share with" list only offers candidates
+not already actively shared with; revoke is optimistic (single-column, guard-enforced) and a
+repeat revoke is a no-op success (the `.is('revoked_at', null)` filter matches zero rows,
+never an error).
+
+"Shared with me" is a section of `settings/albums/index.tsx`, not a separate route.
+`shares.subject_id` has no FK to `albums` (it's polymorphic — an album id or the owner's own
+id), so `listSharedWithMeAlbums` is two queries (active album shares, then the matching
+`albums` rows) rather than one PostgREST embed.
+
+### Identity and private-card editors
+
+`settings/identity.tsx` and `settings/card.tsx` are thin forms over `identity` edge function
+PUT routes (`api/identityWrite.ts`), never PostgREST directly. Both send the whole object every
+save — `putIdentity`/`putCard` take every field, never a `Partial<>`. "Show on my profile"
+(`is_public`) defaults off and never clears field values when toggled.
+
+Vocabulary: `src/settings/vocab.ts` is a literal copy of
+`supabase/functions/identity/validate.ts`'s exported constants (decision 48 — the function has
+no `GET .../vocab` route), kept honest by `__tests__/editors-vocab.test.ts`, which reads both
+files' source directly and fails the moment they diverge.
+
+Current values load from the other agent's `getIdentity(userId)` for pronouns/orientation (the
+owner path returns the full payload, or `null` on a 404 — "never written yet", including for
+the owner). `is_public`/`fields_filled` aren't in that wrapper's return type, so the identity
+editor reads them directly off `user_identity`'s owner-granted columns (`select (user_id,
+is_public, key_version, fields_filled, updated_at)`) — a different read path from
+`getIdentity`, not a reimplementation of it. `getMyCard()` (`api/identityWrite.ts`) is the
+card-editor equivalent, added there since it's card-specific and owner-only.
+
+### Settings tab
+
+Pause and here-now reuse `src/presence/store.ts`'s `usePresenceStore` setters directly
+(`setPaused`/`setHereNow`) alongside the existing `pauseGrid`/`setHereNow` RPC wrappers already
+in `api/presence.ts`, rather than mounting the full `usePresence()` hook (which starts the
+location-sampling controller — that belongs to the grid screen) or re-wrapping `pause_grid` in
+`api/account.ts`. `api/account.ts` therefore holds only `deleteMyAccount` and a consents read
+(`listMyConsents` — no dedicated `consents.ts` was in this build's file list; it lives here as
+the closest account-level read).
+
+Verification status/action reuses `api/verification.ts#startAndOpenVerification`, the same
+function the grid banner calls.
+
+Delete account (`settings/account.tsx`) is a two-tap confirmation. Order matters:
+`deleteMyAccount()` resolves first, then `src/settings/signOut.ts#signOutAndReset` runs
+(`supabase.auth.signOut()`, `queryClient.clear()`, presence store reset, navigate to
+`(auth)/email`) — `delete_my_account()` does not invalidate the session itself, so signing out
+first would leave a still-authenticated session that can no longer do anything useful. Copy
+states the 30-day window plainly and that re-signup purges-and-restarts rather than "undoes".
+
+### Tests
+
+`blocks-api.test.ts`, `reports-api.test.ts` (exactly six insert columns, note→null blank
+trim, no severity value for any category), `albums-api.test.ts` (album-photo insert never
+sends `moderation_state`/`id`, upload-before-insert ordering, path shape), `shares-api.test.ts`
+(share insert shape for both subject types, revoke's single-column update, share-candidate
+scoping to `open` conversations), `editors-vocab.test.ts` (the source-diff divergence check
+described above), `editors-validation.test.ts` (decision 20/21 limits, `ChipPicker`'s
+`maxItems` cap, shared by both editors), `settings-block-screen.test.tsx` (confirmation
+renders before any API call, target name best-effort load, navigate-away-on-success, error
+copy, cancel), `settings-report-screen.test.tsx` (decision 47 hidden state, no severity control
+in the DOM, disabled-until-category, context passthrough, generic thanks copy),
+`settings-account-delete.test.tsx` (two-tap confirm, RPC-then-sign-out ordering, no sign-out on
+RPC failure).
+
+### Deviations
+
+No packages were added and `package.json` wasn't touched. `randomPathId()` in `api/albums.ts`
+is a `Math.random()`-based v4-shaped id (not `crypto.randomUUID`/`expo-crypto`, neither of
+which exists in this app yet) — acceptable since it only needs to satisfy the storage policies'
+uuid-shaped-folder regex and be unique within one album, not be cryptographically unpredictable.
+A blocked-users route and a `consents.ts` file were named in the design note's prose but not in
+this build's explicit file list; both were folded into existing owned files (`(tabs)/
+settings.tsx`, `api/account.ts`) rather than adding new ones outside that list.
+<!-- END: Settings, blocks, reports, albums, editors -->

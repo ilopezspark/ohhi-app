@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
+import { currentUserId } from './session';
 import type { Database } from '../types/database';
 
 export type UserGoal = Database['public']['Enums']['user_goal'];
@@ -19,9 +20,15 @@ export const GOAL_OPTIONS: { value: UserGoal; label: string }[] = [
   { value: 'whatever', label: 'Whatever happens, happens' },
 ];
 
-/** Owner select is table-granted (no column restriction) on `user_goals`. */
+/**
+ * `user_goals` is readable by owner OR same-campus-and-not-blocked
+ * (migration 0002 §9, so profile cards can show goals) — an unfiltered read
+ * here can return another readable user's goals instead of the caller's
+ * own, so the caller's id is always filtered explicitly.
+ */
 export async function getUserGoals(): Promise<UserGoal[]> {
-  const { data, error } = await supabase.from('user_goals').select('goal');
+  const uid = await currentUserId();
+  const { data, error } = await supabase.from('user_goals').select('goal').eq('user_id', uid);
   if (error) throw mapSupabaseError(error);
   return (data ?? []).map((row) => row.goal);
 }
@@ -38,17 +45,14 @@ export async function setUserGoals(goals: UserGoal[]): Promise<void> {
 
   if (toRemove.length === 0 && toAdd.length === 0) return;
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not signed in.');
+  const uid = await currentUserId();
 
   if (toRemove.length > 0) {
-    const { error } = await supabase.from('user_goals').delete().eq('user_id', user.id).in('goal', toRemove);
+    const { error } = await supabase.from('user_goals').delete().eq('user_id', uid).in('goal', toRemove);
     if (error) throw mapSupabaseError(error);
   }
   if (toAdd.length > 0) {
-    const rows = toAdd.map((goal) => ({ user_id: user.id, goal }));
+    const rows = toAdd.map((goal) => ({ user_id: uid, goal }));
     const { error } = await supabase.from('user_goals').insert(rows);
     if (error) throw mapSupabaseError(error);
   }

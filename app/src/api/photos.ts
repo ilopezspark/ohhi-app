@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
+import { currentUserId } from './session';
 import { resizeForUpload } from '../photos/resize';
 import { tintForPhoto } from '../photos/tint';
 import { profilePhotoPath, type ProfilePhotoPosition } from '../photos/path';
@@ -72,9 +73,19 @@ export async function uploadProfilePhoto({ position, uri, width, height }: Uploa
  * The caller's own photos, all positions, regardless of `moderation_state`
  * — the owner's own reads are never filtered to `ok` (onboarding-grid plan
  * §2 step 5 / §3's pending-moderation UX contract).
+ *
+ * `user_photos` is readable by owner OR "ok and readable and not blocked"
+ * (so the grid/profile card can show other people's photos) — an unfiltered
+ * read here can return another readable user's photo rows instead of the
+ * caller's own, so the caller's id is always filtered explicitly.
  */
 export async function listMyPhotos(): Promise<UserPhotoRow[]> {
-  const { data, error } = await supabase.from('user_photos').select('*').order('position', { ascending: true });
+  const uid = await currentUserId();
+  const { data, error } = await supabase
+    .from('user_photos')
+    .select('*')
+    .eq('user_id', uid)
+    .order('position', { ascending: true });
   if (error) throw mapSupabaseError(error);
   return data ?? [];
 }

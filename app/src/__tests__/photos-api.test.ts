@@ -1,16 +1,21 @@
 const mockGetSession = jest.fn();
+const mockGetUser = jest.fn();
 const mockUpload = jest.fn();
 const mockSingle = jest.fn();
 const mockSelect = jest.fn((..._args: unknown[]) => ({ single: mockSingle }));
 const mockUpsert = jest.fn((..._args: unknown[]) => ({ select: mockSelect }));
 const mockOrder = jest.fn();
-const mockListSelect = jest.fn((..._args: unknown[]) => ({ order: mockOrder }));
+const mockEqList = jest.fn((..._args: unknown[]) => ({ order: mockOrder }));
+const mockListSelect = jest.fn((..._args: unknown[]) => ({ eq: mockEqList }));
 const mockFrom = jest.fn((..._args: unknown[]) => ({ upsert: mockUpsert, select: mockListSelect }));
 const mockStorageFrom = jest.fn((..._args: unknown[]) => ({ upload: mockUpload }));
 
 jest.mock('../api/client', () => ({
   supabase: {
-    auth: { getSession: (...args: unknown[]) => mockGetSession(...args) },
+    auth: {
+      getSession: (...args: unknown[]) => mockGetSession(...args),
+      getUser: (...args: unknown[]) => mockGetUser(...args),
+    },
     storage: { from: (...args: unknown[]) => mockStorageFrom(...args) },
     from: (...args: unknown[]) => mockFrom(...args),
   },
@@ -115,15 +120,24 @@ describe('uploadProfilePhoto', () => {
 describe('listMyPhotos', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } }, error: null });
     mockOrder.mockResolvedValue({ data: [SAVED_ROW], error: null });
   });
 
-  it('reads all of the caller\'s own photos ordered by position, unfiltered by moderation_state', async () => {
+  it("reads only the caller's own photos (filtered by user_id), ordered by position, unfiltered by moderation_state", async () => {
     const rows = await listMyPhotos();
 
     expect(mockFrom).toHaveBeenCalledWith('user_photos');
     expect(mockListSelect).toHaveBeenCalledWith('*');
+    expect(mockEqList).toHaveBeenCalledWith('user_id', USER_ID);
     expect(mockOrder).toHaveBeenCalledWith('position', { ascending: true });
     expect(rows).toEqual([SAVED_ROW]);
+  });
+
+  it('throws instead of reading when there is no signed-in user', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+
+    await expect(listMyPhotos()).rejects.toThrow('Not signed in.');
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 });

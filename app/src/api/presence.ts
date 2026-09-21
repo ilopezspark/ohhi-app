@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
+import { currentUserId } from './session';
 import type { PresenceTier } from '../geo/tier';
 import type { Database } from '../types/database';
 
@@ -82,11 +83,18 @@ export async function pauseGrid(visible: boolean): Promise<void> {
  *
  * Returns `null` when no row exists yet — `begin_signup()` creates it, so in
  * practice that only happens before onboarding starts.
+ *
+ * `user_presence` is owner-only to select, so this filter is defense-in-depth
+ * rather than closing a live leak — but every "my row" read in this layer
+ * filters explicitly on the owner column rather than leaning on RLS alone
+ * (see `src/__tests__/api-owner-filter.test.ts`).
  */
 export async function getMyPresence(): Promise<MyPresence | null> {
+  const uid = await currentUserId();
   const { data, error } = await supabase
     .from('user_presence')
     .select('tier, tier_computed_at, is_visible')
+    .eq('user_id', uid)
     .maybeSingle();
   if (error) throw mapSupabaseError(error);
   return data ?? null;
