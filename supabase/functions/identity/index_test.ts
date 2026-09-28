@@ -322,7 +322,7 @@ Deno.test("PUT card: writes for the caller with the right fields_filled", async 
   const h = harness({}, OWNER);
   const res = await h.handle(
     put("/identity/card", {
-      into: ["top"],
+      into: ["men"],
       safer_sex: ["condoms"],
       kinks: [],
       hard_nos: ["no drugs"],

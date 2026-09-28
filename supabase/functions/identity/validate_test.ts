@@ -9,6 +9,7 @@ import {
   PRONOUN_OPTIONS,
   readCardPayload,
   readIdentityPayload,
+  SAFER_SEX_TESTED_PATTERN,
   validateCardRequest,
   validateIdentityRequest,
   ValidationError,
@@ -28,7 +29,14 @@ function rejectsCard(body: unknown, fragment?: string) {
 // ---------------------------------------------------------------------------
 
 Deno.test("vocabulary: decision 20's four pronoun options are present", () => {
-  assertEquals([...PRONOUN_OPTIONS], ["she/her", "he/him", "they/them", "ask me"]);
+  assertEquals([...PRONOUN_OPTIONS], ["he/him", "she/her", "they/them", "ask me"]);
+});
+
+Deno.test("vocabulary: ruling 6 — no 'single' chip anywhere", () => {
+  assertEquals((ORIENTATION_CHIPS as readonly string[]).includes("single"), false);
+  for (const field of CARD_FIELDS) {
+    assertEquals(CARD_CHIPS[field].includes("single"), false, field);
+  }
 });
 
 Deno.test("vocabulary: every constant chip is within the 40-character cap", () => {
@@ -145,14 +153,40 @@ Deno.test("card: minimal valid body (all four arrays empty)", () => {
   assertEquals(validateCardRequest(emptyCard), emptyCard);
 });
 
-Deno.test("card: maximal valid body (8 chips per array, decision 21)", () => {
+Deno.test("card: every field's full fixed list is accepted (kinks capped at 8, decision 21)", () => {
   const body = Object.fromEntries(
     CARD_FIELDS.map((f) => [f, [...CARD_CHIPS[f]].slice(0, CARD_MAX_ITEMS)]),
   );
   assertEquals(validateCardRequest(body), body);
-  for (const field of CARD_FIELDS) {
-    assertEquals((body as Record<string, string[]>)[field].length, CARD_MAX_ITEMS);
-  }
+});
+
+Deno.test("card: safer_sex accepts a fixed chip plus a tested-pattern chip together", () => {
+  const body = {
+    into: [],
+    safer_sex: ["condoms", "tested apr '26"],
+    kinks: [],
+    hard_nos: [],
+  };
+  assertEquals(validateCardRequest(body), body);
+});
+
+Deno.test("card: hard_nos reaches the 8-item cap with fixed suggestions plus typed entries (decision 21/ruling 4)", () => {
+  const body = {
+    into: [],
+    safer_sex: [],
+    kinks: [],
+    hard_nos: [
+      ...CARD_CHIPS.hard_nos,
+      "no loud music",
+      "no smoking",
+      "no pets in the room",
+      "no early mornings",
+      "no last-minute plans",
+    ],
+  };
+  const result = validateCardRequest(body);
+  assertEquals(result.hard_nos.length, CARD_MAX_ITEMS);
+  assertEquals(result.hard_nos, body.hard_nos);
 });
 
 // ---------------------------------------------------------------------------
@@ -190,12 +224,96 @@ Deno.test("card: rejects an unknown chip value", () => {
 });
 
 Deno.test("card: rejects a chip valid for a different field", () => {
-  // `top` is an `into` chip, never a `hard_nos` one.
-  rejectsCard({ ...emptyCard, hard_nos: ["top"] }, "unknown value");
+  // `condoms` is a `safer_sex` chip, never an `into` one, and `into` stays
+  // fixed-list only (ruling 4 only lifts that restriction for `hard_nos`).
+  rejectsCard({ ...emptyCard, into: ["condoms"] }, "unknown value");
 });
 
 Deno.test("card: rejects a duplicated chip", () => {
-  rejectsCard({ ...emptyCard, into: ["top", "top"] }, "duplicate");
+  rejectsCard({ ...emptyCard, into: ["men", "men"] }, "duplicate");
+});
+
+// ---------------------------------------------------------------------------
+// Card: hard_nos typed entries (ruling 4)
+// ---------------------------------------------------------------------------
+
+Deno.test("card: hard_nos accepts a typed entry alongside a fixed suggestion", () => {
+  const body = {
+    ...emptyCard,
+    hard_nos: ["no pics unasked", "no loud music after 10"],
+  };
+  assertEquals(validateCardRequest(body), body);
+});
+
+Deno.test("card: hard_nos rejects a typed entry over 40 characters", () => {
+  rejectsCard(
+    { ...emptyCard, hard_nos: ["x".repeat(CHIP_MAX_LENGTH + 1)] },
+    "40 characters",
+  );
+});
+
+Deno.test("card: hard_nos rejects a ninth item (fixed and typed combined)", () => {
+  rejectsCard(
+    {
+      ...emptyCard,
+      hard_nos: [...CARD_CHIPS.hard_nos, "a", "b", "c", "d", "e", "f"],
+    },
+    "at most 8",
+  );
+});
+
+Deno.test("card: into stays fixed-list only — a typed entry is rejected", () => {
+  rejectsCard({ ...emptyCard, into: ["a brand new typed thing"] }, "unknown value");
+});
+
+Deno.test("card: hard_nos collapses a typed duplicate of a fixed entry (case-insensitive)", () => {
+  rejectsCard(
+    { ...emptyCard, hard_nos: ["no pics unasked", "NO PICS UNASKED"] },
+    "duplicate",
+  );
+});
+
+Deno.test("card: hard_nos rejects control characters, including a newline", () => {
+  rejectsCard({ ...emptyCard, hard_nos: ["no\nnewlines"] }, "control character");
+  rejectsCard({ ...emptyCard, hard_nos: ["no\x00nulls"] }, "control character");
+});
+
+Deno.test("card: hard_nos trims and collapses internal whitespace on a typed entry", () => {
+  const body = { ...emptyCard, hard_nos: ["  no   loud   music  "] };
+  assertEquals(validateCardRequest(body).hard_nos, ["no loud music"]);
+});
+
+Deno.test("card: hard_nos rejects a whitespace-only typed entry", () => {
+  rejectsCard({ ...emptyCard, hard_nos: ["   "] }, "at least 1 character");
+});
+
+// ---------------------------------------------------------------------------
+// Card: the safer_sex `tested <mon> '<yy>` pattern
+// ---------------------------------------------------------------------------
+
+Deno.test("card: safer_sex accepts a well-formed tested-pattern chip", () => {
+  for (const chip of ["tested apr '26", "tested jan '20", "tested dec '99"]) {
+    assertEquals(SAFER_SEX_TESTED_PATTERN.test(chip), true, chip);
+    assertEquals(validateCardRequest({ ...emptyCard, safer_sex: [chip] }).safer_sex, [
+      chip,
+    ]);
+  }
+});
+
+Deno.test("card: safer_sex rejects a malformed tested-pattern chip", () => {
+  for (
+    const bad of [
+      "tested Apr '26", // wrong case
+      "tested apri '26", // four-letter month
+      "tested foo '26", // not a real month abbreviation
+      "tested apr 26", // missing apostrophe
+      "tested apr '6", // one-digit year
+      "tested  apr '26", // double space
+    ]
+  ) {
+    assertEquals(SAFER_SEX_TESTED_PATTERN.test(bad), false, bad);
+    rejectsCard({ ...emptyCard, safer_sex: [bad] }, "unknown value");
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -220,4 +338,18 @@ Deno.test("read: a malformed stored payload degrades to empty, never throws", ()
     orientation: [],
   });
   assertEquals(readCardPayload("nonsense"), emptyCard);
+});
+
+Deno.test("read: a card written under the pre-redesign vocabulary still reads (ruling 2)", () => {
+  // None of these chips exist in the current CARD_CHIPS lists — `top`/`vers`
+  // were retired from `into`, `recently tested` from `safer_sex`, and
+  // `no bareback` from `hard_nos`. Reads are shape-only, so an old row must
+  // still come back byte-for-byte, unauthenticated writes aside.
+  const oldRow = {
+    into: ["top", "vers"],
+    safer_sex: ["recently tested", "undetectable"],
+    kinks: ["vanilla"],
+    hard_nos: ["no bareback", "no group"],
+  };
+  assertEquals(readCardPayload(oldRow), oldRow);
 });

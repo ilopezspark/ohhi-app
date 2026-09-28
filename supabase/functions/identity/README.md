@@ -108,7 +108,7 @@ curl -s "$BASE/$USER_ID" "${H[@]}"
 
 # PUT /card  -> {"user_id":"…","key_version":1,"fields_filled":2,"updated_at":"…"}
 curl -sX PUT "$BASE/card" "${H[@]}" \
-  -d '{"into":["top"],"safer_sex":["condoms"],"kinks":[],"hard_nos":[]}'
+  -d '{"into":["men"],"safer_sex":["condoms"],"kinks":[],"hard_nos":["no pics unasked","no early mornings"]}'
 
 # GET /card/:user_id  -> {"user_id":"…","into":[…],"safer_sex":[…],"kinks":[…],"hard_nos":[…]}
 curl -s "$BASE/card/$USER_ID" "${H[@]}"
@@ -136,9 +136,20 @@ Errors are always `{"error":{"code":"…","message":"…"}}` with code one of `u
   `fields_filled` always land in the same row version.
 - **Reads on a stored payload are shape-only.** A chip retired from `validate.ts` later
   still reads back from an existing row; only writes are checked against the allow-list.
-- **The vocabularies in `validate.ts` are provisional** (decision 21, plan §7 Q1-Q2).
-  Replace the constants wholesale when product defines the taxonomy; nothing else reads
-  them.
+- **The vocabularies in `validate.ts`** now match the Me-redesign artboards
+  (`docs/design/me-redesign/brief.md` rulings 1, 3, 4, 5, 6; decision 21, plan §7 Q1-Q2).
+  Replace the constants wholesale if product changes the taxonomy again; nothing else reads
+  them directly (`app/src/settings/vocab.ts` is a synced copy, decision 48).
+- **`hard_nos` also accepts typed entries** (ruling 4), the one exception to "fixed list
+  only": alongside its three fixed suggestions (`no pics unasked`, `no substances`,
+  `nothing off campus`) a card can carry up to 8 items total, mixing fixed and typed. A
+  typed entry is trimmed, has runs of internal whitespace collapsed to one space, must be
+  1-40 characters after that, must contain no control character (including a newline), and
+  is de-duplicated case-insensitively against both the fixed suggestions and the other typed
+  entries. `into`, `safer_sex` and `kinks` stay fixed-list only.
+- **`safer_sex` also accepts a `tested <mon> '<yy>` pattern** (e.g. `tested apr '26`): a
+  lowercase three-letter month plus a two-digit year, alongside its fixed chips (`condoms`,
+  `on prep`, `on birth control`, `ask me`). See `SAFER_SEX_TESTED_PATTERN`.
 - **No CORS headers.** The client is the native app, which sends no preflight. Add them here
   if a browser build ever calls these routes directly.
 - **Nothing sensitive reaches the grid.** `grid_for_me()` and `profile_card_for()` join

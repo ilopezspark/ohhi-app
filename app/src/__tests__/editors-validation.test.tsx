@@ -75,21 +75,23 @@ describe('ChipPicker enforces maxItems', () => {
     expect(onChange).toHaveBeenCalledWith(['bi', 'pan']);
   });
 
+  // kinks is the one fixed list long enough (10) to exercise the 8-item cap;
+  // the design's into list has four entries.
   it('card field: selecting a 9th chip at the 8-item cap is a no-op', async () => {
-    const eightSelected = CARD_CHIPS.into.slice(0, 8);
-    const ninthOption = CARD_CHIPS.into[8];
+    const eightSelected = CARD_CHIPS.kinks.slice(0, 8);
+    const ninthOption = CARD_CHIPS.kinks[8];
     const onChange = jest.fn();
     const { getByTestId } = await render(
       <ChipPicker
-        testID="card-into"
-        options={CARD_CHIPS.into}
+        testID="card-kinks"
+        options={CARD_CHIPS.kinks}
         selected={eightSelected}
         maxItems={CARD_MAX_ITEMS}
         onChange={onChange}
       />
     );
 
-    await fireEvent.press(getByTestId(`card-into-${ninthOption}`));
+    await fireEvent.press(getByTestId(`card-kinks-${ninthOption}`));
 
     expect(onChange).not.toHaveBeenCalled();
   });
