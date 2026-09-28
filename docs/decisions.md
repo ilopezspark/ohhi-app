@@ -162,3 +162,17 @@ accounts keep their `auth.users` row — it is scrubbed (randomized email/phone,
 `user_metadata`/`app_metadata` and identities, id banned) rather than deleted, so the
 `profiles.id -> auth.users(id) on delete restrict` FK and the permanent tombstone `profiles` row
 (decision 13/§9) stay intact.
+
+## Grid (28 September 2026)
+
+Decided by Izaac Lopez. Implemented in migration 0009
+(`20260918000009_grid_shows_everyone.sql`). These supersede the "tier not away, presence not
+stale" conditions in the grid-visibility bullet under "Consequences for the next migration".
+
+| # | Decision | Answer |
+|---|----------|--------|
+| 53 | Who the grid shows | Everyone on the viewer's campus who is `active`, verified, has an `ok` main photo, is not paused, is not blocked either way, and is not the viewer. Location and recency no longer hide anyone. Amends decision 11 (a tier older than 24 hours no longer makes a user invisible) and decision 43 (a location-denied user is now visible to others, as away). |
+| 54 | Location states | Three: on campus, nearby (within a few miles), or neither (away). The stored `presence_tier` keeps its four values; the grid and card return an effective tier that is `on_campus`/`nearby` only while `tier_computed_at` is at most 1 hour old, otherwise `away`. A stored `county` reads as `away`: the county tier is not shown in v1. Amends decisions 7 and 11. |
+| 55 | Online | Online means `profiles.last_active_at` is at most 15 minutes old. Users who are not online are still shown, just not as online. New; amends decision 11 (recency now marks, never hides). |
+| 56 | Paused users | Stay hidden (`user_presence.is_visible` false). Unchanged from the migration-0002 grid rule; restated because decision 53 removes the other hiding conditions around it. |
+| 57 | Grid sort | Here-now first; then effective tier on campus, nearby, away; within each, online first, then most recently active. Amends migration-0002-plan §6's `tier asc, here_now desc, last_active_at desc`. |

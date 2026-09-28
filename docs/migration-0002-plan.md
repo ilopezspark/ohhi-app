@@ -108,7 +108,8 @@ grid, thread locks quietly" means; pause does not touch threads.
 `user_id uuid primary key references profiles(id)`, `campus_id references campuses`,
 `tier presence_tier not null default 'away'`, `tier_computed_at timestamptz not null default
 now()`, `is_visible boolean not null default true`. No other columns, ever. `is_visible` is
-the user's pause flag and nothing else; staleness is computed at read time.
+the user's pause flag and nothing else; staleness is computed at read time (amended by
+migration 0009: a stale tier reads as `away` and never hides the user).
 
 Owner-only select. No cross-user select: the grid and profile RPCs read it as security
 definer. Owner update grant limited to `tier, is_visible`; a trigger stamps
@@ -305,7 +306,9 @@ grant select (center_point, on_campus_radius_m, nearby_radius_m, county_boundary
 | `conversation_is_mutual(conversation_id)` | Both participants have at least one message. |
 | `share_is_active(owner, viewer, subject_type, subject_id)` | Share row exists, `revoked_at is null`, not blocked. |
 | `can_read_conversation(conversation_id, viewer)` | Viewer is a participant, and `state <> 'closed_block' or viewer <> blocked_by`. |
-| `is_grid_visible(target, viewer)` | `status = 'active'`, verified, `tier_computed_at > now() - 24h`, `tier <> 'away'`, `is_visible`, an `ok` photo at position 0, not blocked against viewer. The verified check is hard-coded; there is no parameter that relaxes it. |
+| `is_grid_visible(target, viewer)` | `status = 'active'`, verified, `is_visible`, an `ok` photo at position 0, not blocked against viewer, target is not the viewer. The verified check is hard-coded; there is no parameter that relaxes it. Amended by migration 0009 (decisions 53-57): the original `tier_computed_at > now() - 24h` and `tier <> 'away'` conditions are gone, so location and recency never hide anyone. Callers: only `grid_for_me()` and `profile_card_for()`; hi's, first messages and photo reads never used it. |
+| `effective_tier(tier, computed_at)` | Added by migration 0009. `on_campus`/`nearby` only while `computed_at` is at most 1 hour old; otherwise `away`. A stored `county` reads as `away` (not shown in v1). `service_role` only. |
+| `is_online(last_active_at)` | Added by migration 0009. `last_active_at` at most 15 minutes old; null is not online. `service_role` only. |
 | `get_or_create_conversation(a, b, opener, via)` | Concurrency-safe creation, see §8. |
 
 Execute is granted to `authenticated` only for the helpers a policy or `with check` expression
@@ -321,8 +324,8 @@ schema is exposed through PostgREST either way.
 |---|---|---|
 | `me()` | invoker + definer read of hidden columns | Returns own `status`, `verification_status`, `campus_id`, campus slug and label, `here_now`, counts of goals, tags, photos. The only path to one's own status. |
 | `complete_onboarding()` | definer | Checks: `date_of_birth` set and age ≥ 18 in the campus timezone (else sets `status = 'closed_age'` and returns that), `first_name`, at least one `user_goals` row, an `ok` or `pending` photo at position 0. Sets `status = 'active'` and creates `user_presence`. |
-| `grid_for_me()` | definer | One call: up to 61 rows ordered `tier asc, here_now desc, last_active_at desc` from every profile in the caller's campus where `is_grid_visible(profile, caller)`, joined to the position-0 photo, the two lowest tags, goals; plus `visible_count` and `here_now_count` over the same set, repeated on each row. 61 so the client can tell "that's everyone". |
-| `profile_card_for(target)` | definer | Zero rows when `is_grid_visible(target, caller)` is false. Otherwise: first name, grad year, status line, tier, here_now, all `ok` photos in order, all tags, goals, `my_hi_state` (`sent`, `answered`, or null), `conversation_id` if one exists. Pronouns and orientation are not here; the client asks the identity edge function, which returns them only when `is_public` or owner. |
+| `grid_for_me()` | definer | One call: up to 61 rows from every profile in the caller's campus where `is_grid_visible(profile, caller)`, joined to the position-0 photo, the two lowest tags, goals; plus `visible_count` and `here_now_count` over the same set, repeated on each row. 61 so the client can tell "that's everyone". Amended by migration 0009: `tier` is the effective tier (`effective_tier`), a new `is_online` column follows `here_now`, and the order is here-now first, then effective tier (on_campus, nearby, away), then online first, then `last_active_at desc` (id breaks ties). |
+| `profile_card_for(target)` | definer | Zero rows when `is_grid_visible(target, caller)` is false. Otherwise: first name, grad year, status line, tier, here_now, is_online, all `ok` photos in order, all tags, goals, `my_hi_state` (`sent`, `answered`, or null), `conversation_id` if one exists. Pronouns and orientation are not here; the client asks the identity edge function, which returns them only when `is_public` or owner. Amended by migration 0009: `tier` is the effective tier and `is_online` is new, so an away or stale user now has a card. |
 | `set_my_tier(tier)` | **definer** | Writes `tier`; if `here_now_until` is in the future, extends it to `now() + 2h`. Never turns here-now on. Defect K fix: `here_now_until` and `last_active_at` are out of the owner's `profiles` update column grant, so this can no longer run invoker-scoped and must be `security definer`. |
 | `set_here_now(bool)` | **definer** | Sets `here_now_until` to `now() + 2h` or null. Same defect K reasoning as `set_my_tier`. |
 | `touch_activity()` | definer | Defect K addition: the only write path left for `last_active_at` now that it is out of the owner's column grant. `update profiles set last_active_at = now() where id = auth.uid()`. |
@@ -374,8 +377,9 @@ conversation exists.
 
 1. `expire_stale_his_and_conversations`, hourly: `his` `sent` older than 7 days becomes
    `expired`; `conversations` `awaiting_reply` older than 7 days becomes `expired`. Silent.
-2. Presence staleness: no job. `is_grid_visible` compares `tier_computed_at` to
-   `now() - 24h`. A job flipping `is_visible` would conflate staleness with the pause flag.
+2. Presence staleness: no job. Amended by migration 0009: staleness no longer hides anyone;
+   `effective_tier` reads a tier older than 1 hour as `away` at query time. A job flipping
+   `is_visible` would conflate staleness with the pause flag.
 3. `purge_deleted_users`, daily at 03:00 UTC, calls `private.purge_user(user_id)` for each `users_private` with `deleted_at <
    now() - 30 days and purged_at is null`, in this order:
    1. collect the user's conversation ids;

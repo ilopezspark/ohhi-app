@@ -13,6 +13,8 @@ settings, delete account) — 452 Jest tests, `tsc` clean, web export clean; it 
 project (both `active`, marked verified and photo-approved by direct data updates for testing),
 but the grid, hi's and chat flows have not yet been exercised end to end between them.
 
+Migration 0009 (`grid_shows_everyone`, decisions 53-57) was applied on 28 September 2026 and is recorded in hosted history as `20260918000009 after the CLI history repair`; it needs a repair to `20260918000009`. Hosted runs: 0009 37/37, 0002 98/98. `grid_for_me`/`profile_card_for` gained `is_online`, and their `tier` is now the effective tier.
+
 ## What is here
 
 - `supabase/migrations/20260918000002_core_schema.sql` — the core schema, now with defects

@@ -20,6 +20,15 @@
 -- `reset role;` pair brackets the statement(s) that must run under RLS as
 -- that user. This is the simpler of the two patterns pgTAP files use and
 -- is applied consistently throughout.
+--
+-- Migration 0009 (grid shows everyone, 28 September 2026) removed the
+-- "tier not away" and "presence not stale" conditions from
+-- private.is_grid_visible() and made grid_for_me()/profile_card_for() return
+-- an effective tier plus is_online. Rechecked against 0009: no assertion in
+-- this file relied on an away or stale user being hidden (every grid/card
+-- assertion here is about blocks, rule 11's verified check, defect F's
+-- self-exclusion, or the grid being non-empty), so none changed and the plan
+-- stays 98. The new rule is covered by supabase/tests/0009_grid_shows_everyone.test.sql.
 
 begin;
 
@@ -606,11 +615,16 @@ select ok(
 -- 14: rule 8 - updating date_of_birth after it is set fails for every role
 -- -----------------------------------------------------------------------------
 
+-- Since migration 0004 (decision 35) the owner holds `update (date_of_birth)`
+-- on users_private, so this write passes the privilege check and is refused
+-- by dob_write_once() (P0001) instead of by the grant (42501). Updated on 28
+-- September 2026 when the hosted re-run for migration 0009 surfaced it; same
+-- expectation as 0004_waitlist_and_dob.test.sql's assertion 15.
 select pg_temp._as('f00d0000-0000-0000-0000-000000000001');
 set local role authenticated;
 select throws_ok(
   $$update public.users_private set date_of_birth = date_of_birth + 1 where user_id = 'f00d0000-0000-0000-0000-000000000001'$$,
-  '42501'
+  'P0001'
 );
 reset role;
 

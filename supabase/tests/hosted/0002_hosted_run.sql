@@ -3,6 +3,11 @@
 -- everything back and surface output, since it returns no result sets).
 -- Note: this project's search_path is "$user", public (no "extensions"),
 -- so pgtap is installed into public rather than extensions.
+--
+-- Migration 0009 (grid shows everyone) removed the away/stale conditions from
+-- private.is_grid_visible(). No assertion below relied on an away or stale
+-- user being hidden, so none changed and the plan stays 98; see the pgTAP
+-- file's header and supabase/tests/hosted/0009_hosted_run.sql.
 
 create extension if not exists pgtap with schema public;
 
@@ -389,10 +394,13 @@ begin
       (select id from public.albums where owner_id='f00d0000-0000-0000-0000-000000000001' and name='Ann Trip')),
     'rule 7: share_is_active is false across a block even with a live share row') into v_line; out := out || v_line || E'\n';
 
-  -- 14
+  -- 14. Since migration 0004 (decision 35) the owner holds update
+  -- (date_of_birth), so this is refused by dob_write_once() (P0001), not by
+  -- the grant (42501); updated 28 September 2026 when the 0009 re-run
+  -- surfaced it.
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated';
   select throws_ok($$update public.users_private set date_of_birth = date_of_birth + 1 where user_id='f00d0000-0000-0000-0000-000000000001'$$,
-    '42501') into v_line; out := out || v_line || E'\n';
+    'P0001') into v_line; out := out || v_line || E'\n';
   execute 'reset role';
   select throws_like($$update public.users_private set date_of_birth = date_of_birth + 1 where user_id='f00d0000-0000-0000-0000-000000000001'$$,
     '%date_of_birth cannot be changed once set%', 'rule 8: postgres/service-role cannot change date_of_birth once set') into v_line; out := out || v_line || E'\n';
