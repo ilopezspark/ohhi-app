@@ -223,3 +223,19 @@ and the brief disagree, the ruling wins. Decisions 76 and 79 are implemented in 
 | 81 | Legal and help links | "what we do with your id", "how to not get banned", privacy and terms are built as rows that open a placeholder "coming" screen, behind one constant map so real URLs drop in later. New. |
 | 82 | "report someone" in Settings | Opens a short explainer: reports are filed from a person's profile or a chat through the ⋯ menu. No person picker. New; consistent with decisions 9 and 47. |
 | 83 | "my campus" | Shows campus name and city; the chevron opens a read-only screen. No campus switching exists. New. |
+
+## Storage integrity (28 September 2026)
+
+Security fix found while building migration 0011: the `profile-photos` owner update policy let an
+owner replace the bytes behind an approved photo without touching its row, so the photo stayed
+`ok` and publicly readable while showing unreviewed content (the brief: "photo uploads go through
+the existing moderation queue; do not bypass it"). Implemented in migration 0012
+(`20260918000012_no_overwrite_in_place.sql`), which also carries the four-bucket audit.
+
+| # | Decision | Answer |
+|---|----------|--------|
+| 84 | Objects are never overwritten in place | No client role holds an UPDATE policy on `storage.objects` in any bucket: "profile-photos owner update" and "album-photos owner update" are dropped; `chat-media` and `chat-media-limited` never had one. A client upsert, `update()` or `move()` is refused everywhere. Every new or replaced photo is uploaded to a fresh name (`{user_id}/{photo_id}.jpg`, `{user_id}/{album_id}/{photo_id}.jpg`) with `upsert: false`, and a replace re-points the row, which resets moderation to `pending`. The service role (demo seed, `purge-drain`, `media-open`) bypasses RLS and is unaffected. |
+| 85 | An object a row references cannot be deleted by a client | The owner may delete a `profile-photos`/`album-photos` object only when none of their own rows names it (`user_photos` by `user_id` + `storage_path`; `album_photos` through an album they own). The app deletes or re-points the row first, then removes the object. A refused `remove()` changes nothing and returns no error (RLS filters the row out), so the order is the app's job, not something it can detect. Chat buckets keep no client delete policy at all; `purge-drain` deletes with the service role. |
+| 86 | An object a row references cannot be re-created at the same name by a client | The owner insert policies refuse a name one of the owner's own rows already names, which closes delete-then-reupload. Both chat insert policies refuse a name that any message in that conversation already names as `media_path` or `media_poster_path`, which closes a late fill of a message whose object is missing (a keep-in-chat path is not bound to its message id, so either participant could otherwise upload bytes behind a delivered message) and a re-upload after an exhausted view-once object is purged. The app already uploads first and inserts the row second, with a fresh id every time. |
+| 87 | Which rows freeze an object | Any row, whatever its `moderation_state`: a pending photo is what a reviewer is looking at, so swapping it before approval is the same bypass; a removed row loses nothing, since its owner can delete the row first. Only the object owner's own rows count, matching how the read policies judge an object (by the folder owner's rows or shares), so a row someone else inserts naming my path grants nothing and cannot pin my object against deletion. The checks are plain subqueries under the caller's own RLS; no security-definer helper exists that could reveal whether a path is referenced. |
+| 88 | Bucket versioning | Stays disabled on all four buckets. With versioning on, a Storage delete becomes an insert of a delete marker and an overwrite archives the old version, which the policies above were not written against; revisit them before turning it on. |

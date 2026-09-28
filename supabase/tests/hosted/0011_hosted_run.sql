@@ -236,16 +236,17 @@ begin
         and policyname = 'profile-photos read when ok and readable' and cmd = 'SELECT'),
     'the profile-photos read policy matches the row by storage_path, not by a position parsed from the name'
   ) into v_line; out := out || v_line || E'\n';
-  -- 13
+  -- 13 (amended for 0012: "profile-photos owner update" is dropped, and owner
+  --     insert/delete add a "no own row names this object" clause after the
+  --     same bucket + folder prefix)
   select is(
     (select count(*)::int from pg_policies
       where schemaname = 'storage' and tablename = 'objects'
-        and policyname in ('profile-photos owner read', 'profile-photos owner insert',
-                           'profile-photos owner update', 'profile-photos owner delete')
-        and coalesce(qual, with_check) = '((bucket_id = ''profile-photos''::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))'
-        and (with_check is null or with_check = coalesce(qual, with_check))),
-    4,
-    'the four owner policies are unchanged: bucket plus the folder = auth.uid() check, no file-name check'
+        and policyname in ('profile-photos owner read', 'profile-photos owner insert', 'profile-photos owner delete')
+        and coalesce(qual, with_check) like '((bucket_id = ''profile-photos''::text) AND ((storage.foldername(name))[1] = (auth.uid())::text)%'
+        and coalesce(qual, with_check) not like '%position%'),
+    3,
+    'the owner read/insert/delete policies keep the bucket plus folder = auth.uid() check and parse no position from the file name'
   ) into v_line; out := out || v_line || E'\n';
 
   -- -----------------------------------------------------------------------------
