@@ -1,0 +1,3 @@
+# derived from cast.json and interactions.json by build-seed.mjs
+*.generated.sql
+upload-plan.json

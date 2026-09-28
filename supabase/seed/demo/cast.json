@@ -1,0 +1,468 @@
+[
+  {
+    "key": "maya",
+    "first_name": "Maya",
+    "email_local": "maya.r",
+    "date_of_birth": "2006-02-11",
+    "grad_year": 2027,
+    "status_line": "clinicals till 6, don't @ me",
+    "goals": ["study", "friends"],
+    "tags": ["nursing", "library", "coffee"],
+    "presence_profile": "regular_on_campus",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Latina woman with long dark brown hair in a loose ponytail, wearing scrubs with a cardigan over them, standing outside the nursing building on a community college campus, casual everyday clothing, natural daylight, shot on a phone, waist-up, friendly warm smile.",
+    "extra_photo_prompts": [
+      "The same 20-year-old Latina woman with long dark brown hair, now sitting at a library table surrounded by nursing textbooks and a highlighter, candid photorealistic phone photo, natural indoor light, focused but relaxed expression, head-and-shoulders."
+    ]
+  },
+  {
+    "key": "diego",
+    "first_name": "Diego",
+    "email_local": "diego.m",
+    "date_of_birth": "2003-04-18",
+    "grad_year": 2027,
+    "status_line": "welding lab always smells like a campfire",
+    "goals": ["friends", "whatever"],
+    "tags": ["gym"],
+    "presence_profile": "regular_on_campus",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 23-year-old Latino man with short buzzed hair and a light beard, wearing a plain gray t-shirt and a canvas work jacket, standing near the trades building on a community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, easygoing smile.",
+    "extra_photo_prompts": [
+      "The same 23-year-old Latino man with short buzzed hair and a light beard, candid photorealistic phone photo at a gym, mid-rep with a dumbbell, fully clothed in athletic wear, natural gym lighting, friendly expression, waist-up."
+    ]
+  },
+  {
+    "key": "aisha",
+    "first_name": "Aisha",
+    "email_local": "aisha.k",
+    "date_of_birth": "2007-01-09",
+    "grad_year": 2028,
+    "status_line": "pulling an all nighter in the c wing, send snacks",
+    "goals": ["study", "friends"],
+    "tags": ["cs", "coffee", "esports"],
+    "presence_profile": "night_owl",
+    "photo_count": 3,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old South Asian woman with straight black hair and glasses, wearing a hoodie and jeans, sitting on a bench outside a community college computer science building, casual everyday clothing, soft natural light, shot on a phone, head-and-shoulders, friendly relaxed expression.",
+    "extra_photo_prompts": [
+      "The same 19-year-old South Asian woman with straight black hair and glasses, candid photorealistic phone photo, studying late at night at a desk lit by a laptop screen and a small lamp, hoodie, focused expression, waist-up.",
+      "The same 19-year-old South Asian woman with straight black hair and glasses, candid photorealistic phone photo, laughing with friends at a small campus esports club meetup, controller in hand, casual clothing, indoor light, waist-up."
+    ]
+  },
+  {
+    "key": "jordan",
+    "first_name": "Jordan",
+    "email_local": "jordan.b",
+    "date_of_birth": "2005-06-30",
+    "grad_year": 2027,
+    "status_line": null,
+    "goals": ["dates", "friends"],
+    "tags": ["business", "gym"],
+    "presence_profile": "commuter_nearby",
+    "photo_count": 1,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 21-year-old Black man with short twisted hair, wearing a fitted quarter-zip pullover, standing in a parking lot on a suburban Illinois community college campus, casual everyday clothing, natural daylight, shot on a phone, waist-up, confident friendly smile.",
+    "extra_photo_prompts": []
+  },
+  {
+    "key": "wei",
+    "first_name": "Wei",
+    "email_local": "wei.l",
+    "date_of_birth": "2006-03-02",
+    "grad_year": 2028,
+    "status_line": "at the library till 10 if anyone wants to pretend to study",
+    "goals": ["study"],
+    "tags": ["bio", "library"],
+    "presence_profile": "regular_on_campus",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old East Asian man with straight black hair and a beanie, wearing a fleece jacket, standing outside the library entrance on a community college campus, casual everyday clothing, overcast natural light, shot on a phone, head-and-shoulders, calm friendly expression.",
+    "extra_photo_prompts": [
+      "The same 20-year-old East Asian man with straight black hair, candid photorealistic phone photo, sitting at a library table with a biology textbook and a notebook full of diagrams, focused expression, natural indoor light, waist-up."
+    ]
+  },
+  {
+    "key": "fatima",
+    "first_name": "Fatima",
+    "email_local": "fatima.h",
+    "date_of_birth": "2002-05-14",
+    "grad_year": 2027,
+    "status_line": "student teaching this semester, tiny humans are exhausting",
+    "goals": ["friends", "whatever"],
+    "tags": ["transfer"],
+    "presence_profile": "commuter_nearby",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 24-year-old Middle Eastern woman wearing a light patterned hijab and a cardigan, standing outside an education building on a community college campus, casual everyday clothing, warm natural light, shot on a phone, waist-up, warm friendly smile.",
+    "extra_photo_prompts": [
+      "The same 24-year-old Middle Eastern woman in a light patterned hijab, candid photorealistic phone photo, cooking in a small apartment kitchen, stirring a pot, casual clothing, warm indoor light, waist-up, relaxed expression."
+    ]
+  },
+  {
+    "key": "marcus",
+    "first_name": "Marcus",
+    "email_local": "marcus.t",
+    "date_of_birth": "2000-07-22",
+    "grad_year": 2028,
+    "status_line": "working nights at the county, days are for class",
+    "goals": ["whatever", "friends"],
+    "tags": ["gym", "soccer"],
+    "presence_profile": "mostly_away",
+    "photo_count": 1,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 26-year-old Black man with a short fade haircut and a neat beard, wearing a plain crewneck sweatshirt, standing on a walkway on a suburban Illinois community college campus, casual everyday clothing, late afternoon natural light, shot on a phone, waist-up, calm confident expression.",
+    "extra_photo_prompts": []
+  },
+  {
+    "key": "sofia",
+    "first_name": "Sofia",
+    "email_local": "sofia.g",
+    "date_of_birth": "2007-02-25",
+    "grad_year": 2029,
+    "status_line": "in the print studio, ink everywhere as usual",
+    "goals": ["friends", "dates"],
+    "tags": ["art", "coffee"],
+    "presence_profile": "regular_on_campus",
+    "photo_count": 3,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old white woman with wavy auburn hair and a few visible ink smudges on her hands, wearing an oversized denim jacket, standing outside the art building on a community college campus, casual everyday clothing, soft natural light, shot on a phone, waist-up, playful smile.",
+    "extra_photo_prompts": [
+      "The same 19-year-old white woman with wavy auburn hair, candid photorealistic phone photo, working at a print studio table covered in art supplies, apron on, focused expression, natural indoor light, waist-up.",
+      "The same 19-year-old white woman with wavy auburn hair, candid photorealistic phone photo, sitting on a porch step with a small dog in her lap, casual clothing, golden hour natural light, head-and-shoulders, happy expression."
+    ]
+  },
+  {
+    "key": "tyrell",
+    "first_name": "Tyrell",
+    "email_local": "tyrell.w",
+    "date_of_birth": "2004-01-17",
+    "grad_year": 2027,
+    "status_line": "grinding leetcode in the c wing",
+    "goals": ["study", "group"],
+    "tags": ["cs", "esports"],
+    "presence_profile": "night_owl",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 22-year-old Black man with short locs pulled back, wearing a graphic tee under an open flannel shirt, sitting on steps outside a computer science building on a community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, relaxed half-smile.",
+    "extra_photo_prompts": [
+      "The same 22-year-old Black man with short locs, candid photorealistic phone photo, at a small campus esports lounge with a controller in hand and a monitor glow lighting his face, casual clothing, indoor lighting, waist-up, focused expression."
+    ]
+  },
+  {
+    "key": "priya",
+    "first_name": "Priya",
+    "email_local": "priya.n",
+    "date_of_birth": "2005-04-09",
+    "grad_year": 2027,
+    "status_line": null,
+    "goals": ["study", "friends"],
+    "tags": ["nursing", "gym"],
+    "presence_profile": "regular_on_campus",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 21-year-old South Asian woman with long straight black hair pulled back in a bun, wearing scrubs with a zip-up hoodie over them, standing outside a health sciences building on a community college campus, casual everyday clothing, bright natural light, shot on a phone, waist-up, warm confident smile.",
+    "extra_photo_prompts": [
+      "The same 21-year-old South Asian woman with long black hair, candid photorealistic phone photo, at the campus gym on a treadmill, athletic wear, fully clothed, indoor gym lighting, focused expression, waist-up."
+    ]
+  },
+  {
+    "key": "kevin",
+    "first_name": "Kevin",
+    "email_local": "kevin.o",
+    "date_of_birth": "1997-08-03",
+    "grad_year": 2027,
+    "status_line": "back in school after the army, feels weird being the old guy",
+    "goals": ["friends", "whatever"],
+    "tags": ["gym"],
+    "presence_profile": "commuter_nearby",
+    "photo_count": 1,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 29-year-old white man with short cropped hair and a well-kept beard, wearing a plain olive henley, standing near the main entrance of a suburban Illinois community college, casual everyday clothing, natural daylight, shot on a phone, waist-up, steady friendly expression.",
+    "extra_photo_prompts": []
+  },
+  {
+    "key": "brianna",
+    "first_name": "Brianna",
+    "email_local": "brianna.f",
+    "date_of_birth": "2006-06-11",
+    "grad_year": 2028,
+    "status_line": "parking lot 5 again, why is it always full",
+    "goals": ["dates", "friends"],
+    "tags": ["business", "coffee"],
+    "presence_profile": "regular_on_campus",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Black woman with long braided hair, wearing a cropped denim jacket over a plain top, standing in a campus courtyard on a community college campus, casual everyday clothing, bright natural light, shot on a phone, waist-up, bright easy smile.",
+    "extra_photo_prompts": [
+      "The same 20-year-old Black woman with long braided hair, candid photorealistic phone photo, holding a to-go latte outside a campus café, casual clothing, morning natural light, head-and-shoulders, relaxed smile."
+    ]
+  },
+  {
+    "key": "hassan",
+    "first_name": "Hassan",
+    "email_local": "hassan.a",
+    "date_of_birth": "2003-03-29",
+    "grad_year": 2027,
+    "status_line": "microbio lab ran long, smell like agar",
+    "goals": ["study"],
+    "tags": ["bio", "library"],
+    "presence_profile": "mostly_away",
+    "photo_count": 1,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 23-year-old Middle Eastern man with short dark hair and a trimmed beard, wearing a plain button-down shirt with sleeves rolled up, standing outside a science building on a community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, tired but friendly smile.",
+    "extra_photo_prompts": []
+  },
+  {
+    "key": "emily",
+    "first_name": "Emily",
+    "email_local": "emily.s",
+    "date_of_birth": "2007-05-06",
+    "grad_year": 2029,
+    "status_line": "practicum at the daycare on belvidere, send coffee",
+    "goals": ["friends", "whatever"],
+    "tags": ["transfer"],
+    "presence_profile": "commuter_nearby",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old white woman with shoulder-length blonde hair, wearing a cozy cardigan, standing outside an education building on a suburban Illinois community college campus, casual everyday clothing, soft overcast light, shot on a phone, waist-up, cheerful smile.",
+    "extra_photo_prompts": [
+      "The same 19-year-old white woman with shoulder-length blonde hair, candid photorealistic phone photo, sitting cross-legged on a dorm-style rug studying with color-coded flashcards, casual clothing, warm indoor light, waist-up, focused expression."
+    ]
+  },
+  {
+    "key": "andre",
+    "first_name": "Andre",
+    "email_local": "andre.p",
+    "date_of_birth": "2001-09-01",
+    "grad_year": 2028,
+    "status_line": null,
+    "goals": ["friends", "whatever"],
+    "tags": ["gym", "soccer"],
+    "presence_profile": "regular_on_campus",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 25-year-old Black man with short natural hair, wearing a plain athletic pullover, standing by the soccer field near a community college campus, casual everyday clothing, late afternoon natural light, shot on a phone, waist-up, relaxed grin.",
+    "extra_photo_prompts": [
+      "The same 25-year-old Black man with short natural hair, candid photorealistic phone photo, at an intramural soccer game on the sideline in cleats and a jersey, fully clothed, natural outdoor light, waist-up, energetic expression."
+    ]
+  },
+  {
+    "key": "luz",
+    "first_name": "Luz",
+    "email_local": "luz.c",
+    "date_of_birth": "1993-02-19",
+    "grad_year": 2027,
+    "status_line": "second career, clinicals with people half my age lol",
+    "goals": ["friends", "whatever"],
+    "tags": ["nursing"],
+    "presence_profile": "mostly_away",
+    "photo_count": 1,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 33-year-old Latina woman with shoulder-length dark hair, wearing a cardigan over scrubs, standing outside a health sciences building on a community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, warm composed smile.",
+    "extra_photo_prompts": []
+  },
+  {
+    "key": "dmitri",
+    "first_name": "Dmitri",
+    "email_local": "dmitri.v",
+    "date_of_birth": "2006-04-23",
+    "grad_year": 2028,
+    "status_line": "esports club practice tonight, come watch us lose",
+    "goals": ["friends", "group"],
+    "tags": ["cs", "esports"],
+    "presence_profile": "night_owl",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Eastern European man with light brown messy hair, wearing a zip hoodie, sitting on a low wall outside a student center on a community college campus, casual everyday clothing, natural light, shot on a phone, head-and-shoulders, easygoing smile.",
+    "extra_photo_prompts": [
+      "The same 20-year-old Eastern European man with light brown messy hair, candid photorealistic phone photo, at a computer setup with a headset around his neck, monitor glow, casual clothing, indoor lighting, waist-up, focused half-smile."
+    ]
+  },
+  {
+    "key": "keisha",
+    "first_name": "Keisha",
+    "email_local": "keisha.j",
+    "date_of_birth": "2004-02-14",
+    "grad_year": 2027,
+    "status_line": "cafe before my 9am, always",
+    "goals": ["dates", "friends"],
+    "tags": ["business", "coffee"],
+    "presence_profile": "regular_on_campus",
+    "photo_count": 3,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 22-year-old Black woman with short natural curls, wearing a tailored blazer over a plain top, standing outside the business building on a community college campus, casual everyday clothing, bright natural light, shot on a phone, waist-up, confident smile.",
+    "extra_photo_prompts": [
+      "The same 22-year-old Black woman with short natural curls, candid photorealistic phone photo, holding a latte at a small campus café table, casual clothing, warm indoor light, head-and-shoulders, relaxed expression.",
+      "The same 22-year-old Black woman with short natural curls, candid photorealistic phone photo, sitting on a bench with a small dog on a leash beside her, casual clothing, natural outdoor light, waist-up, happy expression."
+    ]
+  },
+  {
+    "key": "omar",
+    "first_name": "Omar",
+    "email_local": "omar.y",
+    "date_of_birth": "2005-05-27",
+    "grad_year": 2027,
+    "status_line": null,
+    "goals": ["whatever"],
+    "tags": ["gym"],
+    "presence_profile": "commuter_nearby",
+    "photo_count": 1,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 21-year-old Middle Eastern man with short dark hair and a light beard, wearing a plain gray hoodie, standing near the trades building on a suburban Illinois community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, calm friendly expression.",
+    "extra_photo_prompts": []
+  },
+  {
+    "key": "rachel",
+    "first_name": "Rachel",
+    "email_local": "rachel.d",
+    "date_of_birth": "2002-01-30",
+    "grad_year": 2028,
+    "status_line": "ceramics studio till the kiln room closes",
+    "goals": ["friends", "dates"],
+    "tags": ["art"],
+    "presence_profile": "mostly_away",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 24-year-old white woman with short dyed-auburn hair, wearing a canvas apron over a t-shirt, standing outside the art building on a community college campus, soft natural light, shot on a phone, waist-up, thoughtful smile.",
+    "extra_photo_prompts": [
+      "The same 24-year-old white woman with short dyed-auburn hair, candid photorealistic phone photo, at a pottery wheel mid-throw with clay-covered hands, apron on, focused expression, natural indoor light, waist-up."
+    ]
+  },
+  {
+    "key": "miguel",
+    "first_name": "Miguel",
+    "email_local": "miguel.e",
+    "date_of_birth": "2008-03-15",
+    "grad_year": 2029,
+    "status_line": "first semester, still finding the c wing",
+    "goals": ["study", "friends"],
+    "tags": ["bio", "library", "coffee"],
+    "presence_profile": "regular_on_campus",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, an 18-year-old Latino man with short dark hair, wearing a plain zip hoodie and a backpack over one shoulder, standing outside a classroom building on a community college campus, casual everyday clothing, natural daylight, shot on a phone, waist-up, slightly nervous friendly smile.",
+    "extra_photo_prompts": [
+      "The same 18-year-old Latino man with short dark hair, candid photorealistic phone photo, studying at a library table with an open laptop and a coffee cup, casual clothing, natural indoor light, waist-up, focused expression."
+    ]
+  },
+  {
+    "key": "nadia",
+    "first_name": "Nadia",
+    "email_local": "nadia.f",
+    "date_of_birth": "1999-06-08",
+    "grad_year": 2027,
+    "status_line": "clinicals at advocate this rotation",
+    "goals": ["whatever"],
+    "tags": ["nursing"],
+    "presence_profile": "rarely_active",
+    "photo_count": 1,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 27-year-old Middle Eastern woman wearing a dark hijab and a cardigan over scrubs, standing outside a health sciences building on a community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, calm composed smile.",
+    "extra_photo_prompts": []
+  },
+  {
+    "key": "tyler",
+    "first_name": "Tyler",
+    "email_local": "tyler.m",
+    "date_of_birth": "2007-04-02",
+    "grad_year": 2029,
+    "status_line": "in the library grinding on a group project, send help",
+    "goals": ["study", "group", "friends"],
+    "tags": ["cs", "library"],
+    "presence_profile": "regular_on_campus",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old white man with short sandy-blond hair, wearing a plain crewneck sweatshirt, sitting on steps outside a library on a community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, friendly grin.",
+    "extra_photo_prompts": [
+      "The same 19-year-old white man with short sandy-blond hair, candid photorealistic phone photo, studying at a library table with a laptop and scattered notes, casual clothing, natural indoor light, waist-up, focused expression."
+    ]
+  },
+  {
+    "key": "chinelo",
+    "first_name": "Chinelo",
+    "email_local": "chinelo.o",
+    "date_of_birth": "2006-08-12",
+    "grad_year": 2028,
+    "status_line": null,
+    "goals": ["friends", "whatever"],
+    "tags": ["business", "transfer"],
+    "presence_profile": "commuter_nearby",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Nigerian-American woman with long braided hair, wearing a blazer over a casual top, standing outside the business building on a community college campus, bright natural light, shot on a phone, waist-up, confident warm smile.",
+    "extra_photo_prompts": [
+      "The same 20-year-old Nigerian-American woman with long braided hair, candid photorealistic phone photo, walking through a campus courtyard with a coffee cup, casual clothing, natural outdoor light, waist-up, relaxed expression."
+    ]
+  },
+  {
+    "key": "josh",
+    "first_name": "Josh",
+    "email_local": "josh.r",
+    "date_of_birth": "1996-03-05",
+    "grad_year": 2027,
+    "status_line": "working full time at the sheriff's office, night classes only",
+    "goals": ["whatever"],
+    "tags": ["night classes"],
+    "presence_profile": "night_owl",
+    "photo_count": 1,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 30-year-old white man with short hair and a close-cropped beard, wearing a plain zip-up jacket, standing outside a classroom building at dusk on a community college campus, casual everyday clothing, soft evening light, shot on a phone, waist-up, tired but friendly smile.",
+    "extra_photo_prompts": []
+  },
+  {
+    "key": "valentina",
+    "first_name": "Valentina",
+    "email_local": "valentina.s",
+    "date_of_birth": "2005-02-08",
+    "grad_year": 2028,
+    "status_line": "field placement at the elementary school this week",
+    "goals": ["friends", "dates"],
+    "tags": ["transfer"],
+    "presence_profile": "regular_on_campus",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 21-year-old Latina woman with long wavy dark hair, wearing a soft cardigan, standing outside an education building on a community college campus, warm natural light, shot on a phone, waist-up, bright friendly smile.",
+    "extra_photo_prompts": [
+      "The same 21-year-old Latina woman with long wavy dark hair, candid photorealistic phone photo, sitting outside with a small dog curled up beside her, casual clothing, golden hour natural light, waist-up, happy relaxed expression."
+    ]
+  },
+  {
+    "key": "brandon",
+    "first_name": "Brandon",
+    "email_local": "brandon.k",
+    "date_of_birth": "2007-06-19",
+    "grad_year": 2029,
+    "status_line": "shop class then soccer intramurals",
+    "goals": ["friends", "whatever"],
+    "tags": ["gym", "soccer"],
+    "presence_profile": "commuter_nearby",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old white man with short curly brown hair, wearing a work jacket over a plain tee, standing near the trades building on a suburban Illinois community college campus, natural daylight, shot on a phone, waist-up, easygoing smile.",
+    "extra_photo_prompts": [
+      "The same 19-year-old white man with short curly brown hair, candid photorealistic phone photo, on a soccer field in cleats and a jersey mid-game, fully clothed, natural outdoor light, waist-up, energetic expression."
+    ]
+  },
+  {
+    "key": "yuki",
+    "first_name": "Yuki",
+    "email_local": "yuki.t",
+    "date_of_birth": "2004-05-21",
+    "grad_year": 2027,
+    "status_line": "gallery show for the intro painting class, come judge my work",
+    "goals": ["friends", "dates"],
+    "tags": ["art", "coffee"],
+    "presence_profile": "mostly_away",
+    "photo_count": 2,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 22-year-old East Asian woman with a sleek black bob haircut, wearing an oversized cardigan, standing outside the art building on a community college campus, soft natural light, shot on a phone, waist-up, calm confident smile.",
+    "extra_photo_prompts": [
+      "The same 22-year-old East Asian woman with a sleek black bob haircut, candid photorealistic phone photo, standing beside a painting easel at a small student gallery show, casual clothing, warm indoor light, waist-up, proud expression."
+    ]
+  },
+  {
+    "key": "carlos",
+    "first_name": "Carlos",
+    "email_local": "carlos.h",
+    "date_of_birth": "1990-01-11",
+    "grad_year": 2027,
+    "status_line": "back in school while my kids are at school, wild timing",
+    "goals": ["study", "whatever"],
+    "tags": ["bio"],
+    "presence_profile": "rarely_active",
+    "photo_count": 1,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 36-year-old Latino man with short graying hair and a trimmed beard, wearing a plain button-down shirt, standing outside a science building on a community college campus, natural daylight, shot on a phone, waist-up, warm relaxed smile.",
+    "extra_photo_prompts": []
+  },
+  {
+    "key": "destiny",
+    "first_name": "Destiny",
+    "email_local": "destiny.w",
+    "date_of_birth": "2006-07-04",
+    "grad_year": 2028,
+    "status_line": "c wing basement has the best outlets, fight me",
+    "goals": ["study", "friends", "group"],
+    "tags": ["cs", "esports", "coffee"],
+    "presence_profile": "night_owl",
+    "photo_count": 3,
+    "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Black woman with long box braids, wearing a graphic hoodie, sitting on a low wall outside a computer science building on a community college campus, natural light, shot on a phone, waist-up, playful grin.",
+    "extra_photo_prompts": [
+      "The same 20-year-old Black woman with long box braids, candid photorealistic phone photo, at a desk setup with a mechanical keyboard and monitor glow late at night, casual clothing, indoor lighting, waist-up, focused expression.",
+      "The same 20-year-old Black woman with long box braids, candid photorealistic phone photo, holding an iced coffee outside a campus building, casual clothing, bright natural light, head-and-shoulders, cheerful smile."
+    ]
+  }
+]

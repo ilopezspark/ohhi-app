@@ -1,0 +1,392 @@
+{
+  "izaac": {
+    "hi_received": [
+      { "cast_key": "hassan", "minutes_ago": 200, "state": "sent" },
+      { "cast_key": "emily", "minutes_ago": 150, "state": "sent" },
+      { "cast_key": "andre", "minutes_ago": 90, "state": "sent" },
+      { "cast_key": "luz", "minutes_ago": 45, "state": "sent" },
+      { "cast_key": "dmitri", "minutes_ago": 15, "state": "sent" }
+    ],
+    "hi_sent": [
+      { "cast_key": "keisha", "minutes_ago": 300, "state": "sent" },
+      { "cast_key": "omar", "minutes_ago": 5000, "state": "expired" }
+    ],
+    "conversations": [
+      {
+        "cast_key": "maya",
+        "state": "open",
+        "opened_via": "first_message",
+        "opened_by": "me",
+        "note": "long natural back-and-forth over several days",
+        "messages": [
+          { "from": "me", "body": "hey! saw you're nursing too, good luck with clinicals lol", "minutes_ago": 4320 },
+          { "from": "maya", "body": "haha thank you! it's a lot but i'm surviving. you at clc too?", "minutes_ago": 4300 },
+          { "from": "me", "body": "yeah, second year. you always at the library at night?", "minutes_ago": 4280 },
+          { "from": "maya", "body": "basically living there during finals week ngl", "minutes_ago": 4260 },
+          { "from": "me", "body": "same. c wing basement has good outlets if you haven't found it", "minutes_ago": 4200 },
+          { "from": "maya", "body": "wait really?? i've been fighting for a plug by the windows this whole time", "minutes_ago": 4190 },
+          { "from": "me", "body": "yeah go check it out, way less crowded too", "minutes_ago": 4180 },
+          { "from": "maya", "body": "you just changed my life lol thank you", "minutes_ago": 2880 },
+          { "from": "me", "body": "anytime. how'd your clinical shift go today?", "minutes_ago": 1440 },
+          {
+            "from": "maya",
+            "body": "the coffee that got me through it",
+            "minutes_ago": 1420,
+            "media": { "kind": "photo", "view_limit": null, "views_used": 0, "prompt": "a to-go latte on a hospital break room table, phone photo, natural light" }
+          },
+          { "from": "me", "body": "that looks like it saved your life honestly", "minutes_ago": 1400 },
+          { "from": "maya", "body": "it did. what are you up to this weekend?", "minutes_ago": 700 },
+          { "from": "me", "body": "probably studying more lol, maybe the football game saturday", "minutes_ago": 680 },
+          { "from": "maya", "body": "omg i might go too, i'll let you know", "minutes_ago": 60 },
+          { "from": "maya", "body": "ok fr thinking about going, you still down?", "minutes_ago": 20 }
+        ]
+      },
+      {
+        "cast_key": "diego",
+        "state": "open",
+        "opened_via": "first_message",
+        "opened_by": "diego",
+        "note": "open, with unread messages from diego at the end",
+        "messages": [
+          { "from": "diego", "body": "hey, we're in the same intro psych class right? third row", "minutes_ago": 2000 },
+          { "from": "me", "body": "oh yeah! didn't recognize you outside of class lol", "minutes_ago": 1980 },
+          { "from": "diego", "body": "haha yeah happens. you working out at the campus gym ever?", "minutes_ago": 1960 },
+          { "from": "me", "body": "sometimes, mostly mornings", "minutes_ago": 1900 },
+          { "from": "diego", "body": "nice we should go sometime", "minutes_ago": 1880 },
+          { "from": "me", "body": "for sure, i'm pretty consistently there tue/thu", "minutes_ago": 1850 },
+          { "from": "diego", "body": "bet, i'm free thursday if you want to link up", "minutes_ago": 40 },
+          {
+            "from": "diego",
+            "body": "just finished leg day, dying",
+            "minutes_ago": 15,
+            "media": { "kind": "photo", "view_limit": 1, "views_used": 0, "prompt": "a gym selfie, fully clothed, post-workout, casual athletic wear, phone photo" }
+          },
+          { "from": "diego", "body": "anyway lmk!", "minutes_ago": 10 }
+        ]
+      },
+      {
+        "cast_key": "aisha",
+        "state": "awaiting_reply",
+        "opened_via": "first_message",
+        "opened_by": "me",
+        "note": "i opened, waiting on a reply",
+        "messages": [
+          { "from": "me", "body": "hey! esports club flyer said you're one of the officers, is it beginner friendly?", "minutes_ago": 300 }
+        ]
+      },
+      {
+        "cast_key": "jordan",
+        "state": "awaiting_reply",
+        "opened_via": "first_message",
+        "opened_by": "jordan",
+        "note": "jordan opened, i haven't replied",
+        "messages": [
+          { "from": "jordan", "body": "hey, we had the same business stats professor last semester right? small world", "minutes_ago": 500 }
+        ]
+      },
+      {
+        "cast_key": "wei",
+        "state": "open",
+        "opened_via": "hi_back",
+        "opened_by": "me",
+        "note": "wei said hi first, i hi'd back",
+        "messages": [
+          { "from": "wei", "body": "hey! thanks for the hi back, wasn't sure you'd remember me from bio lab", "minutes_ago": 600 },
+          { "from": "me", "body": "of course, you're the one who explained the mitosis lab when i was lost", "minutes_ago": 580 },
+          { "from": "wei", "body": "haha yes that was me. you still going to office hours on fridays?", "minutes_ago": 560 },
+          { "from": "me", "body": "trying to, they help a lot honestly", "minutes_ago": 100 }
+        ]
+      },
+      {
+        "cast_key": "fatima",
+        "state": "expired",
+        "opened_via": "first_message",
+        "opened_by": "me",
+        "note": "i opened, fatima never replied, window expired",
+        "messages": [
+          { "from": "me", "body": "hey, are you doing the early childhood practicum at the belvidere site? i might be too", "minutes_ago": 50000 }
+        ]
+      },
+      {
+        "cast_key": "marcus",
+        "state": "open",
+        "opened_via": "first_message",
+        "opened_by": "me",
+        "messages": [
+          { "from": "me", "body": "hey, i think we had the same soccer intramurals team last spring", "minutes_ago": 3000 },
+          { "from": "marcus", "body": "oh yeah! you scored that last minute goal against wing c", "minutes_ago": 2950 },
+          { "from": "me", "body": "haha barely, i got lucky", "minutes_ago": 2900 },
+          { "from": "marcus", "body": "still counts. you playing again this fall?", "minutes_ago": 2800 },
+          {
+            "from": "me",
+            "body": "if this weather holds, yeah",
+            "minutes_ago": 2700,
+            "media": { "kind": "photo", "view_limit": 1, "views_used": 1, "prompt": "a sunset over a community college parking lot after a late shift, phone photo" }
+          },
+          { "from": "marcus", "body": "that's a good one, definitely play", "minutes_ago": 2600 }
+        ]
+      },
+      {
+        "cast_key": "sofia",
+        "state": "open",
+        "opened_via": "first_message",
+        "opened_by": "me",
+        "messages": [
+          { "from": "me", "body": "your prints from the student gallery were really good, the one with the parking lot was my favorite", "minutes_ago": 4000 },
+          { "from": "sofia", "body": "omg thank you!! that one took forever to get right", "minutes_ago": 3950 },
+          { "from": "me", "body": "worth it though", "minutes_ago": 3900 },
+          {
+            "from": "sofia",
+            "body": "current state of my table lol",
+            "minutes_ago": 200,
+            "media": { "kind": "photo", "view_limit": 2, "views_used": 1, "prompt": "a messy print studio table covered in ink, brushes, and paper, phone photo" }
+          },
+          { "from": "me", "body": "that's beautiful chaos", "minutes_ago": 150 }
+        ]
+      },
+      {
+        "cast_key": "kevin",
+        "state": "open",
+        "opened_via": "first_message",
+        "opened_by": "kevin",
+        "note": "overlaps with debbie's hi_received; both know kevin from the veteran student meetup",
+        "messages": [
+          { "from": "kevin", "body": "hey, weren't you at the veteran student meetup last week?", "minutes_ago": 1000 },
+          { "from": "me", "body": "yeah! good to see another vet on campus", "minutes_ago": 950 },
+          { "from": "kevin", "body": "for real, feels like i'm the only 29 year old in half my classes", "minutes_ago": 900 },
+          { "from": "me", "body": "haha i felt that during onboarding too", "minutes_ago": 60 }
+        ]
+      }
+    ],
+    "albums": {
+      "shared_with_me": [
+        {
+          "owner": "maya",
+          "name": "clinical year",
+          "photo_prompts": [
+            "candid phone photo of a nursing badge and lanyard on a break room table, natural light",
+            "candid phone photo of a study group of nursing students around textbooks and highlighters",
+            "candid phone photo of a hospital cafeteria tray with a sandwich and coffee",
+            "candid phone photo of scrubs laid out on a bed before an early clinical shift",
+            "candid phone photo of a sunrise seen from a hospital parking garage"
+          ]
+        },
+        {
+          "owner": "sofia",
+          "name": "studio work",
+          "photo_prompts": [
+            "candid phone photo of a printmaking press with a fresh print being pulled",
+            "candid phone photo of an art studio table covered in paint tubes and brushes",
+            "candid phone photo of a finished ink print pinned to a drying line",
+            "candid phone photo of a sketchbook open to a half-finished drawing",
+            "candid phone photo of an art building hallway lined with student work"
+          ]
+        }
+      ],
+      "owned_by_me": [
+        {
+          "name": "weekend stuff",
+          "photo_prompts": [
+            "candid phone photo of a football game crowd in campus colors under stadium lights",
+            "candid phone photo of a plate of diner food shared with friends",
+            "candid phone photo of a walk along a suburban Illinois trail in fall",
+            "candid phone photo of a couch and a board game mid-play"
+          ],
+          "shared_to": null
+        },
+        {
+          "name": "gym progress",
+          "photo_prompts": [
+            "candid phone photo of a campus gym weight rack, fully clothed in athletic wear",
+            "candid phone photo of a post-workout selfie, fully clothed, in a gym mirror",
+            "candid phone photo of a water bottle and gym bag on a bench",
+            "candid phone photo of a morning run route along a suburban street"
+          ],
+          "shared_to": "maya"
+        }
+      ]
+    },
+    "not_in_any_thread": ["tyrell"]
+  },
+  "debbie": {
+    "hi_received": [
+      { "cast_key": "kevin", "minutes_ago": 250, "state": "sent" },
+      { "cast_key": "priya", "minutes_ago": 180, "state": "sent" },
+      { "cast_key": "brianna", "minutes_ago": 100, "state": "sent" },
+      { "cast_key": "rachel", "minutes_ago": 40, "state": "sent" }
+    ],
+    "hi_sent": [
+      { "cast_key": "miguel", "minutes_ago": 400, "state": "sent" },
+      { "cast_key": "nadia", "minutes_ago": 8000, "state": "expired" }
+    ],
+    "conversations": [
+      {
+        "cast_key": "tyler",
+        "state": "open",
+        "opened_via": "first_message",
+        "opened_by": "me",
+        "note": "long natural back-and-forth over several days",
+        "messages": [
+          { "from": "me", "body": "hey! are you the one doing the group project on database design for intro cs?", "minutes_ago": 5000 },
+          { "from": "tyler", "body": "yeah that's me lol, you're in the class too?", "minutes_ago": 4980 },
+          { "from": "me", "body": "yep, sitting in the back by the window", "minutes_ago": 4950 },
+          { "from": "tyler", "body": "oh i think i've seen you. this project is kicking my butt ngl", "minutes_ago": 4900 },
+          { "from": "me", "body": "same, the library grind is real this week", "minutes_ago": 4850 },
+          { "from": "tyler", "body": "you always in the library or just this week", "minutes_ago": 4800 },
+          { "from": "me", "body": "lately always lol, midterms", "minutes_ago": 4700 },
+          { "from": "tyler", "body": "same here, c wing basement has better outlets if you haven't found it", "minutes_ago": 4600 },
+          { "from": "me", "body": "wait everyone keeps telling me about this outlet secret, ok i'll check it out", "minutes_ago": 3000 },
+          {
+            "from": "tyler",
+            "body": "current view, send help",
+            "minutes_ago": 2900,
+            "media": { "kind": "photo", "view_limit": null, "views_used": 0, "prompt": "a study setup with an open laptop, notebook, and a mug of coffee on a library table, phone photo" }
+          },
+          { "from": "me", "body": "this is exactly my life rn too", "minutes_ago": 2800 },
+          { "from": "tyler", "body": "solidarity. you doing the metra home for thanksgiving or staying local?", "minutes_ago": 1000 },
+          { "from": "me", "body": "probably metra, my family's in the city", "minutes_ago": 900 },
+          { "from": "tyler", "body": "nice, same", "minutes_ago": 100 }
+        ]
+      },
+      {
+        "cast_key": "chinelo",
+        "state": "open",
+        "opened_via": "first_message",
+        "opened_by": "chinelo",
+        "note": "open, with unread messages from chinelo at the end",
+        "messages": [
+          { "from": "chinelo", "body": "hey! weren't you at the transfer fair last week, business table?", "minutes_ago": 3000 },
+          { "from": "me", "body": "yes! did you end up talking to the depaul rep?", "minutes_ago": 2900 },
+          { "from": "chinelo", "body": "i did, she was really helpful actually", "minutes_ago": 2850 },
+          { "from": "me", "body": "good, i'm still deciding where to transfer honestly", "minutes_ago": 2800 },
+          { "from": "chinelo", "body": "same boat. you around campus much or mostly commuting?", "minutes_ago": 2700 },
+          { "from": "me", "body": "mostly commuting, i'm only here for classes", "minutes_ago": 2600 },
+          { "from": "chinelo", "body": "ah gotcha, i'm around a lot more, campus is basically my second home lol", "minutes_ago": 30 },
+          {
+            "from": "chinelo",
+            "body": "it's actually really pretty today",
+            "minutes_ago": 12,
+            "media": { "kind": "photo", "view_limit": 1, "views_used": 0, "prompt": "a campus view of the main building with fall trees, phone photo, natural light" }
+          },
+          { "from": "chinelo", "body": "anyway you should come hang sometime", "minutes_ago": 5 }
+        ]
+      },
+      {
+        "cast_key": "josh",
+        "state": "awaiting_reply",
+        "opened_via": "first_message",
+        "opened_by": "me",
+        "note": "i opened, waiting on a reply",
+        "messages": [
+          { "from": "me", "body": "hey, i think we're both in the night criminal justice cohort, tuesdays?", "minutes_ago": 400 }
+        ]
+      },
+      {
+        "cast_key": "valentina",
+        "state": "awaiting_reply",
+        "opened_via": "first_message",
+        "opened_by": "valentina",
+        "note": "valentina opened, i haven't replied",
+        "messages": [
+          { "from": "valentina", "body": "hi! i saw we have mutual goals, are you doing the ece practicum this semester too?", "minutes_ago": 600 }
+        ]
+      },
+      {
+        "cast_key": "brandon",
+        "state": "open",
+        "opened_via": "hi_back",
+        "opened_by": "me",
+        "note": "brandon said hi first, i hi'd back",
+        "messages": [
+          { "from": "brandon", "body": "hey, thanks for the hi back! didn't expect it honestly", "minutes_ago": 700 },
+          { "from": "me", "body": "haha why not, you seemed cool from your profile", "minutes_ago": 680 },
+          { "from": "brandon", "body": "well now i have to live up to that", "minutes_ago": 650 },
+          {
+            "from": "brandon",
+            "body": "this was us losing 4-1 but we had fun",
+            "minutes_ago": 200,
+            "media": { "kind": "photo", "view_limit": 2, "views_used": 1, "prompt": "a soccer intramural game action shot, fully clothed in jersey and cleats, phone photo" }
+          },
+          { "from": "me", "body": "the effort still counts lol", "minutes_ago": 150 }
+        ]
+      },
+      {
+        "cast_key": "yuki",
+        "state": "expired",
+        "opened_via": "first_message",
+        "opened_by": "me",
+        "note": "i opened, yuki never replied, window expired",
+        "messages": [
+          { "from": "me", "body": "hey! your painting in the intro class show was so good, the one with the train platform", "minutes_ago": 60000 }
+        ]
+      },
+      {
+        "cast_key": "carlos",
+        "state": "open",
+        "opened_via": "first_message",
+        "opened_by": "me",
+        "messages": [
+          { "from": "me", "body": "hey, are you the one who asked about the bio study group on the campus app?", "minutes_ago": 2000 },
+          { "from": "carlos", "body": "yeah that's me, trying to make time between drop off and class lol", "minutes_ago": 1950 },
+          { "from": "me", "body": "that's a lot, respect", "minutes_ago": 1900 },
+          { "from": "carlos", "body": "it's a lot but worth it. you in the same bio section?", "minutes_ago": 1850 },
+          {
+            "from": "me",
+            "body": "campus after our long lab today",
+            "minutes_ago": 300,
+            "media": { "kind": "photo", "view_limit": 1, "views_used": 1, "prompt": "a sunset over a parking lot with a few cars left, phone photo" }
+          },
+          { "from": "carlos", "body": "that's a good one, matches how i felt leaving", "minutes_ago": 250 }
+        ]
+      }
+    ],
+    "albums": {
+      "shared_with_me": [
+        {
+          "owner": "tyler",
+          "name": "group project era",
+          "photo_prompts": [
+            "candid phone photo of a whiteboard covered in a database schema sketch",
+            "candid phone photo of a laptop screen with code and a half-drunk energy drink beside it",
+            "candid phone photo of a library study room with two laptops open",
+            "candid phone photo of a printed project outline covered in pen edits",
+            "candid phone photo of a campus vending machine snack haul"
+          ]
+        },
+        {
+          "owner": "carlos",
+          "name": "bio life",
+          "photo_prompts": [
+            "candid phone photo of a microscope station in a biology lab",
+            "candid phone photo of a backpack and a thermos on a classroom desk",
+            "candid phone photo of a study notebook with labeled cell diagrams",
+            "candid phone photo of a campus parking lot at golden hour"
+          ]
+        }
+      ],
+      "owned_by_me": [
+        {
+          "name": "campus favorites",
+          "photo_prompts": [
+            "candid phone photo of the campus quad in early fall",
+            "candid phone photo of a latte from the campus cafe on a wooden table",
+            "candid phone photo of a friend group walking between classes",
+            "candid phone photo of a sunset view from the commuter parking lot"
+          ],
+          "shared_to": null
+        },
+        {
+          "name": "study szn",
+          "photo_prompts": [
+            "candid phone photo of color-coded notes spread across a desk",
+            "candid phone photo of a library table stacked with textbooks",
+            "candid phone photo of a whiteboard covered in a study schedule",
+            "candid phone photo of a coffee cup next to a laptop late at night"
+          ],
+          "shared_to": "tyler"
+        }
+      ]
+    },
+    "not_in_any_thread": ["destiny"]
+  }
+}
