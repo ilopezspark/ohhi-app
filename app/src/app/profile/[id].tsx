@@ -19,7 +19,7 @@ import { DetailsSheet } from '../../card/DetailsSheet';
 import { cardCta } from '../../card/cta';
 import { tierWord } from '../../grid/tierLabel';
 import { tintForPhoto } from '../../photos/tint';
-import { BackIcon, Badge, CheckIcon, PinIcon, Text } from '../../ui';
+import { BackIcon, Badge, CheckIcon, Dot, PinIcon, Text } from '../../ui';
 import { colors, layout, radii, shadows, spacing } from '../../theme/tokens';
 
 const GOAL_LABELS: Record<string, string> = Object.fromEntries(GOAL_OPTIONS.map((o) => [o.value, o.label]));
@@ -189,6 +189,12 @@ export default function ProfileScreen() {
   const showIdentity = !!identity && (!!identity.pronouns || identity.orientation.length > 0);
   const heroTint = tintForPhoto(card.user_id, 0);
   const goalLabels = (card.goals ?? []).map((goal) => GOAL_LABELS[goal] ?? goal);
+  // Migration 0009: `card.tier` is the effective tier — mirrors
+  // `grid/GridTile.tsx`'s treatment. `away` has no word, so the pill is
+  // omitted rather than shown empty. The online dot mirrors the tile too:
+  // quieter than the here-now badge, and only shown when not here-now.
+  const heroTierWord = tierWord(card.tier);
+  const heroShowOnlineDot = !card.here_now && !!card.is_online;
 
   return (
     <View style={styles.container} testID="profile-screen">
@@ -211,13 +217,15 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.bottom}>
-          <View style={styles.tierPill}>
-            <PinIcon size={12} color={colors.onDark} />
-            <Text variant="caption" color={colors.onDark}>
-              {tierWord(card.tier)}
-              {card.tier === 'on_campus' ? ' · CLC' : ''}
-            </Text>
-          </View>
+          {heroTierWord ? (
+            <View style={styles.tierPill} testID="profile-tier-pill">
+              <PinIcon size={12} color={colors.onDark} />
+              <Text variant="caption" color={colors.onDark}>
+                {heroTierWord}
+                {card.tier === 'on_campus' ? ' · CLC' : ''}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.nameRow}>
             <Text variant="hero" color={colors.onDark} testID="profile-name">
@@ -236,6 +244,9 @@ export default function ProfileScreen() {
             <View style={styles.verifiedBadge} accessibilityLabel="verified student">
               <CheckIcon size={12} color={colors.ink} />
             </View>
+            {heroShowOnlineDot ? (
+              <Dot testID="profile-online-dot" color={colors.success} size={8} />
+            ) : null}
           </View>
 
           {showIdentity ? (
@@ -294,7 +305,7 @@ export default function ProfileScreen() {
         firstName={card.first_name}
         photoUrl={photoPaths[0] ? photoUrlsQuery.data?.[photoPaths[0]] : undefined}
         tint={heroTint}
-        subtitle={`${tierWord(card.tier)}${card.here_now ? '  ·  here now' : ''}`}
+        subtitle={[heroTierWord, card.here_now ? 'here now' : null].filter(Boolean).join('  ·  ')}
         busy={messageMutation.isPending}
         onSend={onSendMessage}
         onDismiss={() => setMessageSheetOpen(false)}

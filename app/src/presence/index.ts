@@ -31,10 +31,19 @@ export type { PresenceTier } from '../geo/tier';
  * proposed default copy — brief content still pending, see §8 open question
  * 4). Kept here rather than in the screen so the wording is identical wherever
  * the prompt is reached from.
+ *
+ * Migration 0009 (decision 54): the grid/profile card only ever show
+ * `on_campus`/`nearby` — a stored `county` tier is never shown in v1 — so
+ * this no longer mentions the county.
  */
 export const LOCATION_PERMISSION_EXPLAINER =
-  'OhHi uses your location only to show whether you’re on campus, nearby, or in the county — ' +
+  'OhHi uses your location only to show whether you’re on campus or nearby — ' +
   'never your exact spot, and never while the app is closed.';
 
-/** Shown instead of the generic "away" copy when permission was actually denied. */
-export const LOCATION_DENIED_COPY = 'Turn on location to appear on the grid.';
+/**
+ * Migration 0009 (decision 53) amends decision 43 further: a location denial
+ * no longer hides anyone from the grid, so this is a soft, dismissible hint
+ * on the grid screen — not a "you're not visible" warning. It only ever
+ * explains the missing location word on the user's own tile/card.
+ */
+export const LOCATION_DENIED_COPY = "Turn on location to show when you're on campus.";

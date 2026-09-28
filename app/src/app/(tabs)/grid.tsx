@@ -22,7 +22,12 @@ import { Banner } from '../../grid/Banner';
 import { GridTile } from '../../grid/GridTile';
 import { VerifySheet } from '../../grid/VerifySheet';
 import { notVisibleReason, REASON_COPY } from '../../grid/visibility';
-import { LOCATION_PERMISSION_EXPLAINER, usePresence, usePresenceStore } from '../../presence';
+import {
+  LOCATION_DENIED_COPY,
+  LOCATION_PERMISSION_EXPLAINER,
+  usePresence,
+  usePresenceStore,
+} from '../../presence';
 import { getRealtimeManager, type HereNowEvent } from '../../realtime';
 import { BellIcon, EmptyState, SearchIcon, Text } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
@@ -57,6 +62,10 @@ export default function GridScreen() {
   const queryClient = useQueryClient();
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [verifySheetOpen, setVerifySheetOpen] = useState(false);
+  // Migration 0009 (decision 53): a location denial no longer hides anyone,
+  // so this is a soft, dismissible hint rather than a visibility warning —
+  // dismissed for the life of this screen instance, not persisted.
+  const [locationHintDismissed, setLocationHintDismissed] = useState(false);
 
   const { data: meData } = useQuery({ queryKey: ['me'], queryFn: fetchMe });
   const campusId = meData?.campus_id ?? null;
@@ -178,15 +187,13 @@ export default function GridScreen() {
   // Banners.
   // ---------------------------------------------------------------------
   const mainPhoto = myPhotos?.find((photo) => photo.position === 0) ?? null;
+  // Migration 0009: tier/staleness/location no longer feed this derivation —
+  // see `grid/visibility.ts`'s own doc comment.
   const reason = notVisibleReason({
     status: meData?.status ?? null,
     verificationStatus: meData?.verification_status ?? null,
     mainPhotoState: mainPhoto?.moderation_state ?? null,
     isVisible: myPresence?.is_visible ?? null,
-    tier: presence.tier ?? myPresence?.tier ?? null,
-    tierComputedAt: myPresence?.tier_computed_at ?? null,
-    permission: presence.permission,
-    now: Date.now(),
   });
 
   const onVerify = useCallback(async () => {
@@ -228,15 +235,14 @@ export default function GridScreen() {
   }, [presence, queryClient]);
 
   const runReasonAction = useCallback(
-    (action: 'verify' | 'enable_location' | 'resume' | null) => {
+    (action: 'verify' | 'resume' | null) => {
       // The design (`Grid-Verify.html`) replaces the old direct-to-Persona
       // jump with an in-app sheet that offers a real "just look around for
       // now" dismissal — something the old single-button banner never had.
       if (action === 'verify') setVerifySheetOpen(true);
-      if (action === 'enable_location') void onEnableLocation();
       if (action === 'resume') void onResume();
     },
-    [onEnableLocation, onResume]
+    [onResume]
   );
 
   const onRefresh = useCallback(() => {
@@ -365,6 +371,23 @@ export default function GridScreen() {
           onAction={onEnableLocation}
         />
       ) : null}
+
+      {/* Migration 0009 (decision 53): a location denial no longer hides
+          anyone, so this is a soft, dismissible hint — not the old
+          "you're not visible" `permission_denied` reason banner — and only
+          ever explains the missing location word on the user's own tile. */}
+      {presence.permission === 'denied' && !locationHintDismissed ? (
+        <Banner
+          testID="grid-location-hint"
+          actionTestID="grid-location-hint-action"
+          dismissTestID="grid-location-hint-dismiss"
+          message={LOCATION_DENIED_COPY}
+          actionLabel="Turn on location"
+          dismissLabel="Not now"
+          onAction={onEnableLocation}
+          onDismiss={() => setLocationHintDismissed(true)}
+        />
+      ) : null}
     </View>
   );
 
@@ -410,7 +433,6 @@ export default function GridScreen() {
           <GridTile
             row={item}
             photoUrl={item.photo_path ? photoUrls?.[item.photo_path] : undefined}
-            countyLabel={presence.countyLabel}
             onPress={openProfile}
           />
         )}

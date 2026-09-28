@@ -4,7 +4,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { TintedPlaceholder } from '../photos/TintedPlaceholder';
 import { tintForPhoto } from '../photos/tint';
 import type { GridRow } from '../api/grid';
-import { Badge, CheckIcon, Text } from '../ui';
+import { Badge, CheckIcon, Dot, Text } from '../ui';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
 import { tierWord } from './tierLabel';
 
@@ -12,7 +12,6 @@ export interface GridTileProps {
   row: GridRow;
   /** Signed URL for `row.photo_path`, when one could be minted. */
   photoUrl?: string;
-  countyLabel?: string | null;
   onPress: (userId: string) => void;
 }
 
@@ -23,6 +22,14 @@ export interface GridTileProps {
  * `verification_status = 'verified'` gate, so this renders unconditionally,
  * not from a per-row field the RPC doesn't return), and a bottom gradient
  * caption with name/grad-year, tier word and up to two tag chips.
+ *
+ * Migration 0009: `row.tier` is the *effective* tier — `on_campus`/`nearby`
+ * get their word; `away` (recency-collapsed or a stored `county`, which is
+ * never shown in v1) leaves that slot empty rather than printing "away".
+ * `row.is_online` (active within 15 minutes) gets a quiet success-coloured
+ * dot next to the name — a quieter treatment than the here-now pill's signal
+ * dot — and only when `row.here_now` is false, since the pill already implies
+ * "here, right now" and takes precedence.
  *
  * The tags array already arrives truncated and ordered — `grid_for_me()` does
  * `array_agg(t.label order by ut.position) … where ut.position < 2` — so this
@@ -35,16 +42,20 @@ export interface GridTileProps {
  * badge. Its tint is derived from the user id, which is all we have —
  * `grid_for_me()` doesn't return the stored `user_photos.tint`.
  */
-export function GridTile({ row, photoUrl, countyLabel, onPress }: GridTileProps) {
+export function GridTile({ row, photoUrl, onPress }: GridTileProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const showPhoto = !!photoUrl && !imageFailed;
   const tint = tintForPhoto(row.user_id, 0);
+  const tierLabel = tierWord(row.tier);
+  const showOnlineDot = !row.here_now && !!row.is_online;
 
   return (
     <Pressable
       testID={`grid-tile-${row.user_id}`}
       accessibilityRole="button"
-      accessibilityLabel={`${row.first_name}, ${tierWord(row.tier, countyLabel)}`}
+      accessibilityLabel={[row.first_name, tierLabel, showOnlineDot ? 'online' : null]
+        .filter(Boolean)
+        .join(', ')}
       onPress={() => onPress(row.user_id)}
       style={[styles.tile, shadows.md, { backgroundColor: tint }]}
     >
@@ -86,20 +97,27 @@ export function GridTile({ row, photoUrl, countyLabel, onPress }: GridTileProps)
 
       <View style={styles.caption}>
         <View style={styles.nameRow}>
-          <Text variant="title" color={colors.onDark} numberOfLines={1} style={styles.name}>
-            {row.first_name}
-            {row.grad_year ? (
-              <Text variant="captionMuted" color={colors.onDark}>{`  '${String(row.grad_year).slice(-2)}`}</Text>
+          <View style={styles.nameWithDot}>
+            <Text variant="title" color={colors.onDark} numberOfLines={1} style={styles.name}>
+              {row.first_name}
+              {row.grad_year ? (
+                <Text variant="captionMuted" color={colors.onDark}>{`  '${String(row.grad_year).slice(-2)}`}</Text>
+              ) : null}
+            </Text>
+            {showOnlineDot ? (
+              <Dot testID={`grid-tile-online-${row.user_id}`} color={colors.success} size={7} />
             ) : null}
-          </Text>
-          <Text
-            variant="captionMuted"
-            color={colors.onDark}
-            style={styles.tier}
-            testID={`grid-tile-tier-${row.user_id}`}
-          >
-            {tierWord(row.tier, countyLabel)}
-          </Text>
+          </View>
+          {tierLabel ? (
+            <Text
+              variant="captionMuted"
+              color={colors.onDark}
+              style={styles.tier}
+              testID={`grid-tile-tier-${row.user_id}`}
+            >
+              {tierLabel}
+            </Text>
+          ) : null}
         </View>
 
         {row.tag_labels?.length ? (
@@ -151,6 +169,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   nameRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: spacing.xs },
+  nameWithDot: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexShrink: 1 },
   name: { flexShrink: 1 },
   tier: { opacity: 0.85 },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },

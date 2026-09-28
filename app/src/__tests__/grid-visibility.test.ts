@@ -1,24 +1,16 @@
 import {
   notVisibleReason,
   REASON_COPY,
-  TIER_STALE_AFTER_MS,
   type NotVisibleReason,
   type VisibilityInput,
 } from '../grid/visibility';
 
-const NOW = Date.parse('2026-09-21T12:00:00Z');
-const FRESH = new Date(NOW - 60_000).toISOString();
-
-/** A caller who satisfies every clause of `is_grid_visible`. */
+/** A caller who satisfies every clause of `is_grid_visible` (migration 0009). */
 const visible = (overrides: Partial<VisibilityInput> = {}): VisibilityInput => ({
   status: 'active',
   verificationStatus: 'verified',
   mainPhotoState: 'ok',
   isVisible: true,
-  tier: 'on_campus',
-  tierComputedAt: FRESH,
-  permission: 'granted',
-  now: NOW,
   ...overrides,
 });
 
@@ -49,8 +41,6 @@ describe('notVisibleReason', () => {
           verificationStatus: 'email_verified',
           mainPhotoState: 'pending',
           isVisible: false,
-          tier: 'away',
-          tierComputedAt: new Date(NOW - TIER_STALE_AFTER_MS - 1).toISOString(),
         })
       );
       expect(reason).toBe('unverified');
@@ -66,10 +56,10 @@ describe('notVisibleReason', () => {
       expect(notVisibleReason(visible({ mainPhotoState: null }))).toBe('photo_pending');
     });
 
-    it('outranks pause, tier and staleness', () => {
-      expect(
-        notVisibleReason(visible({ mainPhotoState: 'pending', isVisible: false, tier: 'away' }))
-      ).toBe('photo_pending');
+    it('outranks pause', () => {
+      expect(notVisibleReason(visible({ mainPhotoState: 'pending', isVisible: false }))).toBe(
+        'photo_pending'
+      );
     });
   });
 
@@ -77,53 +67,18 @@ describe('notVisibleReason', () => {
     it('is paused when is_visible is false', () => {
       expect(notVisibleReason(visible({ isVisible: false }))).toBe('paused');
     });
+  });
 
-    it('outranks tier and staleness', () => {
-      expect(notVisibleReason(visible({ isVisible: false, tier: 'away' }))).toBe('paused');
+  describe('migration 0009 — tier, staleness and location denial no longer hide anyone', () => {
+    it('is visible regardless of tier or location permission — those fields no longer exist on the input', () => {
+      // VisibilityInput has no tier/permission/tierComputedAt fields any more;
+      // this asserts a fully-populated "otherwise visible" caller is never
+      // flagged, which is the behavioural half of that removal.
+      expect(notVisibleReason(visible())).toBeNull();
     });
   });
 
-  describe('priority 4 — tier away, and the denied/far-away distinction', () => {
-    it('is tier_away when location works and the user is genuinely far', () => {
-      expect(notVisibleReason(visible({ tier: 'away', permission: 'granted' }))).toBe('tier_away');
-    });
-
-    it('is permission_denied when location was refused', () => {
-      expect(notVisibleReason(visible({ tier: 'away', permission: 'denied' }))).toBe(
-        'permission_denied'
-      );
-    });
-
-    it('is permission_denied before any tier has been computed', () => {
-      expect(notVisibleReason(visible({ tier: null, permission: 'denied' }))).toBe(
-        'permission_denied'
-      );
-    });
-
-    it('is not a reason for county or nearby', () => {
-      expect(notVisibleReason(visible({ tier: 'county' }))).toBeNull();
-      expect(notVisibleReason(visible({ tier: 'nearby' }))).toBeNull();
-    });
-  });
-
-  describe('priority 5 — the 24h staleness cutoff (decision 11)', () => {
-    it('is not stale at 23h59m', () => {
-      const computedAt = new Date(NOW - (TIER_STALE_AFTER_MS - 60_000)).toISOString();
-      expect(notVisibleReason(visible({ tierComputedAt: computedAt }))).toBeNull();
-    });
-
-    it('is stale at exactly 24h — is_grid_visible wants tier_computed_at > now() - 24h', () => {
-      const computedAt = new Date(NOW - TIER_STALE_AFTER_MS).toISOString();
-      expect(notVisibleReason(visible({ tierComputedAt: computedAt }))).toBe('tier_stale');
-    });
-
-    it('ignores an unparseable timestamp rather than crying stale', () => {
-      expect(notVisibleReason(visible({ tierComputedAt: 'not a date' }))).toBeNull();
-      expect(notVisibleReason(visible({ tierComputedAt: null }))).toBeNull();
-    });
-  });
-
-  describe('priority 6 — status (defensive)', () => {
+  describe('priority 4 — status (defensive)', () => {
     it('flags a non-active, non-paused status last', () => {
       expect(notVisibleReason(visible({ status: 'onboarding' }))).toBe('not_active');
     });
@@ -142,9 +97,6 @@ describe('REASON_COPY', () => {
     'id_failed',
     'photo_pending',
     'paused',
-    'permission_denied',
-    'tier_away',
-    'tier_stale',
     'not_active',
   ];
 
@@ -154,8 +106,14 @@ describe('REASON_COPY', () => {
     }
   });
 
+  it('no longer has a tier_away, tier_stale or permission_denied entry', () => {
+    expect(REASON_COPY).not.toHaveProperty('tier_away');
+    expect(REASON_COPY).not.toHaveProperty('tier_stale');
+    expect(REASON_COPY).not.toHaveProperty('permission_denied');
+  });
+
   it('offers no retry for the states §5 says have none', () => {
-    for (const reason of ['id_pending', 'manual_review', 'photo_pending', 'tier_away'] as const) {
+    for (const reason of ['id_pending', 'manual_review', 'photo_pending'] as const) {
       expect(REASON_COPY[reason].action).toBeNull();
       expect(REASON_COPY[reason].actionLabel).toBeNull();
     }

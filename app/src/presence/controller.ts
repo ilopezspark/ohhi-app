@@ -202,7 +202,9 @@ export class PresenceController {
    * Decision 43 / onboarding-grid plan §4: with no permission we cannot
    * compute a tier at all, so write `away` **once** and stop trying. The grid
    * stays fully browsable — `grid_for_me()` has no dependency on the caller's
-   * own tier — only the user's own visibility to others is affected.
+   * own tier. Migration 0009 (decision 53) further amends decision 43: an
+   * `away` tier no longer hides the caller from anyone's grid at all — it
+   * only means their own tile/card shows no location word.
    *
    * `undetermined` (never asked, or asked and dismissable) is not a denial:
    * hold the last known tier and wait for the user to answer the prompt,

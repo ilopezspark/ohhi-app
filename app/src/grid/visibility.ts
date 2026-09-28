@@ -1,5 +1,3 @@
-import type { PresenceTier } from '../geo/tier';
-import type { LocationPermissionState } from '../presence';
 import type { Database } from '../types/database';
 
 type UserStatus = Database['public']['Enums']['user_status'];
@@ -7,27 +5,29 @@ type VerificationStatus = Database['public']['Enums']['verification_status'];
 type ModerationState = Database['public']['Enums']['photo_moderation_state'];
 
 /**
- * The "you're not visible because…" derivation (onboarding-grid plan §3.1).
- *
- * There is no RPC for this. It is assembled client-side from three reads,
- * against `private.is_grid_visible`'s own criteria, copied here from
- * `supabase/migrations/20260918000002_core_schema.sql`:
+ * The "you're not visible because…" derivation (onboarding-grid plan §3.1),
+ * against `private.is_grid_visible`'s own criteria — copied here from
+ * migration 0009 (`supabase/migrations/20260918000009_grid_shows_everyone.sql`,
+ * `docs/decisions.md` 53/56):
  *
  * ```sql
  *   and p.status = 'active'
  *   and p.verification_status = 'verified'
- *   and up.tier_computed_at > now() - interval '24 hours'
- *   and up.tier <> 'away'
  *   and up.is_visible
  *   join public.user_photos ph on ... ph.position = 0 and ph.moderation_state = 'ok'
  * ```
  *
- * (The seventh condition, `not is_blocked(...)`, is irrelevant to a self-check
+ * (The remaining clause, `not is_blocked(...)`, is irrelevant to a self-check
  * and is not represented here.)
+ *
+ * Migration 0009 dropped the staleness and `tier <> 'away'` clauses entirely
+ * — location and recency no longer hide anyone (decision 53), so this
+ * derivation no longer reasons about either, and `tier_away`/`tier_stale`/
+ * `permission_denied` are gone as reasons. A location denial is now a soft,
+ * dismissible hint the grid screen shows on its own (`(tabs)/grid.tsx`,
+ * `presence/index.ts`'s `LOCATION_DENIED_COPY`), never a "you're not
+ * visible" reason.
  */
-
-/** 24 hours, matching `is_grid_visible`'s staleness interval (decision 11). */
-export const TIER_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 export type NotVisibleReason =
   | 'unverified'
@@ -36,9 +36,6 @@ export type NotVisibleReason =
   | 'id_failed'
   | 'photo_pending'
   | 'paused'
-  | 'permission_denied'
-  | 'tier_away'
-  | 'tier_stale'
   | 'not_active';
 
 export interface VisibilityInput {
@@ -48,11 +45,6 @@ export interface VisibilityInput {
   mainPhotoState: ModerationState | null;
   /** `user_presence.is_visible` — false means paused. */
   isVisible: boolean | null;
-  tier: PresenceTier | null;
-  /** `user_presence.tier_computed_at` as an ISO string. */
-  tierComputedAt: string | null;
-  permission: LocationPermissionState;
-  now: number;
 }
 
 /**
@@ -92,26 +84,7 @@ export function notVisibleReason(input: VisibilityInput): NotVisibleReason | nul
   //    `is_grid_visible` and stays testable on its own.
   if (input.isVisible === false) return 'paused';
 
-  // 4. tier = 'away'. Distinguish "denied" from "actually far away": §4 asks
-  //    for different copy and a Settings deep link in the denial case.
-  if (input.tier === 'away') {
-    return input.permission === 'denied' ? 'permission_denied' : 'tier_away';
-  }
-
-  // A denial before any tier has been computed looks the same to the server
-  // (the row defaults to `away`), so surface it the same way here.
-  if (input.tier === null && input.permission === 'denied') return 'permission_denied';
-
-  // 5. Staleness. Should be rare when presence sync is working; this is the
-  //    fallback explanation, not the primary UX.
-  if (input.tierComputedAt) {
-    const computedAt = Date.parse(input.tierComputedAt);
-    if (Number.isFinite(computedAt) && input.now - computedAt >= TIER_STALE_AFTER_MS) {
-      return 'tier_stale';
-    }
-  }
-
-  // 6. Defensive only — an onboarding user shouldn't reach the grid at all.
+  // 4. Defensive only — an onboarding user shouldn't reach the grid at all.
   if (input.status !== 'active' && input.status !== 'paused') return 'not_active';
 
   return null;
@@ -122,7 +95,7 @@ export interface ReasonCopy {
   message: string;
   /** Label for the call to action, or null when the state has no retry. */
   actionLabel: string | null;
-  action: 'verify' | 'enable_location' | 'resume' | null;
+  action: 'verify' | 'resume' | null;
 }
 
 export const REASON_COPY: Record<NotVisibleReason, ReasonCopy> = {
@@ -157,21 +130,6 @@ export const REASON_COPY: Record<NotVisibleReason, ReasonCopy> = {
     message: "You're paused — no one can see you.",
     actionLabel: 'Resume',
     action: 'resume',
-  },
-  permission_denied: {
-    message: 'Turn on location to appear on the grid.',
-    actionLabel: 'Turn on location',
-    action: 'enable_location',
-  },
-  tier_away: {
-    message: "You're marked away — move closer to campus to appear on the grid.",
-    actionLabel: null,
-    action: null,
-  },
-  tier_stale: {
-    message: 'Your location is out of date — reopen the app to refresh it.',
-    actionLabel: 'Refresh',
-    action: 'enable_location',
   },
   not_active: {
     message: 'Finish setting up your profile to appear on the grid.',

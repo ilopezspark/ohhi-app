@@ -1,25 +1,26 @@
 import type { PresenceTier } from '../geo/tier';
 
 /**
- * The tier word shown on a tile (onboarding-grid plan §3: "a tier word/badge
- * … propose plain text badges matching `campuses.county_label` for the county
- * case"). Exact copy is still **Needs brief**; these are the note's proposed
- * defaults.
+ * The location word shown on a tile/profile hero (`Grid.html`/`Profile.html`).
  *
- * `away` never appears on a tile — `is_grid_visible` excludes it — but the map
- * is total so the type stays exhaustive, and the word is reused by the "you're
- * not visible because…" banner for the caller's own tier.
+ * Migration 0009 (decisions 53/54): `grid_for_me()`/`profile_card_for()` now
+ * return an *effective* tier with only three meaningful outcomes —
+ * `on_campus`, `nearby`, or `away` (a stored `county` already reads as `away`
+ * server-side, and staleness collapses to `away` too). The design has no word
+ * for `away`: this returns `''` so the caller leaves that slot empty rather
+ * than printing "away". `county` is kept in the switch only because
+ * `PresenceTier` (still 4 values, `src/geo/tier.ts`) is also the type of the
+ * viewer's own on-device tier; it is never a value this function is called
+ * with for someone else's row.
  */
-export function tierWord(tier: PresenceTier, countyLabel?: string | null): string {
+export function tierWord(tier: PresenceTier): string {
   switch (tier) {
     case 'on_campus':
       return 'on campus';
     case 'nearby':
       return 'nearby';
     case 'county':
-      return countyLabel?.trim() || 'in the county';
     case 'away':
-      return 'away';
     default:
       return '';
   }

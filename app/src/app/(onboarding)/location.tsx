@@ -31,6 +31,12 @@ import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
  * it's shown, but this screen's brief specifically calls for the design's
  * wording, so it's used here as the design's own dedicated location step
  * rather than reused generic copy.
+ *
+ * Migration 0009 (decision 53) amends decision 43 further: skipping this
+ * step — or denying the prompt — no longer makes anyone invisible. It only
+ * means there's no location word on their tile/card; the grid still shows
+ * them. The body copy below says so explicitly, and no longer claims a
+ * county tier is shown (decision 54 — the county tier is never shown in v1).
  */
 export default function LocationScreen() {
   const [busy, setBusy] = useState(false);
@@ -104,17 +110,18 @@ export default function LocationScreen() {
           <Badge label="nearby" style={styles.tileBadge} />
         </View>
         <View style={[styles.tile, { backgroundColor: colors.avatarTints[2] }]}>
-          <Badge label="lake co" style={styles.tileBadge} />
+          {/* The third state has no badge, by design — this is what "away"
+              looks like: no location word, not a warning. */}
         </View>
       </View>
       <Text variant="headline" style={{ marginTop: spacing.mdLg }}>
         see who&apos;s around you
       </Text>
       <Text variant="body" color={colors.muted}>
-        we show <Text variant="body" color={colors.ink}>on campus</Text>,{' '}
-        <Text variant="body" color={colors.ink}>nearby</Text>, or{' '}
-        <Text variant="body" color={colors.ink}>lake co</Text>. never a distance, never a map, never your exact
-        spot. you can pause it anytime from <Text variant="body" color={colors.ink}>me</Text>.
+        we show <Text variant="body" color={colors.ink}>on campus</Text> or{' '}
+        <Text variant="body" color={colors.ink}>nearby</Text> — never a distance, never a map, never your
+        exact spot. skip this, and you&apos;re still fully visible — there&apos;s just no location word on
+        your card. you can turn it on anytime from <Text variant="body" color={colors.ink}>me</Text>.
       </Text>
     </OnboardingScreen>
   );

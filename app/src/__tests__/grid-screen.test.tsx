@@ -40,6 +40,7 @@ jest.mock('../presence', () => ({
   usePresence: () => mockPresenceValue,
   usePresenceStore: { getState: () => mockStoreState },
   LOCATION_PERMISSION_EXPLAINER: 'location explainer copy',
+  LOCATION_DENIED_COPY: 'location denied hint copy',
 }));
 
 const mockSubscribeCampusPresence = jest.fn(
@@ -76,6 +77,9 @@ const meRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+// Migration 0009: `tier` is the effective tier — only `on_campus`/`nearby`/
+// `away` ever come back from `grid_for_me()` — and rows also carry
+// `is_online` (active within 15 minutes).
 const gridRow = (overrides: Record<string, unknown> = {}) => ({
   user_id: 'u1',
   first_name: 'Ada',
@@ -83,6 +87,7 @@ const gridRow = (overrides: Record<string, unknown> = {}) => ({
   status_line: 'hello',
   tier: 'on_campus',
   here_now: false,
+  is_online: false,
   last_active_at: '2026-09-21T11:00:00Z',
   photo_path: 'u1/0.jpg',
   tag_labels: ['coffee', 'hiking'],
@@ -130,7 +135,7 @@ describe('GridScreen — tiles', () => {
   it('renders the RPC rows in the order returned, without re-sorting', async () => {
     (gridForMe as jest.Mock).mockResolvedValue([
       gridRow({ user_id: 'u1', first_name: 'Ada', tier: 'on_campus' }),
-      gridRow({ user_id: 'u2', first_name: 'Bea', tier: 'county', photo_path: null }),
+      gridRow({ user_id: 'u2', first_name: 'Bea', tier: 'away', photo_path: null }),
       gridRow({ user_id: 'u3', first_name: 'Cyd', tier: 'nearby', here_now: true }),
     ]);
 
@@ -145,19 +150,19 @@ describe('GridScreen — tiles', () => {
     expect(getAllByText(/'28/)).toHaveLength(3);
   });
 
-  it('shows the tier word, using campuses.county_label for the county tier', async () => {
+  it('shows on campus / nearby, and leaves the slot empty for away (migration 0009 — no word for away)', async () => {
     (gridForMe as jest.Mock).mockResolvedValue([
       gridRow({ user_id: 'u1', tier: 'on_campus' }),
-      gridRow({ user_id: 'u2', tier: 'county' }),
+      gridRow({ user_id: 'u2', tier: 'away' }),
       gridRow({ user_id: 'u3', tier: 'nearby' }),
     ]);
 
-    const { getByTestId } = await renderScreen();
+    const { getByTestId, queryByTestId } = await renderScreen();
 
     await waitFor(() => expect(getByTestId('grid-tile-tier-u1')).toBeTruthy());
     expect(getByTestId('grid-tile-tier-u1').props.children).toBe('on campus');
-    expect(getByTestId('grid-tile-tier-u2').props.children).toBe('lake co.');
     expect(getByTestId('grid-tile-tier-u3').props.children).toBe('nearby');
+    expect(queryByTestId('grid-tile-tier-u2')).toBeNull();
   });
 
   it('shows the here-now indicator only for here_now rows', async () => {
@@ -170,6 +175,22 @@ describe('GridScreen — tiles', () => {
 
     await waitFor(() => expect(getByTestId('grid-tile-here-now-u1')).toBeTruthy());
     expect(queryByTestId('grid-tile-here-now-u2')).toBeNull();
+  });
+
+  it('shows a quiet online dot only when here_now is false and is_online is true', async () => {
+    (gridForMe as jest.Mock).mockResolvedValue([
+      gridRow({ user_id: 'u1', here_now: false, is_online: true }),
+      gridRow({ user_id: 'u2', here_now: false, is_online: false }),
+      // here-now takes precedence over the online dot when both are true.
+      gridRow({ user_id: 'u3', here_now: true, is_online: true }),
+    ]);
+
+    const { getByTestId, queryByTestId } = await renderScreen();
+
+    await waitFor(() => expect(getByTestId('grid-tile-online-u1')).toBeTruthy());
+    expect(queryByTestId('grid-tile-online-u2')).toBeNull();
+    expect(queryByTestId('grid-tile-online-u3')).toBeNull();
+    expect(getByTestId('grid-tile-here-now-u3')).toBeTruthy();
   });
 
   it('renders the two tag labels the RPC returns', async () => {
@@ -279,34 +300,55 @@ describe('GridScreen — the "you\'re not visible because…" banner', () => {
     await waitFor(() => expect(getByTestId('grid-not-visible-photo_pending')).toBeTruthy());
   });
 
-  it('distinguishes a location denial from being genuinely far away', async () => {
+  it('shows the pre-prompt explainer while permission is undetermined', async () => {
+    mockPresenceValue.permission = 'undetermined';
+    const { getByTestId } = await renderScreen();
+    await waitFor(() => expect(getByTestId('grid-location-explainer')).toBeTruthy());
+  });
+
+  // Migration 0009 (decision 53): tier/staleness/location denial no longer
+  // hide the caller — there is no `tier_away`/`tier_stale`/`permission_denied`
+  // reason any more, away or stale rows still show, and a location denial is
+  // a soft, dismissible hint instead (below), never this banner.
+  it('never shows a tier, staleness or location-denied reason', async () => {
     mockPresenceValue.tier = 'away';
     mockPresenceValue.permission = 'denied';
-    const { getByTestId } = await renderScreen();
-    await waitFor(() => expect(getByTestId('grid-not-visible-permission_denied')).toBeTruthy());
-  });
-
-  it('shows the away copy when location works and the user is far', async () => {
-    mockPresenceValue.tier = 'away';
-    mockPresenceValue.permission = 'granted';
-    const { getByTestId } = await renderScreen();
-    await waitFor(() => expect(getByTestId('grid-not-visible-tier_away')).toBeTruthy());
-  });
-
-  it('shows the stale-tier fallback', async () => {
     (getMyPresence as jest.Mock).mockResolvedValue({
       tier: 'on_campus',
       tier_computed_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
       is_visible: true,
     });
+    const { getByTestId, queryByTestId } = await renderScreen();
+    await waitFor(() => expect(getByTestId('grid-list')).toBeTruthy());
+    expect(queryByTestId('grid-not-visible-tier_away')).toBeNull();
+    expect(queryByTestId('grid-not-visible-tier_stale')).toBeNull();
+    expect(queryByTestId('grid-not-visible-permission_denied')).toBeNull();
+  });
+});
+
+describe('GridScreen — the soft, dismissible location hint (decision 53)', () => {
+  it('shows a dismissible hint, not a warning, when location was denied', async () => {
+    mockPresenceValue.permission = 'denied';
     const { getByTestId } = await renderScreen();
-    await waitFor(() => expect(getByTestId('grid-not-visible-tier_stale')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('grid-location-hint')).toBeTruthy());
+    expect(getByTestId('grid-location-hint-action')).toBeTruthy();
+    expect(getByTestId('grid-location-hint-dismiss')).toBeTruthy();
   });
 
-  it('shows the pre-prompt explainer while permission is undetermined', async () => {
-    mockPresenceValue.permission = 'undetermined';
-    const { getByTestId } = await renderScreen();
-    await waitFor(() => expect(getByTestId('grid-location-explainer')).toBeTruthy());
+  it('dismisses on tap and stays dismissed', async () => {
+    mockPresenceValue.permission = 'denied';
+    const { getByTestId, queryByTestId } = await renderScreen();
+    await waitFor(() => expect(getByTestId('grid-location-hint')).toBeTruthy());
+
+    fireEvent.press(getByTestId('grid-location-hint-dismiss'));
+
+    await waitFor(() => expect(queryByTestId('grid-location-hint')).toBeNull());
+  });
+
+  it('does not show the hint when permission is granted or undetermined', async () => {
+    mockPresenceValue.permission = 'granted';
+    const { queryByTestId } = await renderScreen();
+    await waitFor(() => expect(queryByTestId('grid-location-hint')).toBeNull());
   });
 });
 

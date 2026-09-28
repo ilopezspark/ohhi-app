@@ -1,13 +1,21 @@
-import { Banner as KitBanner, type BannerTone as KitBannerTone } from '../ui';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Banner as KitBanner, Text, type BannerTone as KitBannerTone } from '../ui';
+import { colors, spacing } from '../theme/tokens';
 
 export interface BannerProps {
   message: string;
   actionLabel?: string | null;
   onAction?: () => void;
+  /** A second, quieter text link (e.g. "Not now") — for a soft, dismissible
+   * hint rather than a warning that needs acknowledging. Only rendered
+   * alongside `onDismiss`. */
+  dismissLabel?: string | null;
+  onDismiss?: () => void;
   busy?: boolean;
   tone?: 'info' | 'warning';
   testID?: string;
   actionTestID?: string;
+  dismissTestID?: string;
 }
 
 const TONE_MAP: Record<'info' | 'warning', KitBannerTone> = {
@@ -25,16 +33,47 @@ const TONE_MAP: Record<'info' | 'warning', KitBannerTone> = {
  * `tone="info"|"warning"` vocabulary this screen already uses doesn't have to
  * change everywhere `<Banner .../>` is used.
  */
-export function Banner({ message, actionLabel, onAction, busy = false, tone = 'info', testID, actionTestID }: BannerProps) {
+export function Banner({
+  message,
+  actionLabel,
+  onAction,
+  dismissLabel,
+  onDismiss,
+  busy = false,
+  tone = 'info',
+  testID,
+  actionTestID,
+  dismissTestID,
+}: BannerProps) {
+  const showDismiss = !!dismissLabel && !!onDismiss;
+
   return (
-    <KitBanner
-      testID={testID}
-      actionTestID={actionTestID}
-      tone={TONE_MAP[tone]}
-      message={message}
-      actionLabel={actionLabel ?? undefined}
-      onAction={onAction}
-      busy={busy}
-    />
+    <View>
+      <KitBanner
+        testID={testID}
+        actionTestID={actionTestID}
+        tone={TONE_MAP[tone]}
+        message={message}
+        actionLabel={actionLabel ?? undefined}
+        onAction={onAction}
+        busy={busy}
+      />
+      {showDismiss ? (
+        <Pressable
+          testID={dismissTestID}
+          accessibilityRole="button"
+          onPress={onDismiss}
+          style={styles.dismiss}
+        >
+          <Text variant="helper" color={colors.subtle}>
+            {dismissLabel}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  dismiss: { marginTop: -spacing.smMd, marginBottom: spacing.sm, alignSelf: 'flex-start' },
+});

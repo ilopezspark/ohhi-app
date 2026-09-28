@@ -33,6 +33,8 @@ function renderScreen() {
   );
 }
 
+// Migration 0009: `tier` is the effective tier (`on_campus`/`nearby`/`away`
+// only) and the card also carries `is_online` (active within 15 minutes).
 const card = (overrides: Record<string, unknown> = {}) => ({
   user_id: TARGET,
   first_name: 'Ada',
@@ -40,6 +42,7 @@ const card = (overrides: Record<string, unknown> = {}) => ({
   status_line: 'hello there',
   tier: 'on_campus',
   here_now: false,
+  is_online: false,
   photos: [] as string[],
   tag_labels: ['coffee'],
   goals: ['friends'],
@@ -75,6 +78,45 @@ describe('ProfileScreen', () => {
     await findByTestId('profile-screen');
     expect(getByText(/Ada/)).toBeTruthy();
     await findByTestId('profile-status-line');
+  });
+
+  describe('the hero mirrors the tile (migration 0009)', () => {
+    it('shows the tier pill for on_campus/nearby', async () => {
+      (getProfileCard as jest.Mock).mockResolvedValue(card({ tier: 'on_campus' }));
+      const { findByTestId } = await renderScreen();
+      await findByTestId('profile-tier-pill');
+    });
+
+    it('omits the tier pill entirely for away — no word to show', async () => {
+      (getProfileCard as jest.Mock).mockResolvedValue(card({ tier: 'away' }));
+      const { findByTestId, queryByTestId } = await renderScreen();
+      await findByTestId('profile-screen');
+      expect(queryByTestId('profile-tier-pill')).toBeNull();
+    });
+
+    it('shows a quiet online dot only when here_now is false and is_online is true', async () => {
+      (getProfileCard as jest.Mock).mockResolvedValue(
+        card({ here_now: false, is_online: true })
+      );
+      const { findByTestId } = await renderScreen();
+      await findByTestId('profile-online-dot');
+    });
+
+    it('hides the online dot when offline', async () => {
+      (getProfileCard as jest.Mock).mockResolvedValue(
+        card({ here_now: false, is_online: false })
+      );
+      const { findByTestId, queryByTestId } = await renderScreen();
+      await findByTestId('profile-screen');
+      expect(queryByTestId('profile-online-dot')).toBeNull();
+    });
+
+    it('hides the online dot when here_now is true — the here-now badge takes precedence', async () => {
+      (getProfileCard as jest.Mock).mockResolvedValue(card({ here_now: true, is_online: true }));
+      const { findByTestId, queryByTestId } = await renderScreen();
+      await findByTestId('profile-here-now-badge');
+      expect(queryByTestId('profile-online-dot')).toBeNull();
+    });
   });
 
   it('hides the identity row when getIdentity resolves to null (404 — collapsed silently)', async () => {
