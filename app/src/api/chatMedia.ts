@@ -3,20 +3,37 @@ import { mapSupabaseError } from './errors';
 import { resizeForUpload } from '../photos/resize';
 
 export const CHAT_MEDIA_BUCKET = 'chat-media';
+/**
+ * `docs/chat-media-plan.md` §2 (decision CM-1): view-once/view-twice media.
+ * No select policy at all — the only read path is the `media-open` edge
+ * function's signed URL. Never call `signedChatMediaUrls`/`createSignedUrls`
+ * against this bucket from the client; it will simply fail to sign, which is
+ * the point.
+ */
+export const CHAT_MEDIA_LIMITED_BUCKET = 'chat-media-limited';
+
+export type ChatMediaKind = 'photo' | 'video';
 
 /**
- * The exact path the `chat-media` storage policies parse:
- * `{conversation_id}/{message_id}.jpg`.
+ * The exact path both `chat-media` and `chat-media-limited`'s storage
+ * policies parse: `{conversation_id}/{message_id}.jpg` (photo) or `.mp4`
+ * (video, §6).
  *
  * Both policies take `(storage.foldername(name))[1]`, require it to match a
- * uuid regex, and then cast it — read via `can_read_conversation`, write via
+ * uuid regex, and then cast it — read via `can_read_conversation` (`chat-
+ * media` only — `chat-media-limited` has no select policy at all), write via
  * "the conversation is `open` and I'm a participant". So the first segment
  * must be the conversation id, lowercase-hex uuid, nothing else; the second
  * segment is unparsed by the policies but is the message id so the object and
  * the row that points at it share one name.
  */
-export function chatMediaPath(conversationId: string, messageId: string): string {
-  return `${conversationId}/${messageId}.jpg`;
+export function chatMediaPath(conversationId: string, messageId: string, kind: ChatMediaKind = 'photo'): string {
+  return `${conversationId}/${messageId}.${kind === 'video' ? 'mp4' : 'jpg'}`;
+}
+
+/** `{conversation_id}/{message_id}-poster.jpg` — same bucket as the video itself (§6). */
+export function chatMediaPosterPath(conversationId: string, messageId: string): string {
+  return `${conversationId}/${messageId}-poster.jpg`;
 }
 
 export interface UploadChatMediaInput {
@@ -27,6 +44,9 @@ export interface UploadChatMediaInput {
   uri: string;
   width: number;
   height: number;
+  kind?: ChatMediaKind;
+  /** `null`/omitted = keep in chat (`chat-media`); `1`/`2` = `chat-media-limited` (§2). */
+  bucket?: typeof CHAT_MEDIA_BUCKET | typeof CHAT_MEDIA_LIMITED_BUCKET;
 }
 
 /**
@@ -45,7 +65,8 @@ export interface UploadChatMediaInput {
  * and the client could not remove it even if it wanted to. It is swept later
  * by extending the existing purge-queue infrastructure to an orphan sweep.
  * Nothing here retries or compensates; the caller just rolls its optimistic
- * bubble back.
+ * bubble back. The same leak class now also exists in `chat-media-limited` —
+ * §7's "no new leak class, just a second bucket it can happen in".
  *
  * One consequence worth naming: for the blocked party in a shadow-accepted
  * `closed_block` thread (decision 12) the *upload* already fails, because the
@@ -54,9 +75,11 @@ export interface UploadChatMediaInput {
  * failure surfaces as the same generic "couldn't send" as a dropped network,
  * and not one object is leaked in that case.
  *
- * Resize goes through the shared `photos/resize.ts`, which is also the
+ * Photos go through the shared `photos/resize.ts` first, which is also the
  * EXIF-stripping step (it re-encodes rather than copying the source file), so
- * chat media carries no GPS or device metadata either.
+ * chat media carries no GPS or device metadata either. Video is uploaded
+ * as-is (§6: no client-side re-encode) — its own EXIF/metadata posture is
+ * unchanged from the source file, a known gap the plan does not close.
  */
 export async function uploadChatMedia({
   conversationId,
@@ -64,16 +87,54 @@ export async function uploadChatMedia({
   uri,
   width,
   height,
+  kind = 'photo',
+  bucket = CHAT_MEDIA_BUCKET,
 }: UploadChatMediaInput): Promise<string> {
-  const resized = await resizeForUpload({ uri, width, height });
-  const path = chatMediaPath(conversationId, messageId);
+  const path = chatMediaPath(conversationId, messageId, kind);
 
-  const response = await fetch(resized.uri);
+  let uploadUri = uri;
+  let contentType = kind === 'video' ? 'video/mp4' : 'image/jpeg';
+  if (kind === 'photo') {
+    const resized = await resizeForUpload({ uri, width, height });
+    uploadUri = resized.uri;
+    contentType = 'image/jpeg';
+  }
+
+  const response = await fetch(uploadUri);
   const blob = await response.blob();
 
-  const { error } = await supabase.storage.from(CHAT_MEDIA_BUCKET).upload(path, blob, {
-    contentType: 'image/jpeg',
+  const { error } = await supabase.storage.from(bucket).upload(path, blob, {
+    contentType,
     // No upsert: one object per message id, and a message row is never edited.
+    upsert: false,
+  });
+  if (error) throw mapSupabaseError(error);
+
+  return path;
+}
+
+export interface UploadChatMediaPosterInput {
+  conversationId: string;
+  messageId: string;
+  /** Local file URI of the generated poster frame (`chat/video.ts#generateVideoPoster`). */
+  uri: string;
+  bucket?: typeof CHAT_MEDIA_BUCKET | typeof CHAT_MEDIA_LIMITED_BUCKET;
+}
+
+/** Uploads a video's poster frame, same bucket as the video, `-poster.jpg` suffix (§6). */
+export async function uploadChatMediaPoster({
+  conversationId,
+  messageId,
+  uri,
+  bucket = CHAT_MEDIA_BUCKET,
+}: UploadChatMediaPosterInput): Promise<string> {
+  const path = chatMediaPosterPath(conversationId, messageId);
+
+  const response = await fetch(uri);
+  const blob = await response.blob();
+
+  const { error } = await supabase.storage.from(bucket).upload(path, blob, {
+    contentType: 'image/jpeg',
     upsert: false,
   });
   if (error) throw mapSupabaseError(error);
@@ -87,6 +148,10 @@ export async function uploadChatMedia({
  * and the read policy re-evaluates `can_read_conversation` at sign time, so a
  * path that stops qualifying simply fails to sign. A failure is therefore
  * "render the placeholder", never an error state and never an explanation.
+ *
+ * **`chat-media` only** — `chat-media-limited` has no select policy at all
+ * (CM-1), so this must never be called against it; the viewer reads limited
+ * media exclusively through `api/mediaOpen.ts`.
  */
 export async function signedChatMediaUrls(paths: string[]): Promise<Record<string, string>> {
   const unique = Array.from(new Set(paths.filter((path) => !!path)));
@@ -102,4 +167,83 @@ export async function signedChatMediaUrls(paths: string[]): Promise<Record<strin
     if (entry.signedUrl && entry.path) urls[entry.path] = entry.signedUrl;
   }
   return urls;
+}
+
+export interface ResendChatMediaInput {
+  /** Source object's path, always in `chat-media` — the tray only ever surfaces keep-in-chat items (§5). */
+  sourcePath: string;
+  sourcePosterPath?: string | null;
+  targetConversationId: string;
+  targetMessageId: string;
+  kind: ChatMediaKind;
+  /** `null` = keep in chat (`chat-media`), `1`/`2` = `chat-media-limited`. */
+  viewLimit: 1 | 2 | null;
+}
+
+export interface ResendChatMediaResult {
+  mediaPath: string;
+  posterPath: string | null;
+}
+
+/**
+ * Re-sending from the recently-shared tray (§5, decision CM-2): gives the new
+ * message its own independently-owned object rather than pointing at the
+ * original path, so every bucket read policy's "path segment 1 is the owning
+ * conversation" assumption stays intact.
+ *
+ * CM-2's write-up describes this as a storage-to-storage `copy` op under the
+ * service role. No such server-side copy is in this build's scope (only
+ * migration 0010 and the `media-open` function are — neither performs a
+ * resend copy), so this achieves the identical *outcome* — a new object at
+ * the target conversation's path, the original untouched — client-side: sign
+ * the source (60s, `chat-media` only, which the tray's own `view_limit is
+ * null` scoping guarantees is readable), fetch the bytes, and upload them to
+ * the target path/bucket. Functionally equivalent for the read-policy model
+ * this whole design leans on; flagged as a deviation from the service-role
+ * mechanism CM-2 names, not from the outcome it requires.
+ */
+export async function resendChatMedia({
+  sourcePath,
+  sourcePosterPath,
+  targetConversationId,
+  targetMessageId,
+  kind,
+  viewLimit,
+}: ResendChatMediaInput): Promise<ResendChatMediaResult> {
+  const targetBucket = viewLimit == null ? CHAT_MEDIA_BUCKET : CHAT_MEDIA_LIMITED_BUCKET;
+  const paths = sourcePosterPath ? [sourcePath, sourcePosterPath] : [sourcePath];
+
+  const { data: signed, error: signError } = await supabase.storage
+    .from(CHAT_MEDIA_BUCKET)
+    .createSignedUrls(paths, 60);
+  if (signError || !signed) throw mapSupabaseError(signError ?? new Error('could not sign source media'));
+
+  const urlByPath: Record<string, string> = {};
+  for (const entry of signed) {
+    if (entry.signedUrl && entry.path) urlByPath[entry.path] = entry.signedUrl;
+  }
+  const mediaUrl = urlByPath[sourcePath];
+  if (!mediaUrl) throw mapSupabaseError(new Error('source media no longer readable'));
+
+  const mediaBlob = await (await fetch(mediaUrl)).blob();
+  const targetMediaPath = chatMediaPath(targetConversationId, targetMessageId, kind);
+  const { error: uploadError } = await supabase.storage.from(targetBucket).upload(targetMediaPath, mediaBlob, {
+    contentType: kind === 'video' ? 'video/mp4' : 'image/jpeg',
+    upsert: false,
+  });
+  if (uploadError) throw mapSupabaseError(uploadError);
+
+  let targetPosterPath: string | null = null;
+  const posterUrl = sourcePosterPath ? urlByPath[sourcePosterPath] : undefined;
+  if (posterUrl) {
+    const posterBlob = await (await fetch(posterUrl)).blob();
+    targetPosterPath = chatMediaPosterPath(targetConversationId, targetMessageId);
+    const { error: posterError } = await supabase.storage.from(targetBucket).upload(targetPosterPath, posterBlob, {
+      contentType: 'image/jpeg',
+      upsert: false,
+    });
+    if (posterError) throw mapSupabaseError(posterError);
+  }
+
+  return { mediaPath: targetMediaPath, posterPath: targetPosterPath };
 }

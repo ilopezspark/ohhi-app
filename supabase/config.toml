@@ -450,3 +450,14 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/purge-drain/deno.json"
 entrypoint = "./functions/purge-drain/index.ts"
+
+# media-open (docs/chat-media-plan.md §4): mints signed URLs for view-once/
+# view-twice chat media. verify_jwt = true so the platform rejects a request
+# with no/invalid Supabase JWT before the function runs; the function's own
+# callerUid() check still runs and its own failure reads as a generic 404,
+# not 401 (decision 24's ambiguous-refusal posture, extended here per the plan).
+[functions.media-open]
+enabled = true
+verify_jwt = true
+import_map = "./functions/media-open/deno.json"
+entrypoint = "./functions/media-open/index.ts"

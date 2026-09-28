@@ -13,12 +13,17 @@ jest.mock('../api/client', () => ({ supabase: {}, SUPABASE_URL: 'https://example
 jest.mock('../api/conversations', () => ({ getConversation: jest.fn() }));
 jest.mock('../api/messages', () => ({
   listMessages: jest.fn(),
+  listRecentlySharedMedia: jest.fn(),
   markRead: jest.fn(),
   sendMessage: jest.fn(),
 }));
 jest.mock('../api/chatMedia', () => ({
+  CHAT_MEDIA_BUCKET: 'chat-media',
+  CHAT_MEDIA_LIMITED_BUCKET: 'chat-media-limited',
+  resendChatMedia: jest.fn(),
   signedChatMediaUrls: jest.fn(),
   uploadChatMedia: jest.fn(),
+  uploadChatMediaPoster: jest.fn(),
 }));
 jest.mock('../api/me', () => ({ me: jest.fn() }));
 jest.mock('../api/photos', () => ({ signedPhotoUrls: jest.fn() }));
@@ -27,6 +32,13 @@ jest.mock('../api/shares', () => ({ shareAlbum: jest.fn(), sharePrivateCard: jes
 jest.mock('expo-image-picker', () => ({
   requestMediaLibraryPermissionsAsync: jest.fn(),
   launchImageLibraryAsync: jest.fn(),
+  requestCameraPermissionsAsync: jest.fn(),
+  launchCameraAsync: jest.fn(),
+}));
+jest.mock('../chat/video', () => ({
+  checkVideo: jest.fn(() => ({ ok: true })),
+  VIDEO_REJECTION_COPY: { duration: 'Videos can be up to 30 seconds.', size: 'Videos can be up to 50 MB.' },
+  generateVideoPoster: jest.fn(() => Promise.resolve(null)),
 }));
 
 let threadHandlers: { onMessage: (m: unknown) => void; onInvalidate?: () => void } | null = null;
@@ -39,12 +51,13 @@ jest.mock('../chat/useChatRealtime', () => ({
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { getConversation } from '../api/conversations';
-import { listMessages, markRead, sendMessage } from '../api/messages';
-import { signedChatMediaUrls, uploadChatMedia } from '../api/chatMedia';
+import { listMessages, listRecentlySharedMedia, markRead, sendMessage } from '../api/messages';
+import { resendChatMedia, signedChatMediaUrls, uploadChatMedia, uploadChatMediaPoster } from '../api/chatMedia';
 import { me } from '../api/me';
 import { signedPhotoUrls } from '../api/photos';
 import { listMyAlbums } from '../api/albums';
 import { shareAlbum, sharePrivateCard } from '../api/shares';
+import { checkVideo, generateVideoPoster } from '../chat/video';
 import ChatThreadScreen from '../app/chat/[id]';
 
 const conversation = (overrides: Record<string, unknown> = {}) => ({
@@ -68,6 +81,14 @@ const message = (overrides: Record<string, unknown> = {}) => ({
   sender_id: THEM,
   body: 'hey',
   media_path: null,
+  media_kind: null,
+  view_limit: null,
+  views_used: 0,
+  media_duration_ms: null,
+  media_bytes: null,
+  media_width: null,
+  media_height: null,
+  media_poster_path: null,
   created_at: '2026-09-20T11:00:00.000Z',
   ...overrides,
 });
@@ -92,12 +113,24 @@ beforeEach(() => {
   (signedChatMediaUrls as jest.Mock).mockResolvedValue({});
   (signedPhotoUrls as jest.Mock).mockResolvedValue({});
   (listMyAlbums as jest.Mock).mockResolvedValue([]);
+  (listRecentlySharedMedia as jest.Mock).mockResolvedValue([]);
+  (checkVideo as jest.Mock).mockReturnValue({ ok: true });
+  (generateVideoPoster as jest.Mock).mockResolvedValue(null);
 });
 
-/** Opens the share tray (the plus button) and taps "a photo" — the flow `Chat-Share.html` puts the picker behind. */
-async function openPhotoShare(screen: Awaited<ReturnType<typeof renderScreen>>) {
+/** Opens the share tray (the plus button) and taps "a photo or video" — lands on the pick sheet (`Chat-Share.html` + §5/§7's tray). */
+async function openMediaPickSheet(screen: Awaited<ReturnType<typeof renderScreen>>) {
   await fireEvent.press(await screen.findByTestId('composer-attach'));
   await fireEvent.press(await screen.findByTestId('share-sheet-photo'));
+  await screen.findByTestId('media-pick-sheet');
+}
+
+/** Pick sheet -> library picker -> preview step, for a given picker result. */
+async function pickFromLibrary(screen: Awaited<ReturnType<typeof renderScreen>>, asset: Record<string, unknown>) {
+  await openMediaPickSheet(screen);
+  (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockResolvedValue({ granted: true });
+  (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({ canceled: false, assets: [asset] });
+  await fireEvent.press(screen.getByTestId('media-pick-library'));
 }
 
 describe('thread — composer gating', () => {
@@ -258,59 +291,212 @@ describe('thread — optimistic send', () => {
   });
 });
 
-describe('thread — media, reads, realtime and navigation', () => {
-  it('uploads before inserting, and passes the same id to both', async () => {
-    (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockResolvedValue({
-      granted: true,
-    });
-    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
-      canceled: false,
-      assets: [{ uri: 'file:///pick.jpg', width: 3000, height: 2000 }],
-    });
-    (uploadChatMedia as jest.Mock).mockResolvedValue(`${CONV}/mid.jpg`);
+describe('thread — chat media send flow', () => {
+  it('opens the pick sheet, offering the recently-shared tray plus library/camera', async () => {
+    (listRecentlySharedMedia as jest.Mock).mockResolvedValue([
+      {
+        messageId: 'old-1',
+        conversationId: CONV,
+        mediaPath: `${CONV}/old-1.jpg`,
+        mediaKind: 'photo',
+        mediaWidth: 100,
+        mediaHeight: 100,
+        mediaPosterPath: null,
+        createdAt: '2026-09-19T00:00:00.000Z',
+      },
+    ]);
 
     const screen = await renderScreen();
-    await openPhotoShare(screen);
+    await openMediaPickSheet(screen);
+
+    expect(screen.getByTestId('media-pick-library')).toBeTruthy();
+    expect(screen.getByTestId('media-pick-camera')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('recently-shared-tray')).toBeTruthy());
+    expect(screen.getByTestId('recently-shared-item-old-1')).toBeTruthy();
+  });
+
+  it('shows the empty state when nothing has been recently shared', async () => {
+    const screen = await renderScreen();
+    await openMediaPickSheet(screen);
+    await waitFor(() => expect(screen.getByTestId('recently-shared-empty')).toBeTruthy());
+  });
+
+  it('uploads a picked photo to chat-media (default: keep in chat) and inserts with the same id', async () => {
+    const screen = await renderScreen();
+    (uploadChatMedia as jest.Mock).mockResolvedValue(`${CONV}/mid.jpg`);
+
+    await pickFromLibrary(screen, { uri: 'file:///pick.jpg', width: 3000, height: 2000, type: 'image' });
+    await screen.findByTestId('media-preview-sheet');
+    await fireEvent.press(screen.getByTestId('media-preview-send'));
 
     await waitFor(() => expect(sendMessage).toHaveBeenCalled());
     const uploadArgs = (uploadChatMedia as jest.Mock).mock.calls[0]![0];
     const sendArgs = (sendMessage as jest.Mock).mock.calls[0]![0];
     expect(uploadArgs.conversationId).toBe(CONV);
+    expect(uploadArgs.kind).toBe('photo');
+    expect(uploadArgs.bucket).toBe('chat-media');
     expect(sendArgs.id).toBe(uploadArgs.messageId);
     expect(sendArgs.mediaPath).toBe(`${CONV}/mid.jpg`);
+    expect(sendArgs.mediaKind).toBe('photo');
+    expect(sendArgs.viewLimit).toBeNull();
     expect(sendArgs.body).toBeNull();
   });
 
-  it('does not insert a row when the upload is refused', async () => {
-    (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockResolvedValue({
-      granted: true,
-    });
-    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
-      canceled: false,
-      assets: [{ uri: 'file:///pick.jpg', width: 10, height: 10 }],
-    });
-    (uploadChatMedia as jest.Mock).mockRejectedValue(new Error('refused'));
-
+  it('uploads to chat-media-limited when "view once" is chosen', async () => {
     const screen = await renderScreen();
-    await openPhotoShare(screen);
+    (uploadChatMedia as jest.Mock).mockResolvedValue(`${CONV}/mid.jpg`);
 
-    await waitFor(() => expect(screen.getAllByTestId(/^message-retry-/).length).toBe(1));
+    await pickFromLibrary(screen, { uri: 'file:///pick.jpg', width: 100, height: 100, type: 'image' });
+    await screen.findByTestId('media-preview-sheet');
+    await fireEvent.press(screen.getByTestId('media-preview-option-once'));
+    await fireEvent.press(screen.getByTestId('media-preview-send'));
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+    expect((uploadChatMedia as jest.Mock).mock.calls[0]![0].bucket).toBe('chat-media-limited');
+    expect((sendMessage as jest.Mock).mock.calls[0]![0].viewLimit).toBe(1);
+  });
+
+  it('uploads to chat-media-limited when "view twice" is chosen', async () => {
+    const screen = await renderScreen();
+    (uploadChatMedia as jest.Mock).mockResolvedValue(`${CONV}/mid.jpg`);
+
+    await pickFromLibrary(screen, { uri: 'file:///pick.jpg', width: 100, height: 100, type: 'image' });
+    await screen.findByTestId('media-preview-sheet');
+    await fireEvent.press(screen.getByTestId('media-preview-option-twice'));
+    await fireEvent.press(screen.getByTestId('media-preview-send'));
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+    expect((uploadChatMedia as jest.Mock).mock.calls[0]![0].bucket).toBe('chat-media-limited');
+    expect((sendMessage as jest.Mock).mock.calls[0]![0].viewLimit).toBe(2);
+  });
+
+  it('generates and uploads a poster for a video, and sends the video columns', async () => {
+    const screen = await renderScreen();
+    (uploadChatMedia as jest.Mock).mockResolvedValue(`${CONV}/mid.mp4`);
+    (uploadChatMediaPoster as jest.Mock).mockResolvedValue(`${CONV}/mid-poster.jpg`);
+    (generateVideoPoster as jest.Mock).mockResolvedValue({ uri: 'file:///poster.jpg' });
+
+    await pickFromLibrary(screen, {
+      uri: 'file:///pick.mp4',
+      width: 1080,
+      height: 1920,
+      type: 'video',
+      duration: 12_000,
+      fileSize: 4_000_000,
+    });
+    await screen.findByTestId('media-preview-sheet');
+    await fireEvent.press(screen.getByTestId('media-preview-send'));
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+    expect((uploadChatMedia as jest.Mock).mock.calls[0]![0].kind).toBe('video');
+    expect(uploadChatMediaPoster).toHaveBeenCalled();
+    const sendArgs = (sendMessage as jest.Mock).mock.calls[0]![0];
+    expect(sendArgs.mediaKind).toBe('video');
+    expect(sendArgs.mediaDurationMs).toBe(12_000);
+    expect(sendArgs.mediaBytes).toBe(4_000_000);
+    expect(sendArgs.mediaPosterPath).toBe(`${CONV}/mid-poster.jpg`);
+  });
+
+  it('rejects an over-long video before any upload, with plain copy', async () => {
+    (checkVideo as jest.Mock).mockReturnValue({ ok: false, reason: 'duration' });
+    const screen = await renderScreen();
+
+    await pickFromLibrary(screen, { uri: 'file:///long.mp4', width: 100, height: 100, type: 'video', duration: 40_000 });
+
+    expect(await screen.findByTestId('media-pick-error')).toHaveTextContent(/30 seconds/);
+    expect(uploadChatMedia).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+    // Stays on the pick sheet rather than jumping to the preview.
+    expect(screen.queryByTestId('media-preview-sheet')).toBeNull();
+  });
+
+  it('rejects an over-large video before any upload, with plain copy', async () => {
+    (checkVideo as jest.Mock).mockReturnValue({ ok: false, reason: 'size' });
+    const screen = await renderScreen();
+
+    await pickFromLibrary(screen, { uri: 'file:///big.mp4', width: 100, height: 100, type: 'video', fileSize: 99_000_000 });
+
+    expect(await screen.findByTestId('media-pick-error')).toHaveTextContent(/50 MB/);
+    expect(uploadChatMedia).not.toHaveBeenCalled();
+  });
+
+  it('does not insert a row when the upload is refused', async () => {
+    (uploadChatMedia as jest.Mock).mockRejectedValue(new Error('refused'));
+    const screen = await renderScreen();
+
+    await pickFromLibrary(screen, { uri: 'file:///pick.jpg', width: 10, height: 10, type: 'image' });
+    await screen.findByTestId('media-preview-sheet');
+    await fireEvent.press(screen.getByTestId('media-preview-send'));
+
+    await waitFor(() => expect(screen.getByTestId('media-preview-error')).toBeTruthy());
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it('does nothing when the picker is cancelled', async () => {
-    (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockResolvedValue({
-      granted: true,
-    });
+  it('does nothing when the picker is cancelled — stays on the pick sheet', async () => {
+    const screen = await renderScreen();
+    await openMediaPickSheet(screen);
+    (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockResolvedValue({ granted: true });
     (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({ canceled: true });
 
-    const screen = await renderScreen();
-    await openPhotoShare(screen);
+    await fireEvent.press(screen.getByTestId('media-pick-library'));
+
     await waitFor(() => expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalled());
     expect(uploadChatMedia).not.toHaveBeenCalled();
     expect(sendMessage).not.toHaveBeenCalled();
+    expect(screen.getByTestId('media-pick-sheet')).toBeTruthy();
   });
 
+  it('offers the camera as an alternative to the library', async () => {
+    const screen = await renderScreen();
+    await openMediaPickSheet(screen);
+    (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockResolvedValue({ granted: true });
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///cam.jpg', width: 100, height: 100, type: 'image' }],
+    });
+    (uploadChatMedia as jest.Mock).mockResolvedValue(`${CONV}/cam.jpg`);
+
+    await fireEvent.press(screen.getByTestId('media-pick-camera'));
+    await screen.findByTestId('media-preview-sheet');
+    await fireEvent.press(screen.getByTestId('media-preview-send'));
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+  });
+
+  it('re-sends a tray item via resendChatMedia rather than re-uploading local bytes', async () => {
+    (listRecentlySharedMedia as jest.Mock).mockResolvedValue([
+      {
+        messageId: 'old-1',
+        conversationId: 'old-conv',
+        mediaPath: 'old-conv/old-1.jpg',
+        mediaKind: 'photo',
+        mediaWidth: 200,
+        mediaHeight: 200,
+        mediaPosterPath: null,
+        createdAt: '2026-09-19T00:00:00.000Z',
+      },
+    ]);
+    (signedChatMediaUrls as jest.Mock).mockResolvedValue({ 'old-conv/old-1.jpg': 'https://signed/old-1.jpg' });
+    (resendChatMedia as jest.Mock).mockResolvedValue({ mediaPath: `${CONV}/new-1.jpg`, posterPath: null });
+
+    const screen = await renderScreen();
+    await openMediaPickSheet(screen);
+    await waitFor(() => expect(screen.getByTestId('recently-shared-item-old-1')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('recently-shared-item-old-1'));
+    await screen.findByTestId('media-preview-sheet');
+    await fireEvent.press(screen.getByTestId('media-preview-send'));
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+    expect(uploadChatMedia).not.toHaveBeenCalled();
+    expect(resendChatMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ sourcePath: 'old-conv/old-1.jpg', targetConversationId: CONV, kind: 'photo', viewLimit: null })
+    );
+    expect((sendMessage as jest.Mock).mock.calls[0]![0].mediaPath).toBe(`${CONV}/new-1.jpg`);
+  });
+});
+
+describe('thread — reads and realtime', () => {
   it('marks the thread read against the newest message on open', async () => {
     const screen = await renderScreen();
     await screen.findByTestId('message-m1');
@@ -337,6 +523,29 @@ describe('thread — media, reads, realtime and navigation', () => {
 
     await waitFor(() => expect(listMessages).toHaveBeenCalled());
     await waitFor(() => expect(getConversation).toHaveBeenCalled());
+  });
+
+  it('refetches on a realtime UPDATE too, so a sender bubble picks up the new views_used', async () => {
+    // The sender's own limited send, unopened.
+    (listMessages as jest.Mock).mockResolvedValue({
+      messages: [message({ id: 'm1', sender_id: ME, media_path: `${CONV}/m1.jpg`, media_kind: 'photo', view_limit: 1, views_used: 0 })],
+      nextCursor: null,
+    });
+
+    const screen = await renderScreen();
+    await screen.findByText('Photo · view once');
+    (listMessages as jest.Mock).mockClear();
+    (listMessages as jest.Mock).mockResolvedValue({
+      messages: [message({ id: 'm1', sender_id: ME, media_path: `${CONV}/m1.jpg`, media_kind: 'photo', view_limit: 1, views_used: 1 })],
+      nextCursor: null,
+    });
+
+    // The realtime UPDATE event itself — the handler doesn't need to inspect
+    // its payload, it just invalidates and refetches (§3/§5).
+    threadHandlers?.onMessage({ id: 'm1', eventType: 'UPDATE', view_limit: 1, views_used: 1 });
+
+    await waitFor(() => expect(listMessages).toHaveBeenCalled());
+    await screen.findByText('Opened');
   });
 
   it('links the header to the other participant’s profile', async () => {
@@ -375,6 +584,16 @@ describe('thread — media, reads, realtime and navigation', () => {
   it('renders the thread inverted', async () => {
     const screen = await renderScreen();
     expect((await screen.findByTestId('thread-list')).props.inverted).toBe(true);
+  });
+
+  it('opens the media viewer route on a limited bubble tap', async () => {
+    (listMessages as jest.Mock).mockResolvedValue({
+      messages: [message({ id: 'm1', sender_id: THEM, media_path: `${CONV}/m1.jpg`, media_kind: 'photo', view_limit: 1, views_used: 0 })],
+      nextCursor: null,
+    });
+    const screen = await renderScreen();
+    await fireEvent.press(await screen.findByTestId('message-limited-press-m1'));
+    expect(router.push).toHaveBeenCalledWith(`/chat/${CONV}/media/m1`);
   });
 });
 

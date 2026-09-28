@@ -73,8 +73,8 @@ export function ShareSheet({
                 <ShareRow
                   testID="share-sheet-photo"
                   icon={<CameraIcon size={20} color={colors.ink} />}
-                  title="a photo"
-                  subtitle="from your camera roll"
+                  title="a photo or video"
+                  subtitle="from your camera roll, or recently shared"
                   onPress={() => {
                     onDismiss();
                     onPickPhoto();

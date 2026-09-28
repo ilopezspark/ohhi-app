@@ -1,0 +1,208 @@
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Image, Pressable, StyleSheet, View } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import * as ScreenCapture from 'expo-screen-capture';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { getMessageMedia } from '../../../../api/messages';
+import { signedChatMediaUrls } from '../../../../api/chatMedia';
+import { openLimitedMedia } from '../../../../api/mediaOpen';
+import { me as fetchMe } from '../../../../api/me';
+import { useRecipientExhaustedStore } from '../../../../chat/recipientExhausted';
+import { colors, layout, radii, shadows, spacing } from '../../../../theme/tokens';
+import { BackIcon } from '../../../../ui/icons';
+import { Text } from '../../../../ui';
+
+/**
+ * The full-screen media viewer (`docs/chat-media-plan.md` §4/§7):
+ * `chat/[id]/media/[messageId].tsx`, opened from a bubble tap
+ * (`MessageBubble`'s `onOpenMedia`). Handles both kinds of media the bubble
+ * can point at:
+ *
+ * - **Keep-in-chat** (`view_limit is null`): reads through the existing
+ *   `chat-media` storage path, exactly like the inline bubble does — this is
+ *   just a bigger frame + playback controls, not a different read path.
+ * - **Limited** (view-once/view-twice): calls `api/mediaOpen.ts`, which is
+ *   the *only* read path `chat-media-limited` has (§2 — that bucket has no
+ *   select policy at all). A 404 (exhausted, not the recipient, `media-open`
+ *   not deployed yet, anything) renders the identical generic "couldn't open"
+ *   copy (decision 24) and, for the recipient specifically, flips their local
+ *   `recipientExhausted` flag so the bubble stops offering another open.
+ *
+ * Never caches the URL: it lives only in this screen's own state, discarded
+ * the moment the screen unmounts (back navigation), and the plain `Image`/
+ * `expo-video` primitives already in use elsewhere in this app carry no extra
+ * disk cache of their own to defeat (this app has no `expo-image` dependency
+ * to configure a cache policy on). `expo-screen-capture`'s
+ * `usePreventScreenCapture` covers the mount/unmount FLAG_SECURE toggle on
+ * Android — §1/CM-8's own limitation (no iOS/web equivalent) is stated in
+ * the copy below, not just in the docs.
+ */
+export default function ChatMediaViewerScreen() {
+  const params = useLocalSearchParams<{ id: string; messageId: string }>();
+  const conversationIdParam = Array.isArray(params.id) ? params.id[0] : params.id;
+  const messageId = Array.isArray(params.messageId) ? params.messageId[0] : params.messageId ?? '';
+  const queryClient = useQueryClient();
+  const markExhausted = useRecipientExhaustedStore((state) => state.markExhausted);
+
+  // Android-only in effect (FLAG_SECURE); a no-op everywhere else. Active for
+  // exactly the lifetime of this screen.
+  ScreenCapture.usePreventScreenCapture('chat-media-viewer');
+
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: fetchMe });
+  const { data: message, isPending: messagePending } = useQuery({
+    queryKey: ['message-media', messageId],
+    queryFn: () => getMessageMedia(messageId),
+    enabled: !!messageId,
+  });
+
+  const [state, setState] = useState<
+    | { status: 'loading' }
+    | { status: 'ready'; url: string; kind: 'photo' | 'video' }
+    | { status: 'failed' }
+  >({ status: 'loading' });
+
+  const conversationId = message?.conversation_id ?? conversationIdParam ?? null;
+  const limited = message?.view_limit != null;
+  const isSender = !!me?.id && message?.sender_id === me.id;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!message || !message.media_path) {
+      setState({ status: 'failed' });
+      return;
+    }
+
+    setState({ status: 'loading' });
+
+    (async () => {
+      if (!limited) {
+        const urls = await signedChatMediaUrls([message.media_path!]);
+        const url = urls[message.media_path!];
+        if (cancelled) return;
+        setState(url ? { status: 'ready', url, kind: message.media_kind === 'video' ? 'video' : 'photo' } : { status: 'failed' });
+        return;
+      }
+
+      const result = await openLimitedMedia(messageId);
+      if (cancelled) return;
+      if (!result) {
+        // The generic "couldn't open" — 404 for every reason alike (decision
+        // 24). For the recipient specifically, this is also the signal that
+        // their view(s) are used up (§7's own note: no pre-check exists that
+        // wouldn't race).
+        if (!isSender) markExhausted(messageId);
+        setState({ status: 'failed' });
+        return;
+      }
+      setState({ status: 'ready', url: result.url, kind: result.kind });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message, messageId, limited, isSender]);
+
+  // On close: discard the URL (just falls out of state) and refresh the
+  // message's own row — the sender's bubble reconciles `views_used` from the
+  // list refetch even if the realtime UPDATE was somehow missed.
+  useEffect(() => {
+    return () => {
+      if (conversationId) {
+        void queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+      }
+      void queryClient.invalidateQueries({ queryKey: ['message-media', messageId] });
+    };
+  }, [conversationId, messageId, queryClient]);
+
+  const showLoading = messagePending || state.status === 'loading';
+
+  const screenshotCopy = useMemo(
+    () =>
+      limited
+        ? 'They can open it a limited number of times — it won’t stay in the chat after that. Screenshots may still be possible.'
+        : null,
+    [limited]
+  );
+
+  return (
+    <View style={styles.container} testID="chat-media-viewer">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back"
+        testID="chat-media-viewer-back"
+        onPress={() => router.back()}
+        style={({ pressed }) => [styles.back, shadows.sm, pressed && styles.pressed]}
+      >
+        <BackIcon size={18} color={colors.onDark} />
+      </Pressable>
+
+      <View style={styles.content}>
+        {showLoading ? (
+          <ActivityIndicator size="large" color={colors.onDark} testID="chat-media-viewer-loading" />
+        ) : state.status === 'ready' ? (
+          state.kind === 'video' ? (
+            <ViewerVideo uri={state.url} />
+          ) : (
+            <Image
+              source={{ uri: state.url }}
+              style={styles.media}
+              resizeMode="contain"
+              accessibilityIgnoresInvertColors
+              testID="chat-media-viewer-image"
+            />
+          )
+        ) : (
+          <Text variant="body" color={colors.onDark} style={styles.failedText} testID="chat-media-viewer-failed">
+            Couldn&apos;t open that.
+          </Text>
+        )}
+      </View>
+
+      {screenshotCopy ? (
+        <Text variant="helper" color={colors.subtle} style={styles.footer} testID="chat-media-viewer-footer">
+          {screenshotCopy}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** Split out so `useVideoPlayer` is only ever called with a real, ready URI — never conditionally. */
+function ViewerVideo({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (instance) => {
+    instance.play();
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={styles.media}
+      nativeControls
+      contentFit="contain"
+      testID="chat-media-viewer-video"
+    />
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.ink },
+  back: {
+    position: 'absolute',
+    top: layout.topInset - spacing.xl,
+    left: layout.gutter,
+    zIndex: 10,
+    width: 44,
+    height: 44,
+    borderRadius: radii.circle,
+    backgroundColor: 'rgba(35,33,31,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pressed: { opacity: 0.7 },
+  content: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  media: { width: '100%', height: '100%' },
+  failedText: { textAlign: 'center', paddingHorizontal: spacing.xxl },
+  footer: { textAlign: 'center', paddingHorizontal: spacing.xxl, paddingBottom: spacing.xxl },
+});

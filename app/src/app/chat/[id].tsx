@@ -12,25 +12,42 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getConversation } from '../../api/conversations';
-import { listMessages, markRead, sendMessage } from '../../api/messages';
-import { signedChatMediaUrls, uploadChatMedia } from '../../api/chatMedia';
+import {
+  listMessages,
+  listRecentlySharedMedia,
+  markRead,
+  sendMessage,
+  type RecentlySharedItem,
+} from '../../api/messages';
+import {
+  CHAT_MEDIA_BUCKET,
+  CHAT_MEDIA_LIMITED_BUCKET,
+  resendChatMedia,
+  signedChatMediaUrls,
+  uploadChatMedia,
+  uploadChatMediaPoster,
+} from '../../api/chatMedia';
 import { me as fetchMe } from '../../api/me';
 import { getAlbum, listMyAlbums, type AlbumRow } from '../../api/albums';
 import { shareAlbum, sharePrivateCard } from '../../api/shares';
 import { mapSupabaseError } from '../../api/errors';
 import { signedPhotoUrls } from '../../api/photos';
 import { Composer } from '../../chat/Composer';
+import { MediaPreview, type MediaPreviewAsset, type ViewLimitChoice } from '../../chat/MediaPreview';
 import { MessageBubble, type ThreadMessage } from '../../chat/MessageBubble';
+import { RecentlySharedTray } from '../../chat/RecentlySharedTray';
+import { useRecipientExhaustedStore } from '../../chat/recipientExhausted';
 import { ShareBubble } from '../../chat/ShareBubble';
 import { ShareSheet } from '../../chat/ShareSheet';
 import { composerState } from '../../chat/rules';
 import { listShareFeed, type ShareFeedItem } from '../../chat/shareFeed';
 import { useConversationRealtime } from '../../chat/useChatRealtime';
 import { messageId as newMessageId } from '../../chat/uuid';
+import { checkVideo, generateVideoPoster, VIDEO_REJECTION_COPY } from '../../chat/video';
 import { tintForPhoto } from '../../photos/tint';
 import { colors, layout, radii, shadows, spacing } from '../../theme/tokens';
 import { BackIcon, MoreIcon } from '../../ui/icons';
-import { Avatar, Text } from '../../ui';
+import { Avatar, Button, Sheet, Text } from '../../ui';
 
 /**
  * A conversation thread (`docs/app-social-plan.md` §3, `Chat-Thread.html`).
@@ -46,10 +63,32 @@ import { Avatar, Text } from '../../ui';
  * two participants, merged and sorted by `created_at` — `Chat-Album.html`'s
  * inline "more of me" / "maya shared more about her" bubbles are `shares`
  * rows, not `messages` rows (see `chat/shareFeed.ts`).
+ *
+ * Chat media (`docs/chat-media-plan.md`): the plus button's share sheet now
+ * offers "a photo or video" — a picker (library or camera) or a tap on the
+ * recently-shared tray — which lands on `MediaPreview`'s three-way selector
+ * (view once / view twice / keep in chat, default keep in chat) before
+ * sending. A message's own full-screen media (limited or a keep-in-chat
+ * video's poster tap) opens `chat/[id]/media/[messageId].tsx`.
  */
 type FeedItem =
   | { kind: 'message'; key: string; createdAt: string; message: ThreadMessage }
   | { kind: 'share'; key: string; createdAt: string; share: ShareFeedItem };
+
+/** What's picked/selected, waiting on the three-way selector before it becomes an upload. */
+interface PendingMedia {
+  kind: 'photo' | 'video';
+  width: number;
+  height: number;
+  durationMs?: number | null;
+  bytes?: number | null;
+  /** Freshly picked (library/camera) — not yet uploaded. */
+  localUri?: string;
+  /** Freshly generated poster frame for a freshly-picked video. */
+  posterUri?: string | null;
+  /** Chosen from the recently-shared tray instead — resent via `resendChatMedia`. */
+  trayItem?: RecentlySharedItem;
+}
 
 export default function ChatThreadScreen() {
   const { id: conversationId, draft: initialDraft } = useLocalSearchParams<{ id: string; draft?: string }>();
@@ -60,6 +99,18 @@ export default function ChatThreadScreen() {
   const [sharingAlbumId, setSharingAlbumId] = useState<string | null>(null);
   const [sharingCard, setSharingCard] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+
+  // -----------------------------------------------------------------------
+  // Chat media: pick -> preview (three-way selector) -> send.
+  // -----------------------------------------------------------------------
+  const [mediaStep, setMediaStep] = useState<'closed' | 'pick' | 'preview'>('closed');
+  const [pendingMedia, setPendingMedia] = useState<PendingMedia | null>(null);
+  const [previewAsset, setPreviewAsset] = useState<MediaPreviewAsset | null>(null);
+  const [mediaSending, setMediaSending] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+
+  const recipientExhausted = useRecipientExhaustedStore((state) => state.exhausted);
+
   /**
    * Optimistic rows, newest first, held outside React Query so a rollback is a
    * local splice and never has to reconcile with a server page. Plan §8 calls
@@ -175,7 +226,9 @@ export default function ChatThreadScreen() {
   // Per-thread realtime. Inserts are appended in place; a reconnect
   // invalidates instead, because the socket may have missed rows while it was
   // down. Only the first page is invalidated — refetching every loaded page
-  // would jump the scroll position.
+  // would jump the scroll position. `docs/chat-media-plan.md` §3/§5: an
+  // `UPDATE` (a `views_used` flip) invalidates the same way — the sender's
+  // bubble picks the new counter up off the refetch, no separate patch path.
   // ---------------------------------------------------------------------
   useConversationRealtime(conversationId, {
     onMessage: () => {
@@ -213,9 +266,17 @@ export default function ChatThreadScreen() {
       });
   }, [conversationId, newest, queryClient]);
 
-  // Signed URLs for any media in the loaded pages, re-signed per fetch.
+  // Signed URLs for keep-in-chat media in the loaded pages: a photo's own
+  // path, or a video's poster path (the raw video is only signed by the
+  // viewer route, on an actual tap). Limited media is deliberately excluded —
+  // `chat-media-limited` has no select policy (§2), so signing it would just
+  // fail; the bubble renders a pill for it, not a thumbnail.
   const mediaPaths = useMemo(
-    () => messages.map((row) => row.media_path).filter((path): path is string => !!path),
+    () =>
+      messages
+        .filter((row) => row.view_limit == null)
+        .map((row) => (row.media_kind === 'video' ? row.media_poster_path : row.media_path))
+        .filter((path): path is string => !!path),
     [messages]
   );
   const mediaPathsKey = useMemo(() => [...mediaPaths].sort().join('|'), [mediaPaths]);
@@ -266,7 +327,18 @@ export default function ChatThreadScreen() {
   // same here by design (decision 24).
   // ---------------------------------------------------------------------
   const send = useCallback(
-    async (input: { id: string; body: string | null; mediaPath: string | null }) => {
+    async (input: {
+      id: string;
+      body: string | null;
+      mediaPath: string | null;
+      mediaKind?: 'photo' | 'video' | null;
+      viewLimit?: 1 | 2 | null;
+      mediaDurationMs?: number | null;
+      mediaBytes?: number | null;
+      mediaWidth?: number | null;
+      mediaHeight?: number | null;
+      mediaPosterPath?: string | null;
+    }) => {
       if (!conversationId || !meId) return;
       setSending(true);
 
@@ -276,6 +348,14 @@ export default function ChatThreadScreen() {
         sender_id: meId,
         body: input.body,
         media_path: input.mediaPath,
+        media_kind: input.mediaKind ?? null,
+        view_limit: input.viewLimit ?? null,
+        views_used: 0,
+        media_duration_ms: input.mediaDurationMs ?? null,
+        media_bytes: input.mediaBytes ?? null,
+        media_width: input.mediaWidth ?? null,
+        media_height: input.mediaHeight ?? null,
+        media_poster_path: input.mediaPosterPath ?? null,
         created_at: new Date().toISOString(),
         pending: true,
       };
@@ -290,6 +370,13 @@ export default function ChatThreadScreen() {
           id: input.id,
           body: input.body,
           mediaPath: input.mediaPath,
+          mediaKind: input.mediaKind,
+          viewLimit: input.viewLimit,
+          mediaDurationMs: input.mediaDurationMs,
+          mediaBytes: input.mediaBytes,
+          mediaWidth: input.mediaWidth,
+          mediaHeight: input.mediaHeight,
+          mediaPosterPath: input.mediaPosterPath,
         });
         setPending((current) => current.filter((row) => row.id !== input.id));
         await queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
@@ -318,61 +405,212 @@ export default function ChatThreadScreen() {
   const onRetry = useCallback(
     (message: ThreadMessage) => {
       setPending((current) => current.filter((row) => row.id !== message.id));
-      void send({ id: message.id, body: message.body, mediaPath: message.media_path });
+      void send({
+        id: message.id,
+        body: message.body,
+        mediaPath: message.media_path,
+        mediaKind: message.media_kind,
+        viewLimit: message.view_limit === 1 || message.view_limit === 2 ? message.view_limit : null,
+        mediaDurationMs: message.media_duration_ms,
+        mediaBytes: message.media_bytes,
+        mediaWidth: message.media_width,
+        mediaHeight: message.media_height,
+        mediaPosterPath: message.media_poster_path,
+      });
     },
     [send]
   );
 
-  /**
-   * Attach: pick -> upload to `chat-media` -> insert the row with the same id.
-   *
-   * Upload precedes the insert because the storage policy checks the
-   * conversation's state, not the row's existence, and `messages` has no
-   * client update grant (plan §3). A failure after a successful upload leaks
-   * the object; decision 37 accepts that for v1.
-   */
-  const onAttach = useCallback(async () => {
-    if (!conversationId) return;
+  const openMediaViewer = useCallback(
+    (message: ThreadMessage) => {
+      if (!conversationId) return;
+      router.push(`/chat/${conversationId}/media/${message.id}` as never);
+    },
+    [conversationId]
+  );
+
+  // ---------------------------------------------------------------------
+  // Chat media: pick (library/camera/tray) -> preview -> upload -> send.
+  //
+  // Upload precedes the insert, same ordering and same decision-37 leak
+  // acceptance as the single-photo flow this replaces (see `chatMedia.ts`'s
+  // own doc comment) — now also true of `chat-media-limited` (§7: "no new
+  // leak class, just a second bucket it can happen in").
+  // ---------------------------------------------------------------------
+  const { data: recentlyShared, isPending: recentlyLoading } = useQuery({
+    queryKey: ['recently-shared-media', meId],
+    queryFn: listRecentlySharedMedia,
+    enabled: mediaStep === 'pick' && !!meId,
+  });
+
+  const trayThumbPaths = useMemo(() => {
+    const paths: string[] = [];
+    for (const item of recentlyShared ?? []) {
+      paths.push(item.mediaKind === 'video' ? (item.mediaPosterPath ?? item.mediaPath) : item.mediaPath);
+    }
+    return paths;
+  }, [recentlyShared]);
+  const trayThumbKey = useMemo(() => [...trayThumbPaths].sort().join('|'), [trayThumbPaths]);
+  const { data: trayThumbUrls } = useQuery({
+    queryKey: ['recently-shared-thumbs', trayThumbKey],
+    queryFn: () => signedChatMediaUrls(trayThumbPaths),
+    enabled: trayThumbPaths.length > 0,
+    staleTime: 45_000,
+  });
+
+  const openMediaPick = useCallback(() => {
+    setMediaError(null);
+    setMediaStep('pick');
+  }, []);
+
+  const closeMediaFlow = useCallback(() => {
+    setMediaStep('closed');
+    setPendingMedia(null);
+    setPreviewAsset(null);
+    setMediaError(null);
+  }, []);
+
+  const handlePickedAsset = useCallback(async (asset: ImagePicker.ImagePickerAsset) => {
+    const kind: 'photo' | 'video' = asset.type === 'video' ? 'video' : 'photo';
+
+    if (kind === 'video') {
+      const check = checkVideo({ durationMs: asset.duration ?? null, bytes: asset.fileSize ?? null });
+      if (!check.ok && check.reason) {
+        setMediaError(VIDEO_REJECTION_COPY[check.reason]);
+        return;
+      }
+    }
+
+    const poster = kind === 'video' ? await generateVideoPoster(asset.uri) : null;
+
+    setPendingMedia({
+      kind,
+      width: asset.width,
+      height: asset.height,
+      durationMs: asset.duration ?? null,
+      bytes: asset.fileSize ?? null,
+      localUri: asset.uri,
+      posterUri: poster?.uri ?? null,
+    });
+    setPreviewAsset({ kind, uri: asset.uri, posterUri: poster?.uri ?? null });
+    setMediaError(null);
+    setMediaStep('preview');
+  }, []);
+
+  const onBrowseLibrary = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) return;
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: ['images', 'videos'],
       quality: 1,
+      videoMaxDuration: 30,
     });
     const asset = result.canceled ? null : result.assets?.[0];
     if (!asset) return;
+    await handlePickedAsset(asset);
+  }, [handlePickedAsset]);
 
-    const id = newMessageId();
-    setSending(true);
-    try {
-      const mediaPath = await uploadChatMedia({
-        conversationId,
-        messageId: id,
-        uri: asset.uri,
-        width: asset.width,
-        height: asset.height,
+  const onTakePhotoOrVideo = useCallback(async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) return;
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images', 'videos'],
+      quality: 1,
+      videoMaxDuration: 30,
+    });
+    const asset = result.canceled ? null : result.assets?.[0];
+    if (!asset) return;
+    await handlePickedAsset(asset);
+  }, [handlePickedAsset]);
+
+  const onSelectTrayItem = useCallback(
+    (item: RecentlySharedItem) => {
+      const thumbPath = item.mediaKind === 'video' ? (item.mediaPosterPath ?? item.mediaPath) : item.mediaPath;
+      const uri = trayThumbUrls?.[thumbPath];
+      setPendingMedia({
+        kind: item.mediaKind,
+        width: item.mediaWidth ?? 0,
+        height: item.mediaHeight ?? 0,
+        trayItem: item,
       });
-      await send({ id, body: null, mediaPath });
-    } catch {
-      // Generic: an upload refused because the thread isn't `open` looks
-      // exactly like a dropped connection, which is the point.
-      setPending((current) => [
-        {
+      setPreviewAsset({ kind: item.mediaKind, uri: uri ?? '', posterUri: uri ?? null });
+      setMediaError(null);
+      setMediaStep('preview');
+    },
+    [trayThumbUrls]
+  );
+
+  const sendPickedMedia = useCallback(
+    async (viewLimit: ViewLimitChoice) => {
+      if (!conversationId || !meId || !pendingMedia) return;
+      setMediaSending(true);
+      setMediaError(null);
+      const id = newMessageId();
+      const bucket = viewLimit == null ? CHAT_MEDIA_BUCKET : CHAT_MEDIA_LIMITED_BUCKET;
+
+      try {
+        let mediaPath: string;
+        let posterPath: string | null = null;
+
+        if (pendingMedia.trayItem) {
+          const result = await resendChatMedia({
+            sourcePath: pendingMedia.trayItem.mediaPath,
+            sourcePosterPath: pendingMedia.trayItem.mediaPosterPath,
+            targetConversationId: conversationId,
+            targetMessageId: id,
+            kind: pendingMedia.kind,
+            viewLimit,
+          });
+          mediaPath = result.mediaPath;
+          posterPath = result.posterPath;
+        } else if (pendingMedia.localUri) {
+          mediaPath = await uploadChatMedia({
+            conversationId,
+            messageId: id,
+            uri: pendingMedia.localUri,
+            width: pendingMedia.width,
+            height: pendingMedia.height,
+            kind: pendingMedia.kind,
+            bucket,
+          });
+          if (pendingMedia.kind === 'video' && pendingMedia.posterUri) {
+            posterPath = await uploadChatMediaPoster({
+              conversationId,
+              messageId: id,
+              uri: pendingMedia.posterUri,
+              bucket,
+            });
+          }
+        } else {
+          throw new Error('no media source');
+        }
+
+        await send({
           id,
-          conversation_id: conversationId,
-          sender_id: meId ?? '',
           body: null,
-          media_path: null,
-          created_at: new Date().toISOString(),
-          failed: true,
-        },
-        ...current,
-      ]);
-    } finally {
-      setSending(false);
-    }
-  }, [conversationId, meId, send]);
+          mediaPath,
+          mediaKind: pendingMedia.kind,
+          viewLimit,
+          mediaDurationMs: pendingMedia.durationMs ?? null,
+          mediaBytes: pendingMedia.bytes ?? null,
+          mediaWidth: pendingMedia.width || null,
+          mediaHeight: pendingMedia.height || null,
+          mediaPosterPath: posterPath,
+        });
+        closeMediaFlow();
+        void queryClient.invalidateQueries({ queryKey: ['recently-shared-media', meId] });
+      } catch {
+        // Generic: an upload refused because the thread isn't `open` looks
+        // exactly like a dropped connection, which is the point (decision 24).
+        setMediaError("Couldn't send. Try again.");
+      } finally {
+        setMediaSending(false);
+      }
+    },
+    [conversationId, meId, pendingMedia, send, closeMediaFlow, queryClient]
+  );
 
   // ---------------------------------------------------------------------
   // Share sheet: albums list (lazy — only while the sheet is on 'albums'
@@ -552,8 +790,18 @@ export default function ChatThreadScreen() {
             <MessageBubble
               message={item.message}
               meId={meId ?? ''}
-              mediaUrl={item.message.media_path ? mediaUrls?.[item.message.media_path] : undefined}
+              mediaUrl={
+                item.message.view_limit == null
+                  ? (() => {
+                      const path =
+                        item.message.media_kind === 'video' ? item.message.media_poster_path : item.message.media_path;
+                      return path ? mediaUrls?.[path] : undefined;
+                    })()
+                  : undefined
+              }
+              recipientExhausted={!!recipientExhausted[item.message.id]}
               onRetry={onRetry}
+              onOpenMedia={openMediaViewer}
             />
           ) : (
             <View
@@ -591,7 +839,7 @@ export default function ChatThreadScreen() {
         otherName={otherName}
         canAttachMedia={composer.canAttachMedia}
         canShareBeyondPhoto={canShareBeyondPhoto}
-        onPickPhoto={() => void onAttach()}
+        onPickPhoto={openMediaPick}
         albums={myAlbums}
         albumsLoading={albumsLoading}
         onShareAlbum={(albumId) => void onShareAlbum(albumId)}
@@ -599,6 +847,51 @@ export default function ChatThreadScreen() {
         onSharePrivateCard={() => void onSharePrivateCard()}
         sharingCard={sharingCard}
         error={shareError}
+      />
+
+      {mediaStep === 'pick' ? (
+        <Sheet onDismiss={closeMediaFlow} testID="media-pick-sheet">
+          <Text variant="title" style={{ fontSize: 17 }}>
+            share with {otherName}
+          </Text>
+
+          <RecentlySharedTray
+            items={recentlyShared}
+            loading={recentlyLoading}
+            thumbnailUrls={trayThumbUrls ?? {}}
+            onSelect={onSelectTrayItem}
+          />
+
+          <View style={styles.pickActions}>
+            <Button
+              label="browse camera roll"
+              variant="secondary"
+              onPress={() => void onBrowseLibrary()}
+              testID="media-pick-library"
+            />
+            <Button
+              label="take a photo or video"
+              variant="ghost"
+              onPress={() => void onTakePhotoOrVideo()}
+              testID="media-pick-camera"
+            />
+          </View>
+
+          {mediaError ? (
+            <Text variant="helper" color={colors.danger} testID="media-pick-error">
+              {mediaError}
+            </Text>
+          ) : null}
+        </Sheet>
+      ) : null}
+
+      <MediaPreview
+        visible={mediaStep === 'preview'}
+        asset={previewAsset}
+        sending={mediaSending}
+        error={mediaError}
+        onDismiss={closeMediaFlow}
+        onSend={(viewLimit) => void sendPickedMedia(viewLimit)}
       />
     </KeyboardAvoidingView>
   );
@@ -643,4 +936,5 @@ const styles = StyleSheet.create({
   shareBubbleWrapperTheirs: { alignItems: 'flex-start' },
   emptyBox: { paddingTop: spacing.huge * 2, paddingHorizontal: spacing.xxl, transform: [{ scaleY: -1 }] },
   empty: { textAlign: 'center' },
+  pickActions: { gap: spacing.smMd },
 });

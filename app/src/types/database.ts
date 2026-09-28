@@ -373,29 +373,58 @@ export type Database = {
         ]
       }
       messages: {
+        // Hand-extended for `docs/chat-media-plan.md` §3 (migration 0010, not
+        // yet applied): `media_kind`, `view_limit`, `views_used`,
+        // `media_duration_ms`, `media_bytes`, `media_width`, `media_height`,
+        // `media_poster_path`. Regenerate this table from the schema once
+        // migration 0010 lands and drop this comment.
         Row: {
           body: string | null
           conversation_id: string
           created_at: string
           id: string
+          media_bytes: number | null
+          media_duration_ms: number | null
+          media_height: number | null
+          media_kind: Database["public"]["Enums"]["media_kind"] | null
           media_path: string | null
+          media_poster_path: string | null
+          media_width: number | null
           sender_id: string
+          view_limit: number | null
+          views_used: number
         }
         Insert: {
           body?: string | null
           conversation_id: string
           created_at?: string
           id?: string
+          media_bytes?: number | null
+          media_duration_ms?: number | null
+          media_height?: number | null
+          media_kind?: Database["public"]["Enums"]["media_kind"] | null
           media_path?: string | null
+          media_poster_path?: string | null
+          media_width?: number | null
           sender_id: string
+          view_limit?: number | null
+          views_used?: number
         }
         Update: {
           body?: string | null
           conversation_id?: string
           created_at?: string
           id?: string
+          media_bytes?: number | null
+          media_duration_ms?: number | null
+          media_height?: number | null
+          media_kind?: Database["public"]["Enums"]["media_kind"] | null
           media_path?: string | null
+          media_poster_path?: string | null
+          media_width?: number | null
           sender_id?: string
+          view_limit?: number | null
+          views_used?: number
         }
         Relationships: [
           {
@@ -1408,6 +1437,7 @@ export type Database = {
           grad_year: number
           here_now: boolean
           here_now_count: number
+          is_online: boolean
           last_active_at: string
           photo_path: string
           status_line: string
@@ -1483,6 +1513,7 @@ export type Database = {
           goals: Database["public"]["Enums"]["user_goal"][]
           grad_year: number
           here_now: boolean
+          is_online: boolean
           my_hi_state: Database["public"]["Enums"]["hi_state"]
           photos: string[]
           status_line: string
@@ -2103,6 +2134,9 @@ export type Database = {
         | "closed_deleted"
       device_platform: "ios" | "android"
       hi_state: "sent" | "answered" | "dismissed" | "expired"
+      // Hand-extended for `docs/chat-media-plan.md` §3 (migration 0010, not
+      // yet applied). Regenerate once the migration lands.
+      media_kind: "photo" | "video"
       moderation_action:
         | "warn"
         | "suspend_7d"

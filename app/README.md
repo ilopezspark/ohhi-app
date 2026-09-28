@@ -1287,3 +1287,162 @@ on a row-delete failure, and throws instead of deleting with no signed-in user.
 - `npx tsc --noEmit` — clean.
 - `npx expo export --platform web` — succeeds.
 <!-- END: Edit photos & tags -->
+
+<!-- BEGIN: Chat media -->
+## Chat media
+
+View once / view twice / keep in chat, per `docs/chat-media-plan.md` (read alongside
+`docs/decisions-chat-media.md` — CM-1 through CM-8, provisionally numbered pending the
+orchestrator's merge into `docs/decisions.md`). Built against the plan's contract only:
+migration 0010 (the new `messages` columns, `media_kind` enum, both storage buckets, and the
+`open_limited_media` RPC) and the `media-open` edge function were being built concurrently by
+other agents and were **not deployed** at any point during this pass — no Supabase writes were
+made. Owned files: `src/chat/*`, `src/app/chat/*`, `src/api/{messages,chatMedia,mediaOpen}.ts`,
+`src/realtime/index.ts` (extended only), `src/types/database.ts` (hand-extended), `src/__tests__/
+chat-*`, and `package.json` for the three new packages below.
+
+### Packages
+
+`npx expo install expo-video expo-video-thumbnails expo-screen-capture` (`expo-image-picker`
+already installed; its picker calls now pass `mediaTypes: ['images', 'videos']`). `expo-video`
+needed its config plugin added to `app.config.ts` by hand — `npx expo install` couldn't write it
+automatically against a `.ts` config.
+
+### Schema types (`src/types/database.ts`)
+
+Hand-extended — migration 0010 wasn't live to regenerate against — with a comment saying so and
+to regenerate once it lands: `messages` gains `media_kind` (`public.media_kind`: `'photo'|
+'video'`, nullable), `view_limit smallint`, `views_used smallint`, `media_duration_ms`,
+`media_bytes`, `media_width`, `media_height integer/smallint`, `media_poster_path text` — column
+names and types exactly as plan §3 lists them, so migration 0010 can be checked against this
+shape directly. `message_media_views` was **not** added to the types: it has no `authenticated`
+grant at all (§3), so no client code ever reads or writes it, and there was nothing for a client
+type to describe.
+
+### Message insert payload (`src/api/messages.ts#sendMessage`)
+
+Every client-settable column, `views_used` and `created_at` excluded (server-owned — the former
+only ever advanced by the security-definer `open_limited_media` RPC, per §3/§4):
+
+```
+{ id, conversation_id, sender_id, body, media_path,
+  media_kind, view_limit, media_duration_ms, media_bytes,
+  media_width, media_height, media_poster_path }
+```
+
+`view_limit` is `null` (keep in chat), `1` (view once), or `2` (view twice) — the exact three-way
+choice `chat/MediaPreview.tsx` offers, default `null`. `getMessageMedia(messageId)` (viewer route)
+and `listRecentlySharedMedia()` (tray, CM-7: `sender_id = auth.uid()`, `media_path is not null`,
+`view_limit is null`, over-fetch 120 / limit.select 30 distinct by `media_path`, client-side
+dedup) were added alongside it.
+
+### Storage paths (`src/api/chatMedia.ts`)
+
+Unchanged convention, video/poster added: `{conversation_id}/{message_id}.jpg` (photo),
+`{conversation_id}/{message_id}.mp4` (video), `{conversation_id}/{message_id}-poster.jpg`
+(video poster) — same bucket as the video itself. `uploadChatMedia` now takes `kind` (`'photo'|
+'video'`, default `'photo'`) and `bucket` (`chat-media` default, or `chat-media-limited`); a
+photo still goes through `resizeForUpload` (EXIF-stripping, per the existing doc comment), a
+video uploads as-is. `signedChatMediaUrls` is unchanged and **only ever called against
+`chat-media`** — `chat-media-limited` has no select policy at all (CM-1), so the viewer never
+signs it that way; the only read path there is `media-open`.
+
+### `media-open` client (`src/api/mediaOpen.ts`)
+
+`openLimitedMedia(messageId)` — `POST ${SUPABASE_URL}/functions/v1/media-open` with the caller
+JWT, plain `fetch` (same convention as `api/identity.ts`). Returns `{url, kind, expiresIn,
+viewsRemaining}` on success; `null` for every refusal alike (404, no session, malformed body,
+dropped network) — decision 24's generic-refusal convention. The function was never deployed
+during this pass, so every test against it is a contract test (`chat-media-open.test.ts`,
+mirroring `card-identity.test.ts`), not a hosted smoke check.
+
+### Deviations from the plan's exact mechanics (outcomes preserved)
+
+- **`resendChatMedia` (§2, decision CM-2) copies client-side, not via a service-role storage
+  `copy` op.** No edge function for a resend copy is in this build's scope (only migration 0010
+  and `media-open` are), so this build's task explicitly assigned it to `src/api/chatMedia.ts`.
+  It signs the source from `chat-media` (60s — always readable, since the tray only surfaces
+  `view_limit is null` items), fetches the bytes, and uploads them to the target conversation's
+  path/bucket. Same outcome as CM-2 requires (an independently-owned object at the new
+  conversation's path, original untouched) — flagged as a mechanism deviation, not an outcome
+  one.
+- **`app/src/api/limitedMedia.ts`, named in plan §7's file list, was not created.** The task's own
+  ownership grant lists only `chatMedia.ts` (extend) and a new `mediaOpen.ts` — no
+  `limitedMedia.ts`. Its job (uploading to `chat-media-limited`) is folded into `chatMedia.ts`'s
+  `uploadChatMedia`/`resendChatMedia` via a `bucket` parameter instead of a parallel file.
+- **Viewer route path.** The task text said `chat/[id]/media/[messageId].tsx`; plan §7's own file
+  list said the flatter `chat/media/[messageId].tsx`. Used the nested form —
+  `src/app/chat/[id]/media/[messageId].tsx` — because the codebase already has exactly this
+  shape for the shared-album route (`chat/[id]/album/[albumId].tsx`), so it's the established
+  local convention, not a new one.
+- **Keep-in-chat video plays through the same full-screen viewer as limited media, not inline in
+  the bubble.** Plan §6 describes inline tap-to-play for keep-in-chat video; the task's own bubble
+  spec (§3) says "inline poster with a play affordance **opening the viewer**." Followed the task
+  text: one playback code path (`expo-video`/`VideoView`) instead of two, exercised by one set of
+  tests instead of two.
+- **The recipient's "have I exhausted it" signal is a tiny module-level zustand store**
+  (`chat/recipientExhausted.ts`, zustand already a dependency), not a route param or query-cache
+  entry — it has to survive the viewer route unmounting and be read by the thread screen still
+  mounted underneath it. An already-exhausted `media-open` call coming back refused (a plain 404)
+  is what sets it, per §7's own "no pre-check exists that wouldn't race" note.
+- **`chats.tsx`'s realtime list-patch (not an owned file) needed a small compile fix.** Extending
+  `messages`' Row type (as instructed) made its hand-built `lastMessage` object literal miss the
+  new required columns; filled them with the same "no media" defaults a plain-text event already
+  implied (`view_limit`/`views_used` come from the event since the realtime payload always
+  carries them; the rest default `null`, matching §3's note that only `view_limit`/`views_used`
+  are formalized on the wire type). No behavior change to that screen.
+
+### Tests / typecheck / export
+
+- `npx jest` — 77 suites / 702 tests, all pass.
+- `npx tsc --noEmit` — clean.
+- `npx expo export --platform web` — succeeds.
+<!-- END: Chat media -->
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Grid shows everyone section below — applies migration 0009 / decisions  -->
+<!-- 53-57 to the grid, profile card and presence copy. Please keep further  -->
+<!-- additions after this point in their own clearly delimited section.     -->
+<!-- ---------------------------------------------------------------------- -->
+
+<!-- BEGIN: Grid shows everyone -->
+## Grid shows everyone
+
+Applies migration 0009 (`docs/decisions.md` 53-57): the grid now shows everyone on the viewer's
+campus who is active, verified, has an approved main photo, and isn't paused or blocked —
+location and recency no longer hide anyone. `grid_for_me()`/`profile_card_for()` return an
+*effective* tier (`on_campus`/`nearby`/`away` only — a stored `county` or a tier stale beyond an
+hour both read as `away`) plus a new `is_online` column (active within 15 minutes), reflected in
+`app/src/types/database.ts`'s two `Returns` blocks by a targeted edit, nothing else regenerated.
+
+- **Tiles/hero** (`grid/GridTile.tsx`, `app/profile/[id].tsx`): `grid/tierLabel.ts#tierWord` now
+  returns `''` for `away` — the caller leaves that slot empty rather than printing "away"; the
+  profile hero's tier pill is omitted outright when there's no word. A quiet
+  `colors.success` `Dot` (`ui/Badge.tsx`) sits next to the name when `is_online` and not
+  `here_now` — here-now's signal-dot pill always takes precedence. Offline renders normally,
+  no indicator.
+- **Visibility** (`grid/visibility.ts`): `tier_away`/`tier_stale`/`permission_denied` are gone as
+  reasons — `notVisibleReason`'s input no longer takes tier/permission/staleness at all. What's
+  left: `unverified`/`id_pending`/`manual_review`/`id_failed`, `photo_pending`, `paused`, and the
+  defensive `not_active`. A location denial is now a soft, dismissible hint on the grid screen
+  (`grid-location-hint`, `presence/index.ts#LOCATION_DENIED_COPY`) — dismissed for the screen's
+  lifetime, never a "you're not visible" warning. `grid/Banner.tsx` gained an optional
+  `dismissLabel`/`onDismiss` pair (a plain text link under the tinted panel) to carry it, without
+  touching `ui/Banner.tsx`.
+- **Copy**: `presence/index.ts`'s explainer no longer mentions the county (never shown in v1);
+  `(onboarding)/location.tsx`'s body copy says skipping/denying no longer makes you invisible,
+  only that there's no location word; its third example tile drops the "lake co" badge to
+  illustrate that state honestly.
+- **Count line, sort**: unchanged — already fed by the RPC's own `visible_count`/`here_now_count`
+  and rendered in the RPC's own order.
+
+### Tests / typecheck / export
+
+- Owned suites — `npx jest grid- card- presence- location.test` — 10 suites / 121 tests pass.
+- Full run: 70/73 suites pass; the 3 failing (`chat-api`, `chat-realtime`,
+  `chat-thread-screen`) belong to the concurrently in-progress chat-media build, not this pass.
+- `npx tsc --noEmit` — clean except pre-existing errors in the same in-progress chat files
+  (`api/messages.ts`, `(tabs)/chats.tsx`, `chat/[id].tsx`, `chat/MediaPreview.tsx`,
+  `chat/MessageBubble.tsx`); nothing in grid/card/presence/profile/`types/database.ts`.
+- `npx expo export --platform web` — succeeds.
+<!-- END: Grid shows everyone -->

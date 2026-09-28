@@ -39,6 +39,8 @@ function mockBuilderFor(table: string) {
     'eq',
     'in',
     'lt',
+    'not',
+    'is',
     'order',
     'limit',
     'single',
@@ -87,8 +89,25 @@ const globalAny = globalThis as unknown as { fetch: jest.Mock };
 globalAny.fetch = jest.fn(() => Promise.resolve({ blob: () => Promise.resolve('BLOB') })) as never;
 
 import { getConversation, listConversations, startConversation } from '../api/conversations';
-import { listMessages, markRead, sendMessage, MESSAGE_PAGE_SIZE } from '../api/messages';
-import { chatMediaPath, signedChatMediaUrls, uploadChatMedia } from '../api/chatMedia';
+import {
+  getMessageMedia,
+  listMessages,
+  listRecentlySharedMedia,
+  markRead,
+  sendMessage,
+  MESSAGE_PAGE_SIZE,
+  RECENTLY_SHARED_LIMIT,
+} from '../api/messages';
+import {
+  CHAT_MEDIA_BUCKET,
+  CHAT_MEDIA_LIMITED_BUCKET,
+  chatMediaPath,
+  chatMediaPosterPath,
+  resendChatMedia,
+  signedChatMediaUrls,
+  uploadChatMedia,
+  uploadChatMediaPoster,
+} from '../api/chatMedia';
 
 function callsFor(table: string): [string, unknown[]][] {
   return mockRecorded.filter((entry) => entry.table === table).flatMap((entry) => entry.calls);
@@ -283,7 +302,7 @@ describe('listMessages', () => {
 });
 
 describe('sendMessage', () => {
-  it('sends only the five client-settable columns', async () => {
+  it('sends only the client-settable columns, chat-media-plan §3 included', async () => {
     mockQueued = { messages: { data: { id: 'm1' }, error: null } };
     await sendMessage({ conversationId: CONV, body: 'hello' });
 
@@ -292,14 +311,65 @@ describe('sendMessage', () => {
       'body',
       'conversation_id',
       'id',
+      'media_bytes',
+      'media_duration_ms',
+      'media_height',
+      'media_kind',
       'media_path',
+      'media_poster_path',
+      'media_width',
       'sender_id',
+      'view_limit',
     ]);
-    // Ordering is server time: a client clock would reorder the thread.
+    // Ordering is server time, and `views_used` is only ever advanced by the
+    // security-definer `open_limited_media` RPC — neither is client business.
     expect(payload).not.toHaveProperty('created_at');
+    expect(payload).not.toHaveProperty('views_used');
     expect(payload.sender_id).toBe(ME);
     expect(payload.conversation_id).toBe(CONV);
     expect(payload.media_path).toBeNull();
+    expect(payload.media_kind).toBeNull();
+    expect(payload.view_limit).toBeNull();
+  });
+
+  it('sends each of the three view-limit choices with the matching media_kind columns', async () => {
+    for (const viewLimit of [null, 1, 2] as const) {
+      mockRecorded.length = 0;
+      mockQueued = { messages: { data: { id: 'm1' }, error: null } };
+      await sendMessage({
+        conversationId: CONV,
+        id: 'm1',
+        mediaPath: `${CONV}/m1.jpg`,
+        mediaKind: 'photo',
+        viewLimit,
+        mediaWidth: 800,
+        mediaHeight: 600,
+      });
+      const payload = argsOf('messages', 'insert')?.[0] as Record<string, unknown>;
+      expect(payload.view_limit).toBe(viewLimit);
+      expect(payload.media_kind).toBe('photo');
+      expect(payload.media_width).toBe(800);
+      expect(payload.media_height).toBe(600);
+    }
+  });
+
+  it('sends video columns — duration, bytes, and a poster path', async () => {
+    mockQueued = { messages: { data: { id: 'm1' }, error: null } };
+    await sendMessage({
+      conversationId: CONV,
+      id: 'm1',
+      mediaPath: `${CONV}/m1.mp4`,
+      mediaKind: 'video',
+      viewLimit: null,
+      mediaDurationMs: 12_000,
+      mediaBytes: 4_000_000,
+      mediaPosterPath: `${CONV}/m1-poster.jpg`,
+    });
+    const payload = argsOf('messages', 'insert')?.[0] as Record<string, unknown>;
+    expect(payload.media_kind).toBe('video');
+    expect(payload.media_duration_ms).toBe(12_000);
+    expect(payload.media_bytes).toBe(4_000_000);
+    expect(payload.media_poster_path).toBe(`${CONV}/m1-poster.jpg`);
   });
 
   it('uses a caller-supplied id so a media object can be addressed first', async () => {
@@ -424,5 +494,203 @@ describe('chatMedia', () => {
   it('signs nothing for an empty list', async () => {
     expect(await signedChatMediaUrls([])).toEqual({});
     expect(mockStorageSignedUrls).not.toHaveBeenCalled();
+  });
+
+  it('builds an .mp4 path for a video, and a -poster.jpg path alongside it', () => {
+    expect(chatMediaPath(CONV, 'mmmm', 'video')).toBe(`${CONV}/mmmm.mp4`);
+    expect(chatMediaPosterPath(CONV, 'mmmm')).toBe(`${CONV}/mmmm-poster.jpg`);
+  });
+
+  it('uploads a video as-is (no resize step) with a video/mp4 content type', async () => {
+    const path = await uploadChatMedia({
+      conversationId: CONV,
+      messageId: 'vid1',
+      uri: 'file:///pick.mp4',
+      width: 1080,
+      height: 1920,
+      kind: 'video',
+    });
+
+    expect(path).toBe(`${CONV}/vid1.mp4`);
+    expect(mockStorageUpload).toHaveBeenCalledWith('chat-media', `${CONV}/vid1.mp4`, 'BLOB', {
+      contentType: 'video/mp4',
+      upsert: false,
+    });
+  });
+
+  it('uploads to chat-media-limited when a limited bucket is requested', async () => {
+    await uploadChatMedia({
+      conversationId: CONV,
+      messageId: 'mmmm',
+      uri: 'file:///pick.jpg',
+      width: 10,
+      height: 10,
+      bucket: CHAT_MEDIA_LIMITED_BUCKET,
+    });
+    expect(mockStorageUpload).toHaveBeenCalledWith(
+      'chat-media-limited',
+      `${CONV}/mmmm.jpg`,
+      'BLOB',
+      expect.anything()
+    );
+  });
+
+  it('uploads a poster frame to the same bucket, -poster.jpg suffix', async () => {
+    const path = await uploadChatMediaPoster({ conversationId: CONV, messageId: 'vid1', uri: 'file:///poster.jpg' });
+    expect(path).toBe(`${CONV}/vid1-poster.jpg`);
+    expect(mockStorageUpload).toHaveBeenCalledWith('chat-media', `${CONV}/vid1-poster.jpg`, 'BLOB', {
+      contentType: 'image/jpeg',
+      upsert: false,
+    });
+  });
+
+  describe('resendChatMedia — the recently-shared tray’s resend (CM-2)', () => {
+    beforeEach(() => {
+      mockStorageSignedUrls.mockResolvedValue({
+        data: [
+          { path: `${CONV}/orig.jpg`, signedUrl: 'https://signed/orig.jpg' },
+          { path: `${CONV}/orig.mp4`, signedUrl: 'https://signed/orig.mp4' },
+          { path: `${CONV}/orig-poster.jpg`, signedUrl: 'https://signed/orig-poster.jpg' },
+        ],
+        error: null,
+      });
+    });
+
+    it('signs the source from chat-media only, never chat-media-limited', async () => {
+      await resendChatMedia({
+        sourcePath: `${CONV}/orig.jpg`,
+        targetConversationId: 'new-conv',
+        targetMessageId: 'new-msg',
+        kind: 'photo',
+        viewLimit: null,
+      });
+      expect(mockStorageSignedUrls).toHaveBeenCalledWith(CHAT_MEDIA_BUCKET, [`${CONV}/orig.jpg`], 60);
+    });
+
+    it('uploads a keep-in-chat resend to chat-media, at the new conversation/message path', async () => {
+      const result = await resendChatMedia({
+        sourcePath: `${CONV}/orig.jpg`,
+        targetConversationId: 'new-conv',
+        targetMessageId: 'new-msg',
+        kind: 'photo',
+        viewLimit: null,
+      });
+      expect(result.mediaPath).toBe('new-conv/new-msg.jpg');
+      expect(mockStorageUpload).toHaveBeenCalledWith('chat-media', 'new-conv/new-msg.jpg', 'BLOB', {
+        contentType: 'image/jpeg',
+        upsert: false,
+      });
+    });
+
+    it('uploads a limited resend (view once/twice) to chat-media-limited instead', async () => {
+      const result = await resendChatMedia({
+        sourcePath: `${CONV}/orig.jpg`,
+        targetConversationId: 'new-conv',
+        targetMessageId: 'new-msg',
+        kind: 'photo',
+        viewLimit: 1,
+      });
+      expect(result.mediaPath).toBe('new-conv/new-msg.jpg');
+      expect(mockStorageUpload).toHaveBeenCalledWith('chat-media-limited', 'new-conv/new-msg.jpg', 'BLOB', {
+        contentType: 'image/jpeg',
+        upsert: false,
+      });
+    });
+
+    it('also copies a video’s poster when one is given', async () => {
+      const result = await resendChatMedia({
+        sourcePath: `${CONV}/orig.mp4`,
+        sourcePosterPath: `${CONV}/orig-poster.jpg`,
+        targetConversationId: 'new-conv',
+        targetMessageId: 'new-msg',
+        kind: 'video',
+        viewLimit: 2,
+      });
+      expect(result.posterPath).toBe('new-conv/new-msg-poster.jpg');
+      expect(mockStorageUpload).toHaveBeenCalledWith(
+        'chat-media-limited',
+        'new-conv/new-msg-poster.jpg',
+        'BLOB',
+        expect.objectContaining({ contentType: 'image/jpeg' })
+      );
+    });
+
+    it('throws generically when the source no longer signs (thread purged, block, etc.)', async () => {
+      mockStorageSignedUrls.mockResolvedValue({ data: [], error: null });
+      await expect(
+        resendChatMedia({
+          sourcePath: `${CONV}/orig.jpg`,
+          targetConversationId: 'new-conv',
+          targetMessageId: 'new-msg',
+          kind: 'photo',
+          viewLimit: null,
+        })
+      ).rejects.toBeTruthy();
+    });
+  });
+});
+
+describe('getMessageMedia', () => {
+  it('reads one message by id, every media column included', async () => {
+    mockQueued = { messages: { data: { id: 'm1' }, error: null } };
+    await getMessageMedia('m1');
+    expect(argsOf('messages', 'eq')).toEqual(['id', 'm1']);
+    expect((argsOf('messages', 'select')?.[0] as string)).toContain('media_kind');
+  });
+
+  it('returns null for an unreadable/missing row instead of throwing', async () => {
+    mockQueued = { messages: { data: null, error: null } };
+    expect(await getMessageMedia('gone')).toBeNull();
+  });
+});
+
+describe('listRecentlySharedMedia', () => {
+  const trayRow = (overrides: Record<string, unknown> = {}) => ({
+    id: 'm1',
+    conversation_id: CONV,
+    media_path: `${CONV}/m1.jpg`,
+    media_kind: 'photo',
+    media_width: 800,
+    media_height: 600,
+    media_poster_path: null,
+    created_at: '2026-09-20T11:00:00.000Z',
+    ...overrides,
+  });
+
+  it('scopes to my own keep-in-chat sends only (CM-7)', async () => {
+    mockQueued = { messages: { data: [trayRow()], error: null } };
+    await listRecentlySharedMedia();
+
+    expect(argsOf('messages', 'eq')).toEqual(['sender_id', ME]);
+    expect(argsOf('messages', 'not')).toEqual(['media_path', 'is', null]);
+    expect(argsOf('messages', 'is')).toEqual(['view_limit', null]);
+    expect(argsOf('messages', 'order')).toEqual(['created_at', { ascending: false }]);
+  });
+
+  it('de-duplicates by media_path to the newest 30 distinct items', async () => {
+    const rows = Array.from({ length: 40 }, (_, i) =>
+      trayRow({ id: `m${i}`, media_path: `${CONV}/${i % 20}.jpg` })
+    );
+    mockQueued = { messages: { data: rows, error: null } };
+    const items = await listRecentlySharedMedia();
+
+    expect(items.length).toBe(RECENTLY_SHARED_LIMIT <= 20 ? RECENTLY_SHARED_LIMIT : 20);
+    const paths = items.map((item) => item.mediaPath);
+    expect(new Set(paths).size).toBe(paths.length);
+  });
+
+  it('maps every column the tray needs', async () => {
+    mockQueued = { messages: { data: [trayRow({ media_kind: 'video', media_poster_path: `${CONV}/m1-poster.jpg` })], error: null } };
+    const [item] = await listRecentlySharedMedia();
+    expect(item).toEqual({
+      messageId: 'm1',
+      conversationId: CONV,
+      mediaPath: `${CONV}/m1.jpg`,
+      mediaKind: 'video',
+      mediaWidth: 800,
+      mediaHeight: 600,
+      mediaPosterPath: `${CONV}/m1-poster.jpg`,
+      createdAt: '2026-09-20T11:00:00.000Z',
+    });
   });
 });

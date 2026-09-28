@@ -32,13 +32,23 @@ export interface MessagePage {
  * a true composite keyset isn't available; the screen de-duplicates by `id`
  * when it merges pages, which covers the repeat half of the problem.
  */
+/**
+ * Every column the thread and its bubbles need — plain text plus every
+ * chat-media plan §3 column. One literal (not built via `+` concatenation):
+ * supabase-js's `.select()` overloads parse the select string as a literal
+ * type to infer the row shape, and a concatenated `string` defeats that,
+ * falling back to an untyped `GenericStringError` result.
+ */
+const MESSAGE_SELECT =
+  'id, conversation_id, sender_id, body, media_path, media_kind, view_limit, views_used, media_duration_ms, media_bytes, media_width, media_height, media_poster_path, created_at' as const;
+
 export async function listMessages(
   conversationId: string,
   cursor?: string | null
 ): Promise<MessagePage> {
   let query = supabase
     .from('messages')
-    .select('id, conversation_id, sender_id, body, media_path, created_at')
+    .select(MESSAGE_SELECT)
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
     .limit(MESSAGE_PAGE_SIZE);
@@ -59,8 +69,22 @@ export interface SendMessageInput {
   conversationId: string;
   /** Required for a text message and for the opener's first message. */
   body?: string | null;
-  /** `{conversation_id}/{message_id}.jpg`, already uploaded. See `chatMedia.ts`. */
+  /** `{conversation_id}/{message_id}.jpg` or `.mp4`, already uploaded. See `chatMedia.ts`. */
   mediaPath?: string | null;
+  /**
+   * `docs/chat-media-plan.md` §3. Null/omitted for a plain text message, or
+   * for keep-in-chat media (`viewLimit` stays null). Set alongside `viewLimit`
+   * for view-once/view-twice media.
+   */
+  mediaKind?: 'photo' | 'video' | null;
+  /** `null` = keep in chat (default), `1` = view once, `2` = view twice. */
+  viewLimit?: 1 | 2 | null;
+  mediaDurationMs?: number | null;
+  mediaBytes?: number | null;
+  mediaWidth?: number | null;
+  mediaHeight?: number | null;
+  /** Video only — same bucket as `mediaPath`, `{conversation_id}/{message_id}-poster.jpg`. */
+  mediaPosterPath?: string | null;
   /**
    * Pre-minted id, so a media upload can be addressed before the row exists.
    * Omit for a plain text message and let this function mint one — the
@@ -72,13 +96,16 @@ export interface SendMessageInput {
 /**
  * Insert one message.
  *
- * Only the five columns a client may meaningfully set are sent —
- * `id, conversation_id, sender_id, body, media_path`. `created_at` is left to
- * the column default so the ordering key is always server time (a client clock
- * would reorder the thread), and nothing else on the row is client business.
- * The table's insert grant is not column-limited, so this restraint is a
- * convention enforced here and asserted in `chat-api.test.ts`, not by the
- * database.
+ * Only the columns a client may meaningfully set are sent — `id,
+ * conversation_id, sender_id, body, media_path` plus, since
+ * `docs/chat-media-plan.md` §3, `media_kind, view_limit, media_duration_ms,
+ * media_bytes, media_width, media_height, media_poster_path`. `created_at` and
+ * `views_used` are left to their column defaults — `views_used` is only ever
+ * advanced by the security-definer `open_limited_media` RPC (§4), never by a
+ * client insert/update — so the ordering key is always server time and the
+ * view counter is always server-recorded. The table's insert grant is not
+ * column-limited, so this restraint is a convention enforced here and
+ * asserted in `chat-api.test.ts`, not by the database.
  *
  * Every refusal `enforce_message_rules` can raise — unverified sender, not a
  * participant, opener already spoke, opener over 240 characters, media outside
@@ -92,6 +119,13 @@ export async function sendMessage({
   conversationId,
   body,
   mediaPath,
+  mediaKind,
+  viewLimit,
+  mediaDurationMs,
+  mediaBytes,
+  mediaWidth,
+  mediaHeight,
+  mediaPosterPath,
   id,
 }: SendMessageInput): Promise<MessageRow> {
   const senderId = await currentUserId();
@@ -104,8 +138,15 @@ export async function sendMessage({
       sender_id: senderId,
       body: body ?? null,
       media_path: mediaPath ?? null,
+      media_kind: mediaKind ?? null,
+      view_limit: viewLimit ?? null,
+      media_duration_ms: mediaDurationMs ?? null,
+      media_bytes: mediaBytes ?? null,
+      media_width: mediaWidth ?? null,
+      media_height: mediaHeight ?? null,
+      media_poster_path: mediaPosterPath ?? null,
     })
-    .select('id, conversation_id, sender_id, body, media_path, created_at')
+    .select(MESSAGE_SELECT)
     .single();
 
   if (error) throw mapSupabaseError(error);
@@ -146,4 +187,87 @@ export async function markRead(
   );
 
   if (error) throw mapSupabaseError(error);
+}
+
+/**
+ * One message's media-relevant columns, for the full-screen viewer route
+ * (`app/chat/media/[messageId].tsx`) — the bubble only carries what the
+ * thread page already loaded, but the viewer is reachable on its own (deep
+ * link, remount) and needs the row fresh. Read through the ordinary
+ * `messages readable via can_read_conversation` policy, so a message the
+ * caller can no longer read (thread purged, block since sent) simply returns
+ * null — the viewer's generic "couldn't open" copy, same as a 404 from
+ * `media-open` itself (decision 24).
+ */
+export async function getMessageMedia(messageId: string): Promise<MessageRow | null> {
+  const { data, error } = await supabase
+    .from('messages')
+    .select(MESSAGE_SELECT)
+    .eq('id', messageId)
+    .maybeSingle();
+
+  if (error) throw mapSupabaseError(error);
+  return (data as MessageRow | null) ?? null;
+}
+
+export interface RecentlySharedItem {
+  messageId: string;
+  conversationId: string;
+  mediaPath: string;
+  mediaKind: 'photo' | 'video';
+  mediaWidth: number | null;
+  mediaHeight: number | null;
+  mediaPosterPath: string | null;
+  createdAt: string;
+}
+
+/** Over-fetch width (CM-7): PostgREST can't express `distinct on`, so this is de-duplicated client-side. */
+const RECENTLY_SHARED_FETCH = 120;
+/** The tray shows at most this many, newest first, distinct by `media_path`. */
+export const RECENTLY_SHARED_LIMIT = 30;
+
+/**
+ * The share sheet's "recently shared" tray (`docs/chat-media-plan.md` §5,
+ * decision CM-7): my own keep-in-chat sends, across every conversation,
+ * newest first, deduplicated by `media_path` to the newest 30. Plain
+ * `sender_id = auth.uid()` select under the ordinary `messages` read policy —
+ * no RPC needed, since a sender can always read their own still-readable
+ * sends. `view_limit is null` scopes this to `chat-media` only; limited media
+ * is never eligible for the tray (§5) and `chat-media-limited` is never
+ * touched here.
+ */
+export async function listRecentlySharedMedia(): Promise<RecentlySharedItem[]> {
+  const meId = await currentUserId();
+
+  const { data, error } = await supabase
+    .from('messages')
+    .select(
+      'id, conversation_id, media_path, media_kind, media_width, media_height, media_poster_path, created_at'
+    )
+    .eq('sender_id', meId)
+    .not('media_path', 'is', null)
+    .is('view_limit', null)
+    .order('created_at', { ascending: false })
+    .limit(RECENTLY_SHARED_FETCH);
+
+  if (error) throw mapSupabaseError(error);
+
+  const seen = new Set<string>();
+  const items: RecentlySharedItem[] = [];
+  for (const row of (data ?? []) as (MessageRow & { media_path: string })[]) {
+    if (!row.media_path || seen.has(row.media_path)) continue;
+    seen.add(row.media_path);
+    items.push({
+      messageId: row.id,
+      conversationId: row.conversation_id,
+      mediaPath: row.media_path,
+      mediaKind: (row.media_kind ?? 'photo') as 'photo' | 'video',
+      mediaWidth: row.media_width,
+      mediaHeight: row.media_height,
+      mediaPosterPath: row.media_poster_path,
+      createdAt: row.created_at,
+    });
+    if (items.length >= RECENTLY_SHARED_LIMIT) break;
+  }
+  return items;
 }

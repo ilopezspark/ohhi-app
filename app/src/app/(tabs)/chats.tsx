@@ -70,6 +70,20 @@ export default function ChatsScreen() {
             body: message.body,
             media_path: message.media_path,
             created_at: message.created_at,
+            // `docs/chat-media-plan.md` §3 columns: the realtime `MessageEvent`
+            // only formalizes `view_limit`/`views_used` (what the list-patch
+            // actually needs — `messagePreview()` only branches on
+            // `media_path`); the rest are typed but not carried over the wire
+            // here, so they default to the same "no media" shape a plain-text
+            // event already has.
+            media_kind: null,
+            view_limit: message.view_limit,
+            views_used: message.views_used,
+            media_duration_ms: null,
+            media_bytes: null,
+            media_width: null,
+            media_height: null,
+            media_poster_path: null,
           },
           unread:
             message.sender_id !== meId &&

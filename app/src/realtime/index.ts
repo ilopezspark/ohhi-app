@@ -63,6 +63,13 @@ export interface CampusPresenceHandlers {
  * is replicated (the table has a full select grant to `authenticated`), but
  * treat it as unvalidated wire data: `parseMessagePayload` below is the only
  * way into the handlers.
+ *
+ * `view_limit`/`views_used` and `eventType` are `docs/chat-media-plan.md`
+ * §3's realtime extension: `messages.views_used` updates in the same
+ * transaction that records a limited-media view, firing an `UPDATE` — both
+ * subscriptions below now also listen for it, so the sender's bubble can flip
+ * to "Opened"/"Opened N of 2" live (`chat/MessageBubble.tsx`) without a
+ * refetch.
  */
 export interface MessageEvent {
   id: string;
@@ -71,10 +78,14 @@ export interface MessageEvent {
   body: string | null;
   media_path: string | null;
   created_at: string;
+  view_limit: number | null;
+  views_used: number;
+  /** Which `postgres_changes` event this came from — an `INSERT` (a new message) or `UPDATE` (§3's `views_used` flip). */
+  eventType: 'INSERT' | 'UPDATE';
 }
 
 export interface ConversationMessageHandlers {
-  /** A new message in this thread, from either participant (my own inserts echo back). */
+  /** A new message, or a `views_used` update, in this thread (my own inserts echo back). */
   onMessage: (message: MessageEvent) => void;
   /**
    * Fired on every successful (re)subscribe and on foreground. The socket may
@@ -87,9 +98,9 @@ export interface ConversationMessageHandlers {
 
 export interface MessageListHandlers {
   /**
-   * Any message insert in any conversation the subscriber can read. RLS does
-   * the narrowing — there is no client-side filter that could substitute for
-   * it, and none is attempted.
+   * Any message insert or `views_used` update in any conversation the
+   * subscriber can read. RLS does the narrowing — there is no client-side
+   * filter that could substitute for it, and none is attempted.
    */
   onMessage: (message: MessageEvent) => void;
   onInvalidate?: (reason: 'subscribed' | 'foreground') => void;
@@ -101,17 +112,22 @@ const conversationTopicFor = (conversationId: string): string => `messages:conve
 const MESSAGE_LIST_TOPIC = 'messages:list';
 
 /**
- * Validates a `postgres_changes` INSERT payload into a `MessageEvent`.
+ * Validates a `postgres_changes` INSERT/UPDATE payload into a `MessageEvent`.
  *
  * Same defensive posture as `parseHereNowPayload`: a shape change degrades to
  * "ignore the event" (both screens also refetch on reconnect) rather than
  * throwing inside a socket callback. Never log the record — it carries another
  * user's id and their message body.
+ *
+ * `eventType` comes from the payload's own top-level field when present (the
+ * real supabase-js shape); the two subscribe methods below always know which
+ * event they registered for regardless, but this keeps the parser correct
+ * standalone too. Defaults to `'INSERT'` for a payload that omits it, which
+ * only test fixtures predating this field do.
  */
 export function parseMessagePayload(message: unknown): MessageEvent | null {
-  const record = (message as { new?: unknown } | null)?.new as
-    | Record<string, unknown>
-    | undefined;
+  const outer = message as { new?: unknown; eventType?: unknown } | null;
+  const record = outer?.new as Record<string, unknown> | undefined;
   if (!record) return null;
 
   const { id, conversation_id: conversationId, sender_id: senderId, created_at: createdAt } = record;
@@ -127,6 +143,9 @@ export function parseMessagePayload(message: unknown): MessageEvent | null {
     body: typeof record.body === 'string' ? record.body : null,
     media_path: typeof record.media_path === 'string' ? record.media_path : null,
     created_at: createdAt,
+    view_limit: typeof record.view_limit === 'number' ? record.view_limit : null,
+    views_used: typeof record.views_used === 'number' ? record.views_used : 0,
+    eventType: outer?.eventType === 'UPDATE' ? 'UPDATE' : 'INSERT',
   };
 }
 
@@ -218,13 +237,20 @@ export class RealtimeManager {
   }
 
   /**
-   * Subscribes to inserts on `public.messages` for one open thread.
+   * Subscribes to inserts and `views_used` updates on `public.messages` for
+   * one open thread.
    *
    * Server-side filter (`conversation_id=eq.<id>`), not a client-side one: it
    * keeps the socket from carrying every thread's traffic to every mounted
    * screen, and it composes with — never replaces — the per-subscriber RLS the
    * publication applies. Re-subscribing to the same conversation swaps the
    * handlers in place. Returns an unsubscribe function; call it on unmount.
+   *
+   * Two separate `event:` registrations (INSERT, UPDATE) rather than one
+   * `event: '*'` — keeps each event's own `MessageEvent.eventType` unambiguous
+   * at the parse boundary and keeps the INSERT-only shape this method had
+   * before `docs/chat-media-plan.md` §3 exactly as it was (extended, not
+   * replaced).
    */
   subscribeConversation(conversationId: string, handlers: ConversationMessageHandlers): () => void {
     const existing = this.conversationChannels.get(conversationId);
@@ -236,19 +262,20 @@ export class RealtimeManager {
     void this.setAuth();
 
     const channel = this.client.channel(conversationTopicFor(conversationId));
+    const forward = (message: unknown) => {
+      const event = parseMessagePayload(message);
+      // Never log the payload: another user's id and message body.
+      if (event) this.conversationChannels.get(conversationId)?.handlers.onMessage(event);
+    };
     channel.on(
       'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `conversation_id=eq.${conversationId}`,
-      },
-      (message: unknown) => {
-        const event = parseMessagePayload(message);
-        // Never log the payload: another user's id and message body.
-        if (event) this.conversationChannels.get(conversationId)?.handlers.onMessage(event);
-      }
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+      forward
+    );
+    channel.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+      forward
     );
 
     channel.subscribe((status: string) => {
@@ -277,12 +304,14 @@ export class RealtimeManager {
   }
 
   /**
-   * One list-level subscription across every `messages` insert the caller can
-   * read — no filter, because RLS is the filter (a blocker's channel never
-   * receives the blocked party's inserts, plan §3). The chat list patches the
-   * affected row in place rather than refetching the whole list.
+   * One list-level subscription across every `messages` insert and
+   * `views_used` update the caller can read — no filter, because RLS is the
+   * filter (a blocker's channel never receives the blocked party's inserts,
+   * plan §3). The chat list patches the affected row in place rather than
+   * refetching the whole list.
    *
-   * Only one exists at a time; re-subscribing swaps the handlers.
+   * Only one exists at a time; re-subscribing swaps the handlers. Two
+   * `event:` registrations for the same reason as `subscribeConversation`.
    */
   subscribeMessageList(handlers: MessageListHandlers): () => void {
     if (this.listChannel) {
@@ -293,14 +322,12 @@ export class RealtimeManager {
     void this.setAuth();
 
     const channel = this.client.channel(MESSAGE_LIST_TOPIC);
-    channel.on(
-      'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'messages' },
-      (message: unknown) => {
-        const event = parseMessagePayload(message);
-        if (event) this.listChannel?.handlers.onMessage(event);
-      }
-    );
+    const forward = (message: unknown) => {
+      const event = parseMessagePayload(message);
+      if (event) this.listChannel?.handlers.onMessage(event);
+    };
+    channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, forward);
+    channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, forward);
 
     channel.subscribe((status: string) => {
       const entry = this.listChannel;

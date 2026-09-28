@@ -62,6 +62,9 @@ const config: ExpoConfig = {
       },
     ],
     '@react-native-community/datetimepicker',
+    // Registers the native video-playback module (chat media viewer/inline
+    // playback, §6/§7 of docs/chat-media-plan.md). No plugin options needed.
+    'expo-video',
   ],
   experiments: {
     typedRoutes: true,

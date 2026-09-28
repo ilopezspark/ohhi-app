@@ -46,12 +46,29 @@ function makeClient() {
 }
 
 const insert = (overrides: Record<string, unknown> = {}) => ({
+  eventType: 'INSERT',
   new: {
     id: 'm1',
     conversation_id: CONV_A,
     sender_id: 'sender',
     body: 'hey',
     media_path: null,
+    created_at: '2026-09-20T11:00:00.000Z',
+    ...overrides,
+  },
+});
+
+/** A `views_used` flip (`docs/chat-media-plan.md` §3) — the same row shape, a different `eventType`. */
+const update = (overrides: Record<string, unknown> = {}) => ({
+  eventType: 'UPDATE',
+  new: {
+    id: 'm1',
+    conversation_id: CONV_A,
+    sender_id: 'sender',
+    body: null,
+    media_path: `${CONV_A}/m1.jpg`,
+    view_limit: 1,
+    views_used: 1,
     created_at: '2026-09-20T11:00:00.000Z',
     ...overrides,
   },
@@ -66,7 +83,29 @@ describe('parseMessagePayload', () => {
       body: 'hey',
       media_path: null,
       created_at: '2026-09-20T11:00:00.000Z',
+      view_limit: null,
+      views_used: 0,
+      eventType: 'INSERT',
     });
+  });
+
+  it('reads a postgres_changes UPDATE record, carrying view_limit/views_used', () => {
+    expect(parseMessagePayload(update())).toEqual({
+      id: 'm1',
+      conversation_id: CONV_A,
+      sender_id: 'sender',
+      body: null,
+      media_path: `${CONV_A}/m1.jpg`,
+      created_at: '2026-09-20T11:00:00.000Z',
+      view_limit: 1,
+      views_used: 1,
+      eventType: 'UPDATE',
+    });
+  });
+
+  it('defaults eventType to INSERT when the payload omits it (older fixture shape)', () => {
+    const { eventType: _drop, ...withoutEventType } = insert();
+    expect(parseMessagePayload(withoutEventType)?.eventType).toBe('INSERT');
   });
 
   it('normalises a media-only row', () => {
@@ -106,6 +145,20 @@ describe('RealtimeManager — per-thread subscriptions', () => {
     expect(client.realtime.setAuth).toHaveBeenCalled();
   });
 
+  it('also subscribes to UPDATE (a views_used flip, §3) on the same filter', () => {
+    const { client, filters } = makeClient();
+    new RealtimeManager(client as never).subscribeConversation(CONV_A, { onMessage: jest.fn() });
+
+    expect(filters).toHaveLength(2);
+    expect(filters[1]).toEqual({
+      type: 'postgres_changes',
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'messages',
+      filter: `conversation_id=eq.${CONV_A}`,
+    });
+  });
+
   it('is not a private channel — private governs broadcast, not replication', () => {
     const { client } = makeClient();
     new RealtimeManager(client as never).subscribeConversation(CONV_A, { onMessage: jest.fn() });
@@ -121,7 +174,20 @@ describe('RealtimeManager — per-thread subscriptions', () => {
     emit(0, { new: { nonsense: true } });
 
     expect(onMessage).toHaveBeenCalledTimes(1);
-    expect(onMessage).toHaveBeenCalledWith(expect.objectContaining({ id: 'm1' }));
+    expect(onMessage).toHaveBeenCalledWith(expect.objectContaining({ id: 'm1', eventType: 'INSERT' }));
+  });
+
+  it('also forwards UPDATE events — the same handler, carrying views_used', () => {
+    const { client, emit } = makeClient();
+    const onMessage = jest.fn();
+    new RealtimeManager(client as never).subscribeConversation(CONV_A, { onMessage });
+
+    // Registration order: [0] = INSERT, [1] = UPDATE (see the filters assertion above).
+    emit(1, update());
+
+    expect(onMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'm1', eventType: 'UPDATE', view_limit: 1, views_used: 1 })
+    );
   });
 
   it('signals an invalidation on every successful (re)subscribe', () => {
@@ -166,6 +232,8 @@ describe('RealtimeManager — per-thread subscriptions', () => {
     const onA = jest.fn();
     const onB = jest.fn();
 
+    // Two `.on()` registrations per `subscribeConversation` call (INSERT,
+    // UPDATE) — handler indices: [0,1] = channel A, [2,3] = channel B.
     const stopA = manager.subscribeConversation(CONV_A, { onMessage: onA });
     manager.subscribeConversation(CONV_B, { onMessage: onB });
 
@@ -175,9 +243,12 @@ describe('RealtimeManager — per-thread subscriptions', () => {
     expect(manager.conversationTopics()).toEqual([`messages:conversation:${CONV_B}`]);
 
     emit(0, insert());
+    emit(1, update());
     expect(onA).not.toHaveBeenCalled();
-    emit(1, insert({ conversation_id: CONV_B }));
+    emit(2, insert({ conversation_id: CONV_B }));
     expect(onB).toHaveBeenCalledTimes(1);
+    emit(3, update({ conversation_id: CONV_B }));
+    expect(onB).toHaveBeenCalledTimes(2);
   });
 
   it('unsubscribing twice is harmless', () => {
@@ -203,6 +274,23 @@ describe('RealtimeManager — list-level subscription', () => {
       table: 'messages',
     });
     expect(filters[0]).not.toHaveProperty('filter');
+  });
+
+  it('registers both INSERT and UPDATE on its one channel', () => {
+    const { client, filters } = makeClient();
+    new RealtimeManager(client as never).subscribeMessageList({ onMessage: jest.fn() });
+
+    expect(filters).toHaveLength(2);
+    expect(filters[1]).toEqual({ type: 'postgres_changes', event: 'UPDATE', schema: 'public', table: 'messages' });
+  });
+
+  it('forwards an UPDATE the same way as an INSERT', () => {
+    const { client, emit } = makeClient();
+    const onMessage = jest.fn();
+    new RealtimeManager(client as never).subscribeMessageList({ onMessage });
+
+    emit(1, update());
+    expect(onMessage).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'UPDATE', views_used: 1 }));
   });
 
   it('keeps exactly one list channel', () => {
