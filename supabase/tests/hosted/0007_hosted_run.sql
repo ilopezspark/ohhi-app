@@ -46,16 +46,19 @@ begin
   -- public.user_photos is the one table the app upserts into.
   -- ===========================================================================
 
-  -- 3
+  -- 3 — amended by migration 0011: the user_photos upsert is retired (a new
+  --     photo is an insert with a client-chosen id, a replace an update by
+  --     id), so 0006's update grant on user_id is revoked again.
   select ok(
-    has_column_privilege('authenticated', 'public.user_photos', 'user_id', 'update'),
-    'user_photos.user_id is update-granted (conflict key; migration 0006''s fix)'
+    not has_column_privilege('authenticated', 'public.user_photos', 'user_id', 'update'),
+    'user_photos.user_id is no longer update-granted (0011 retired the upsert that needed it)'
   ) into v_line; out := out || v_line || E'\n';
 
-  -- 4
+  -- 4 — amended by migration 0011 (ruling 10): position changes only through
+  --     set_my_photo_order(), so it is no longer update-granted.
   select ok(
-    has_column_privilege('authenticated', 'public.user_photos', 'position', 'update'),
-    'user_photos.position is update-granted (conflict key)'
+    not has_column_privilege('authenticated', 'public.user_photos', 'position', 'update'),
+    'user_photos.position is no longer update-granted (0011: reorder goes through set_my_photo_order)'
   ) into v_line; out := out || v_line || E'\n';
 
   -- 5
