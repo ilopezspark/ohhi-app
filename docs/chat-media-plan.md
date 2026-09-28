@@ -4,9 +4,9 @@ Status: design only, no code, no Supabase calls. Owner ruling, 28 September 2026
 one of **view once**, **view twice**, or **keep in chat** for every photo/video attached to a
 message. Companion notes: `docs/app-social-plan.md` §3 (conversations/messages, the compose-state
 matrix, `chat-media` today) and `docs/app-architecture-plan.md` §7 (photo conventions this note
-extends to video). Decisions recorded here live in `docs/decisions-chat-media.md`, numbered
-provisionally (`CM-1`...) — the orchestrator renumbers them into `docs/decisions.md` to continue
-after the concurrently-building "Grid (28 September 2026)" section.
+extends to video). Decisions recorded here now live in `docs/decisions.md` under "Chat media
+(28 September 2026)": the provisional tags `CM-1`...`CM-8` used below are decisions 58-65
+(`CM-n` = 57 + n), and the §10 defaults are decisions 66-69.
 
 Read alongside: `docs/app-social-plan.md` §3; `docs/decisions.md` 12, 13, 36, 37; `docs/handoff-
 0002.md` tool facts; `app/src/api/{messages,chatMedia,conversations}.ts`; `app/src/chat/{rules,

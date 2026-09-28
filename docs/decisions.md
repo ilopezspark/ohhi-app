@@ -176,3 +176,26 @@ stale" conditions in the grid-visibility bullet under "Consequences for the next
 | 55 | Online | Online means `profiles.last_active_at` is at most 15 minutes old. Users who are not online are still shown, just not as online. New; amends decision 11 (recency now marks, never hides). |
 | 56 | Paused users | Stay hidden (`user_presence.is_visible` false). Unchanged from the migration-0002 grid rule; restated because decision 53 removes the other hiding conditions around it. |
 | 57 | Grid sort | Here-now first; then effective tier on campus, nearby, away; within each, online first, then most recently active. Amends migration-0002-plan §6's `tier asc, here_now desc, last_active_at desc`. |
+
+## Chat media (28 September 2026)
+
+Decided by Izaac Lopez alongside `docs/chat-media-plan.md` (view once, view twice, keep in chat).
+Implemented in migration 0010 (`20260918000010_chat_media.sql`), the `media-open` edge function
+and the app. Decisions 58-65 were drafted as `CM-1`...`CM-8` in the plan and in code comments;
+`CM-n` is decision `57 + n`. Decisions 66-69 are the plan's four open-question defaults (§10),
+accepted by the owner.
+
+| # | Decision | Answer |
+|---|----------|--------|
+| 58 | Storage split for limited media | A second private bucket, `chat-media-limited`, holding view-once/view-twice photos and videos, with an insert policy for the sender (mirroring `chat-media`'s regex-guarded, open-participant policy) and **no select policy at all**. The only read path is a signed URL minted by the `media-open` edge function under the service role. Keep-in-chat media stays in `chat-media`, unchanged. |
+| 59 | Resending from the recently-shared tray | A resend copies the object to the new conversation's path (service-role storage copy) rather than pointing a new message row at the old path. Chosen over reference-counting because it keeps every existing bucket read policy's "path segment 1 is the owning conversation" assumption intact, needs no cross-conversation orphan tracking, and keeps the purge-queue sweep a simple 1:1-per-conversation query. |
+| 60 | Sender's access to their own limited media | Unlimited and uncounted — `media-open` mints a signed URL directly for the sender without calling the view-recording RPC. The view-once/view-twice guarantee is about what the recipient can extract, not about the sender re-seeing content they already possess. |
+| 61 | `media-open` signed URL TTL | 60 seconds, reusable within that window. The guarantee is the RPC's atomic view-count check and record, not a single-use URL — a strictly single-fetch URL would break video buffering and client retries. Same order of magnitude as the existing 60s profile-photo-carousel TTL. |
+| 62 | Exhausted limited media | Deleted from storage immediately after the view that exhausts it (enqueued into the existing `private.storage_purge_queue` from inside `open_limited_media`'s transaction), independent of any account purge. The `messages` row and its `views_used`/`view_limit` columns are kept as the historical record. |
+| 63 | Video caps | 30 seconds and 50 MB, enforced client-side before upload (duration has no server-side check available) and backstopped server-side by a 50 MB `file_size_limit` on both chat-media buckets. |
+| 64 | Recently-shared tray query | A plain `messages` select scoped to `sender_id = auth.uid()` and `view_limit is null`, over-fetched and de-duplicated by `media_path` client-side to the newest 30 — no new RPC, since PostgREST can't express `distinct on` and the list is small and bounded. |
+| 65 | Screenshot/recording limitation | Stated plainly in the viewer screen's own copy, not only in internal docs: Android gets `FLAG_SECURE` via `expo-screen-capture`; iOS and web have no equivalent, so "view once" is framed as "won't stay in the chat," never as "cannot be saved." |
+| 66 | Video duration enforcement | Client-side only for v1. Storage cannot inspect a stream's duration, so the 30-second cap (decision 63) has no server-side check; the 50 MB bucket limit is the only server backstop. Accepted as a known gap (plan §10 OQ-1). |
+| 67 | HEIC photos | Photos are re-encoded to JPEG client-side before upload (the shared resize step, which also strips EXIF), so a HEIC original never reaches a recipient. The buckets still allow `image/heic` in their mime list; nothing server-side converts it (plan §10 OQ-2). |
+| 68 | Racing opens from two devices | Resolved by the row lock in `private.open_limited_media`: one open wins, the other gets the same generic refusal as any other (`media-open`'s 404), with no cross-device coordination or explanation (plan §10 OQ-3). |
+| 69 | Re-sending across a block boundary | No extra guard. A resend copy only checks the new conversation's `open` state, exactly as a plain-text send does today; this is an existing, accepted non-guarantee, not a new one (plan §10 OQ-4). |

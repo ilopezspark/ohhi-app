@@ -15,6 +15,8 @@ but the grid, hi's and chat flows have not yet been exercised end to end between
 
 Migration 0009 (`grid_shows_everyone`, decisions 53-57) was applied on 28 September 2026 and is recorded in hosted history as `20260918000009 after the CLI history repair`; it needs a repair to `20260918000009`. Hosted runs: 0009 37/37, 0002 98/98. `grid_for_me`/`profile_card_for` gained `is_online`, and their `tier` is now the effective tier.
 
+Migration 0010 (`chat_media`, decisions 58-69) was applied on 28 September 2026 and is recorded in hosted history as `20260918000010 after the CLI history repair`; it needs a repair to `20260918000010`. Hosted runs: 0010 66/66, then 0002 98/98 and 0009 37/37 re-run against it.
+
 ## What is here
 
 - `supabase/migrations/20260918000002_core_schema.sql` — the core schema, now with defects
