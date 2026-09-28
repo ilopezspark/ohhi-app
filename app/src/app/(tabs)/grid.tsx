@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { gridForMe, type GridRow } from '../../api/grid';
 import { me as fetchMe } from '../../api/me';
@@ -26,6 +27,7 @@ import { LOCATION_PERMISSION_EXPLAINER, usePresence, usePresenceStore } from '..
 import { getRealtimeManager, type HereNowEvent } from '../../realtime';
 import { BellIcon, EmptyState, SearchIcon, Text } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
+import { useGridTileWidth } from '../../layout';
 
 /**
  * The grid (`Grid.html`/`Grid-Empty.html`/`Grid-Verify.html`,
@@ -57,6 +59,16 @@ export default function GridScreen() {
   const queryClient = useQueryClient();
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [verifySheetOpen, setVerifySheetOpen] = useState(false);
+  // 2/3/4 columns by window class (`docs/app-responsive-plan.md`); the tile
+  // width is clamped so more columns on a wide window never shrink tiles too
+  // small. `FlatList.numColumns` can't change in place, so the list below is
+  // keyed on `columns` to force a remount on a class change (e.g. unfold).
+  const { columns, tileWidth } = useGridTileWidth();
+  // `(tabs)` renders with `headerShown: false` and no `SafeAreaView`, so the
+  // status bar/notch inset has to be added to the header's own top padding
+  // by hand (`docs/app-responsive-plan.md`'s safe-area audit). The bottom
+  // inset is already handled by `ui/TabBar.tsx`'s fixed 26px allowance.
+  const insets = useSafeAreaInsets();
 
   const { data: meData } = useQuery({ queryKey: ['me'], queryFn: fetchMe });
   const campusId = meData?.campus_id ?? null;
@@ -260,7 +272,7 @@ export default function GridScreen() {
 
   const header = (
     <View>
-      <View style={styles.topRow}>
+      <View style={[styles.topRow, { paddingTop: spacing.xxl + insets.top }]}>
         <Text variant="wordmark">ohhi</Text>
         <Pressable
           testID="grid-bell"
@@ -387,9 +399,10 @@ export default function GridScreen() {
   return (
     <View style={styles.screen}>
       <FlatList
+        key={`grid-${columns}`}
         testID="grid-list"
         data={data}
-        numColumns={2}
+        numColumns={columns}
         keyExtractor={(row) => row.user_id}
         ListHeaderComponent={header}
         contentContainerStyle={styles.list}
@@ -412,6 +425,7 @@ export default function GridScreen() {
             photoUrl={item.photo_path ? photoUrls?.[item.photo_path] : undefined}
             countyLabel={presence.countyLabel}
             onPress={openProfile}
+            width={tileWidth}
           />
         )}
       />

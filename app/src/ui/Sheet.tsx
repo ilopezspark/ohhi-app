@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, View, Pressable, type StyleProp, type ViewStyle } from 'react-native';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
+import { useWindowClass } from '../layout';
+
+/** Capped width on `expanded` — a bottom sheet spanning an 880px window looks wrong (`docs/app-responsive-plan.md`). */
+const SHEET_MAX_WIDTH = 480;
 
 export interface SheetProps {
   children?: ReactNode;
@@ -23,6 +27,8 @@ export interface SheetProps {
  * this component only owns the visual shape.
  */
 export function Sheet({ children, onDismiss, showHandle = true, style, testID }: SheetProps) {
+  const windowClass = useWindowClass();
+  const centered = windowClass === 'expanded';
   return (
     <View style={StyleSheet.absoluteFill} testID={testID ?? 'sheet'} pointerEvents="box-none">
       <Pressable
@@ -32,7 +38,7 @@ export function Sheet({ children, onDismiss, showHandle = true, style, testID }:
         style={styles.dim}
         onPress={onDismiss}
       />
-      <View style={[styles.sheet, shadows.sheet, style]}>
+      <View style={[styles.sheet, shadows.sheet, centered && styles.sheetCentered, style]}>
         {showHandle ? <View style={styles.handle} /> : null}
         {children}
       </View>
@@ -54,6 +60,13 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     paddingBottom: spacing.xxxl + spacing.xs,
     gap: spacing.lg,
+  },
+  /** `expanded`: centred, capped width, still bottom-anchored — a full-width sheet on an 880px window reads wrong. */
+  sheetCentered: {
+    left: '50%',
+    right: 'auto',
+    width: SHEET_MAX_WIDTH,
+    marginLeft: -(SHEET_MAX_WIDTH / 2),
   },
   handle: {
     width: 40,

@@ -1,4 +1,5 @@
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const CONV = 'cccccccc-0000-4000-8000-000000000003';
@@ -72,12 +73,19 @@ const message = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+// `ThreadView` (`chat/[id].tsx`'s implementation, `docs/app-responsive-plan.md`)
+// now calls `useSafeAreaInsets()`, which needs a `<SafeAreaProvider>` in the
+// tree; `initialMetrics` supplies a value synchronously.
+const ZERO_METRICS = { frame: { x: 0, y: 0, width: 390, height: 844 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } };
+
 function renderScreen() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
-    <QueryClientProvider client={client}>
-      <ChatThreadScreen />
-    </QueryClientProvider>
+    <SafeAreaProvider initialMetrics={ZERO_METRICS}>
+      <QueryClientProvider client={client}>
+        <ChatThreadScreen />
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }
 

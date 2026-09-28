@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getProfileCard } from '../../api/profileCard';
@@ -21,6 +22,7 @@ import { tierWord } from '../../grid/tierLabel';
 import { tintForPhoto } from '../../photos/tint';
 import { BackIcon, Badge, CheckIcon, PinIcon, Text } from '../../ui';
 import { colors, layout, radii, shadows, spacing } from '../../theme/tokens';
+import { ContentColumn, useHeroMaxHeight, useWindowClass } from '../../layout';
 
 const GOAL_LABELS: Record<string, string> = Object.fromEntries(GOAL_OPTIONS.map((o) => [o.value, o.label]));
 
@@ -190,104 +192,146 @@ export default function ProfileScreen() {
   const heroTint = tintForPhoto(card.user_id, 0);
   const goalLabels = (card.goals ?? []).map((goal) => GOAL_LABELS[goal] ?? goal);
 
-  return (
-    <View style={styles.container} testID="profile-screen">
-      <View style={[styles.hero, shadows.xl, { backgroundColor: heroTint }]}>
-        <PhotoCarousel
-          style={styles.heroPhoto}
-          userId={card.user_id}
-          paths={photoPaths}
-          urls={photoUrlsQuery.data ?? {}}
-        />
+  // Two-column on medium/expanded (`docs/app-responsive-plan.md`): the hero
+  // stays a photo-only tinted card (capped height, so an unfolded near-square
+  // window doesn't stretch it absurdly tall) and the name/identity/status/CTA
+  // content that the compact layout overlays on top of the photo instead
+  // renders in a plain dark panel beside it. `onDark`-coloured text works
+  // unchanged in both places since the panel reuses `colors.ink`, the same
+  // fill the overlay's gradient darkens toward.
+  const windowClass = useWindowClass();
+  const heroMaxHeight = useHeroMaxHeight();
+  const isWide = windowClass !== 'compact';
+  // Full-bleed compact hero has no SafeAreaView of its own (it deliberately
+  // sits under the status bar for the photo, per the design) — the back
+  // button/badge row still needs to clear the real inset, not just a fixed
+  // 48px, on a notch/landscape device.
+  const insets = useSafeAreaInsets();
 
-        <View style={styles.heroGradient} pointerEvents="none" />
+  const details = (
+    <>
+      <View style={styles.tierPill}>
+        <PinIcon size={12} color={colors.onDark} />
+        <Text variant="caption" color={colors.onDark}>
+          {tierWord(card.tier)}
+          {card.tier === 'on_campus' ? ' · CLC' : ''}
+        </Text>
+      </View>
 
-        <View style={styles.topRow}>
-          <BackButtonCircle onPress={() => router.back()} />
-          <View style={styles.topRowRight}>
-            {card.here_now ? <Badge label="here now" dot tone="neutral" testID="profile-here-now-badge" /> : null}
-            <OverflowMenu targetId={card.user_id} />
-          </View>
-        </View>
-
-        <View style={styles.bottom}>
-          <View style={styles.tierPill}>
-            <PinIcon size={12} color={colors.onDark} />
-            <Text variant="caption" color={colors.onDark}>
-              {tierWord(card.tier)}
-              {card.tier === 'on_campus' ? ' · CLC' : ''}
-            </Text>
-          </View>
-
-          <View style={styles.nameRow}>
-            <Text variant="hero" color={colors.onDark} testID="profile-name">
-              {card.first_name}
-              {card.grad_year ? (
-                <Text variant="hero" color={colors.onDark} style={styles.gradYear}>
-                  {`  '${String(card.grad_year).slice(-2)}`}
-                </Text>
-              ) : null}
-            </Text>
-            {/* Every card `profile_card_for` returns already cleared
-                `is_grid_visible`'s `verification_status = 'verified'` gate —
-                see `grid/GridTile.tsx`'s identical note — so this renders
-                unconditionally, not from a per-row field the RPC doesn't
-                return. */}
-            <View style={styles.verifiedBadge} accessibilityLabel="verified student">
-              <CheckIcon size={12} color={colors.ink} />
-            </View>
-          </View>
-
-          {showIdentity ? (
-            <View style={styles.identityRow}>
-              <Text variant="caption" color={colors.onDark} testID="profile-identity">
-                {[identity?.pronouns, identity?.orientation?.length ? identity.orientation.join(', ') : null]
-                  .filter(Boolean)
-                  .join('  ·  ')}
-              </Text>
-              <PressableIdentity onPress={() => setDetailsSheetOpen(true)}>
-                <Text variant="caption" color={colors.onDark} style={styles.identityLink}>
-                  {`more about ${card.first_name}`}
-                </Text>
-              </PressableIdentity>
-            </View>
-          ) : null}
-
-          {card.status_line ? (
-            <Text variant="body" color={colors.onDark} testID="profile-status-line" style={styles.statusLine}>
-              {card.status_line}
+      <View style={styles.nameRow}>
+        <Text variant="hero" color={colors.onDark} testID="profile-name">
+          {card.first_name}
+          {card.grad_year ? (
+            <Text variant="hero" color={colors.onDark} style={styles.gradYear}>
+              {`  '${String(card.grad_year).slice(-2)}`}
             </Text>
           ) : null}
-
-          <View style={styles.chipsRow}>
-            <ChipList testID="profile-goals" items={goalLabels} tone="solid" />
-            <ChipList testID="profile-tags" items={card.tag_labels ?? []} tone="translucent" />
-          </View>
-
-          {hiMutation.isError ? (
-            <Text variant="helper" color={colors.onDark} testID="profile-hi-error">
-              {hiMutation.error instanceof Error ? hiMutation.error.message : "That didn't work."}
-            </Text>
-          ) : null}
-          {messageMutation.isError ? (
-            <Text variant="helper" color={colors.onDark} testID="profile-message-error">
-              {messageMutation.error instanceof Error ? messageMutation.error.message : "That didn't work."}
-            </Text>
-          ) : null}
-
-          <CtaButton
-            cta={cta}
-            hiBusy={hiMutation.isPending}
-            messageBusy={messageMutation.isPending || cta.kind === 'message_pending'}
-            onHi={() => hiMutation.mutate()}
-            onMessage={onMessage}
-          />
+        </Text>
+        {/* Every card `profile_card_for` returns already cleared
+            `is_grid_visible`'s `verification_status = 'verified'` gate —
+            see `grid/GridTile.tsx`'s identical note — so this renders
+            unconditionally, not from a per-row field the RPC doesn't
+            return. */}
+        <View style={styles.verifiedBadge} accessibilityLabel="verified student">
+          <CheckIcon size={12} color={colors.ink} />
         </View>
       </View>
 
-      <Text variant="caption" color={colors.subtle} style={styles.footer}>
-        one message to start. they can always say hi back.
-      </Text>
+      {showIdentity ? (
+        <View style={styles.identityRow}>
+          <Text variant="caption" color={colors.onDark} testID="profile-identity">
+            {[identity?.pronouns, identity?.orientation?.length ? identity.orientation.join(', ') : null]
+              .filter(Boolean)
+              .join('  ·  ')}
+          </Text>
+          <PressableIdentity onPress={() => setDetailsSheetOpen(true)}>
+            <Text variant="caption" color={colors.onDark} style={styles.identityLink}>
+              {`more about ${card.first_name}`}
+            </Text>
+          </PressableIdentity>
+        </View>
+      ) : null}
+
+      {card.status_line ? (
+        <Text variant="body" color={colors.onDark} testID="profile-status-line" style={styles.statusLine}>
+          {card.status_line}
+        </Text>
+      ) : null}
+
+      <View style={styles.chipsRow}>
+        <ChipList testID="profile-goals" items={goalLabels} tone="solid" />
+        <ChipList testID="profile-tags" items={card.tag_labels ?? []} tone="translucent" />
+      </View>
+
+      {hiMutation.isError ? (
+        <Text variant="helper" color={colors.onDark} testID="profile-hi-error">
+          {hiMutation.error instanceof Error ? hiMutation.error.message : "That didn't work."}
+        </Text>
+      ) : null}
+      {messageMutation.isError ? (
+        <Text variant="helper" color={colors.onDark} testID="profile-message-error">
+          {messageMutation.error instanceof Error ? messageMutation.error.message : "That didn't work."}
+        </Text>
+      ) : null}
+
+      <CtaButton
+        cta={cta}
+        hiBusy={hiMutation.isPending}
+        messageBusy={messageMutation.isPending || cta.kind === 'message_pending'}
+        onHi={() => hiMutation.mutate()}
+        onMessage={onMessage}
+      />
+    </>
+  );
+
+  const heroPhoto = (
+    <View
+      style={[styles.hero, shadows.xl, { backgroundColor: heroTint }, isWide && styles.heroWide, isWide && heroMaxHeight != null && { maxHeight: heroMaxHeight }]}
+      testID="profile-hero"
+    >
+      <PhotoCarousel
+        style={styles.heroPhoto}
+        userId={card.user_id}
+        paths={photoPaths}
+        urls={photoUrlsQuery.data ?? {}}
+      />
+
+      <View style={styles.heroGradient} pointerEvents="none" />
+
+      <View style={[styles.topRow, { top: Math.max(48, insets.top + 4) }]}>
+        <BackButtonCircle onPress={() => router.back()} />
+        <View style={styles.topRowRight}>
+          {card.here_now ? <Badge label="here now" dot tone="neutral" testID="profile-here-now-badge" /> : null}
+          <OverflowMenu targetId={card.user_id} />
+        </View>
+      </View>
+
+      {!isWide ? <View style={styles.bottom}>{details}</View> : null}
+    </View>
+  );
+
+  const footerText = (
+    <Text variant="caption" color={isWide ? colors.onDark : colors.subtle} style={styles.footer}>
+      one message to start. they can always say hi back.
+    </Text>
+  );
+
+  return (
+    <View style={[styles.container, isWide && styles.containerWide]} testID="profile-screen">
+      {isWide ? (
+        <ContentColumn maxWidth={960} style={styles.wideRow}>
+          {heroPhoto}
+          <View style={[styles.detailsPanel, shadows.xl]}>
+            {details}
+            {footerText}
+          </View>
+        </ContentColumn>
+      ) : (
+        <>
+          {heroPhoto}
+          {footerText}
+        </>
+      )}
 
       <MessageSheet
         visible={messageSheetOpen}
@@ -342,9 +386,25 @@ function PressableIdentity({ onPress, children }: { onPress: () => void; childre
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.paper, padding: layout.gutterHero, paddingBottom: 0 },
+  // medium/expanded: the screen no longer needs to be edge-to-edge (that was
+  // only ever in service of the full-bleed hero), so `ContentColumn` owns the
+  // centring/max-width and this container just gives it room to breathe.
+  containerWide: { padding: spacing.xxl, alignItems: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, backgroundColor: colors.paper },
   unavailableText: { textAlign: 'center' },
+  wideRow: { flexDirection: 'row', gap: spacing.xl, alignItems: 'stretch' },
   hero: { flex: 1, borderRadius: radii.xl, overflow: 'hidden', position: 'relative' },
+  // Fixed width instead of `flex: 1` once it's sharing the row with the details panel.
+  heroWide: { flex: undefined, width: 380, minHeight: 420 },
+  detailsPanel: {
+    flex: 1,
+    minWidth: 320,
+    borderRadius: radii.xl,
+    backgroundColor: colors.ink,
+    padding: spacing.xxl,
+    gap: spacing.mdLg,
+    justifyContent: 'center',
+  },
   heroPhoto: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, aspectRatio: undefined, borderRadius: 0 },
   heroGradient: {
     position: 'absolute',

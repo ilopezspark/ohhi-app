@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { Stack } from 'expo-router';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import {
@@ -74,18 +75,26 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(auth)" />
-          <Stack.Screen name="(onboarding)" />
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="profile/[id]" options={{ headerShown: true, title: 'Profile' }} />
-          <Stack.Screen name="restricted" />
-          <Stack.Screen name="+not-found" />
-        </Stack>
-      </QueryClientProvider>
-    </ThemeProvider>
+    // Required for `useSafeAreaInsets()` (`docs/app-responsive-plan.md`'s
+    // safe-area audit — `grid.tsx`, `chats.tsx`, `chat/ThreadView.tsx`,
+    // `profile/[id].tsx` and `OnboardingScreen` all call it now). The
+    // existing `SafeAreaView` usages elsewhere (`settings/*`) don't need
+    // this — that component reads native insets directly, not through
+    // context — but the hook does, and had no provider until this pass.
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(onboarding)" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="profile/[id]" options={{ headerShown: true, title: 'Profile' }} />
+            <Stack.Screen name="restricted" />
+            <Stack.Screen name="+not-found" />
+          </Stack>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

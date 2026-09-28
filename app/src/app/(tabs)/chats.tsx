@@ -1,15 +1,22 @@
 import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listConversations, type ConversationListItem } from '../../api/conversations';
 import { signedPhotoUrls } from '../../api/photos';
 import { me as fetchMe } from '../../api/me';
 import { ConversationRow } from '../../chat/ConversationRow';
+import { ThreadView } from '../../chat/ThreadView';
+import { useSelectedConversation } from '../../chat/selection';
 import { useMessageListRealtime } from '../../chat/useChatRealtime';
 import { colors, layout, spacing } from '../../theme/tokens';
+import { useWindowClass } from '../../layout';
 import { ChatIcon } from '../../ui/icons';
 import { EmptyState, Text } from '../../ui';
+
+/** List pane width on `expanded` (`docs/app-responsive-plan.md`'s chat section). */
+const LIST_PANE_WIDTH = 360;
 
 /**
  * The chat list (`docs/app-social-plan.md` §3, `Chat-List.html`).
@@ -27,6 +34,10 @@ import { EmptyState, Text } from '../../ui';
  */
 export default function ChatsScreen() {
   const queryClient = useQueryClient();
+  const windowClass = useWindowClass();
+  const { conversationId: selectedId, select } = useSelectedConversation();
+  // `(tabs)` has `headerShown: false` and no `SafeAreaView` (grid.tsx's same note).
+  const insets = useSafeAreaInsets();
 
   const { data: meData } = useQuery({ queryKey: ['me'], queryFn: fetchMe });
   const meId = meData?.id ?? null;
@@ -105,9 +116,18 @@ export default function ChatsScreen() {
     staleTime: 45_000,
   });
 
-  const openThread = useCallback((conversationId: string) => {
-    router.push(`/chat/${conversationId}` as never);
-  }, []);
+  // `expanded`: select in place, rendered inline below (list-detail).
+  // compact/medium: push the deep-link route, same as always.
+  const openThread = useCallback(
+    (conversationId: string) => {
+      if (windowClass === 'expanded') {
+        select(conversationId);
+        return;
+      }
+      router.push(`/chat/${conversationId}` as never);
+    },
+    [windowClass, select]
+  );
 
   const onRefresh = useCallback(() => {
     void refetch();
@@ -133,7 +153,7 @@ export default function ChatsScreen() {
 
   const data = conversations ?? [];
 
-  return (
+  const list = (
     <FlatList
       testID="chats-list"
       data={data}
@@ -141,7 +161,7 @@ export default function ChatsScreen() {
       style={styles.screen}
       contentContainerStyle={styles.list}
       ListHeaderComponent={
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: spacing.smMd + insets.top }]}>
           <Text variant="headline" style={styles.title}>
             chat
           </Text>
@@ -173,6 +193,40 @@ export default function ChatsScreen() {
       )}
     />
   );
+
+  // `expanded`: list-detail, side by side (`docs/app-responsive-plan.md`).
+  // The selected thread renders via the same `ThreadView` `chat/[id].tsx`
+  // uses, so a deep link into that route still works unchanged — this is
+  // purely an additional way to reach the same component. Selection lives in
+  // `useSelectedConversation` (module-level state), so it survives a
+  // fold/unfold re-render even though this screen never remounts for one.
+  if (windowClass === 'expanded') {
+    return (
+      <View style={styles.split} testID="chats-split">
+        <View style={styles.listPane}>{list}</View>
+        <View style={styles.detailPane}>
+          {selectedId ? (
+            <ThreadView
+              key={selectedId}
+              conversationId={selectedId}
+              onBack={() => select(null)}
+              variant="inline"
+              testID="chats-thread"
+            />
+          ) : (
+            <EmptyState
+              testID="chats-detail-empty"
+              icon={<ChatIcon size={40} color={colors.faint} />}
+              title="pick a chat"
+              message="Select a conversation on the left to read it here."
+            />
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  return list;
 }
 
 const styles = StyleSheet.create({
@@ -182,4 +236,7 @@ const styles = StyleSheet.create({
   header: { paddingTop: spacing.smMd, paddingBottom: spacing.smMd },
   title: { fontSize: 32 },
   footerHint: { textAlign: 'center', paddingTop: spacing.xl },
+  split: { flex: 1, flexDirection: 'row', backgroundColor: colors.paper },
+  listPane: { width: LIST_PANE_WIDTH, borderRightWidth: 1, borderRightColor: colors.line },
+  detailPane: { flex: 1 },
 });

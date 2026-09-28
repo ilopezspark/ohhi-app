@@ -14,6 +14,8 @@ export interface GridTileProps {
   photoUrl?: string;
   countyLabel?: string | null;
   onPress: (userId: string) => void;
+  /** Explicit tile width (from `useGridTileWidth`, `docs/app-responsive-plan.md`) — overrides the default `flex: 1, maxWidth: 50%` two-column sizing so 3/4-column layouts on medium/expanded windows get a clamped, not-tiny-not-huge tile instead. */
+  width?: number;
 }
 
 /**
@@ -35,10 +37,11 @@ export interface GridTileProps {
  * badge. Its tint is derived from the user id, which is all we have —
  * `grid_for_me()` doesn't return the stored `user_photos.tint`.
  */
-export function GridTile({ row, photoUrl, countyLabel, onPress }: GridTileProps) {
+export function GridTile({ row, photoUrl, countyLabel, onPress, width }: GridTileProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const showPhoto = !!photoUrl && !imageFailed;
   const tint = tintForPhoto(row.user_id, 0);
+  const sizeStyle = width != null ? { flex: undefined, maxWidth: undefined, width } : undefined;
 
   return (
     <Pressable
@@ -46,7 +49,7 @@ export function GridTile({ row, photoUrl, countyLabel, onPress }: GridTileProps)
       accessibilityRole="button"
       accessibilityLabel={`${row.first_name}, ${tierWord(row.tier, countyLabel)}`}
       onPress={() => onPress(row.user_id)}
-      style={[styles.tile, shadows.md, { backgroundColor: tint }]}
+      style={[styles.tile, shadows.md, { backgroundColor: tint }, sizeStyle]}
     >
       {showPhoto ? (
         <Image

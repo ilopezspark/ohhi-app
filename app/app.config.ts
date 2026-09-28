@@ -9,10 +9,20 @@ const config: ExpoConfig = {
   name: 'OhHi',
   slug: 'ohhi-app',
   version: '1.0.0',
-  orientation: 'portrait',
+  // Was 'portrait': foldables/tablets shouldn't be letterboxed into a fixed
+  // portrait frame (`docs/app-responsive-plan.md`'s safe-area/orientation
+  // section) — 'default' lets the OS follow the device's own rotation, and
+  // the grid/chat/profile layouts are built to not assume height >= width
+  // (hero/tile heights are capped, not flex-filled, on medium/expanded).
+  orientation: 'default',
   icon: './assets/images/icon.png',
   scheme: 'ohhi',
   userInterfaceStyle: 'automatic',
+  ios: {
+    // Renders as a real scaled-up layout (this pass's responsive work)
+    // rather than iPhone-compatibility letterboxing on iPad.
+    supportsTablet: true,
+  },
   android: {
     adaptiveIcon: {
       backgroundColor: '#F7F3EC',
