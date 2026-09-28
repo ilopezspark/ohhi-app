@@ -22,6 +22,11 @@ const GOAL_SUBTITLES: Record<UserGoal, string> = {
   friends: 'people to actually hang out with',
   study: 'same classes, same library, same panic',
   dates: 'if it goes there',
+  // Migration 0011 / Me redesign ruling 7 adds this value to the enum
+  // after this screen was built — subtitle added here only so
+  // `Record<UserGoal, string>` still compiles; not part of this pass's
+  // own scope otherwise.
+  gym: 'someone to actually go with',
   group: "games, parties, whatever's happening",
   whatever: 'no plan, just around',
 };

@@ -1,24 +1,25 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
 import { currentUserId } from './session';
+import { OFFERED_GOAL_OPTIONS, type UserGoal } from '../profile/goalLabels';
 import type { Database } from '../types/database';
 
-export type UserGoal = Database['public']['Enums']['user_goal'];
+export type { UserGoal };
+
+/** The generated (pre-migration-0011) enum `user_goals.goal` is actually typed as, for the two calls below that touch the table directly. */
+type DbUserGoal = Database['public']['Enums']['user_goal'];
 
 /**
- * Copy for the goals multi-select (onboarding-grid plan §1.4's table says
- * "the copy from the note", but no exact strings for `user_goal`'s five
- * enum values exist anywhere in this repo's docs or the brief, which isn't
- * checked in). This is this build's proposed default — same posture as the
- * plan's own "propose default" entries elsewhere — pending real brief copy.
+ * `docs/design/me-redesign/brief.md` ruling 7's "here for" copy — replaces
+ * this build's earlier placeholder labels now that the product owner has
+ * settled real ones. `group` is retired (ruling 7: never offered, though it
+ * still displays correctly wherever an existing user's stored goals are
+ * shown — see `src/profile/goalLabels.ts#GOAL_LABELS`), so it's no longer
+ * in this offered list. `gym` is a new value migration 0011 adds to the
+ * `user_goal` enum — `goalLabels.ts` types it as a local extension since
+ * `database.ts` hasn't been regenerated for that migration yet.
  */
-export const GOAL_OPTIONS: { value: UserGoal; label: string }[] = [
-  { value: 'friends', label: 'Making friends' },
-  { value: 'study', label: 'Study buddies' },
-  { value: 'dates', label: 'Dating' },
-  { value: 'group', label: 'Group hangouts' },
-  { value: 'whatever', label: 'Whatever happens, happens' },
-];
+export const GOAL_OPTIONS: { value: UserGoal; label: string }[] = OFFERED_GOAL_OPTIONS;
 
 /**
  * `user_goals` is readable by owner OR same-campus-and-not-blocked
@@ -48,11 +49,23 @@ export async function setUserGoals(goals: UserGoal[]): Promise<void> {
   const uid = await currentUserId();
 
   if (toRemove.length > 0) {
-    const { error } = await supabase.from('user_goals').delete().eq('user_id', uid).in('goal', toRemove);
+    // `.in()` doesn't validate its values against the column enum at the
+    // type level in the same way `.insert()`'s row shape does, but the cast
+    // documents the same pending-migration-0011 gap as the insert below.
+    const { error } = await supabase
+      .from('user_goals')
+      .delete()
+      .eq('user_id', uid)
+      .in('goal', toRemove as DbUserGoal[]);
     if (error) throw mapSupabaseError(error);
   }
   if (toAdd.length > 0) {
-    const rows = toAdd.map((goal) => ({ user_id: uid, goal }));
+    // `goal` can be `'gym'` once migration 0011 lands server-side; the
+    // generated `Database` type doesn't know that yet (`goalLabels.ts`'s own
+    // doc comment). This cast is the one place that gap has to be bridged to
+    // satisfy the generated insert-row type — remove it once `database.ts`
+    // is regenerated against migration 0011.
+    const rows = toAdd.map((goal) => ({ user_id: uid, goal: goal as DbUserGoal }));
     const { error } = await supabase.from('user_goals').insert(rows);
     if (error) throw mapSupabaseError(error);
   }

@@ -134,6 +134,62 @@ export const colors = {
     '#EFD6CB', // tintH — light peach (Main.html)
     '#F0E3C6', // tintI — light gold (Main.html)
   ] as const,
+
+  // -------------------------------------------------------------------
+  // Me redesign additions (`docs/design/me-redesign/brief.md`).
+  //
+  // Every value below is either a same-value alias of an existing token
+  // (kept as a separate camelCase name because the brief names it and
+  // screen agents building the Me/editor screens should be able to reach
+  // for the brief's own vocabulary), or a genuinely new colour the
+  // existing palette has no token for. Where the brief's value actually
+  // *disagrees* with an existing token of the same name/role, the
+  // existing token is left untouched (other screens depend on it) and the
+  // new one is added under a distinct name — see the foundation report
+  // for the full list of those pairs.
+  // -------------------------------------------------------------------
+
+  /** Brief's `paper-raised` (#FFFFFF) — same value as `surface`; kept as its own name for the Me/editor screens' own white-card vocabulary. */
+  paperRaised: '#FFFFFF',
+  /** Brief's `paper-tint` (#ECE6DA) — same value as `tint`; the unselected-chip fill in the redesign's `Chip`/`ChipGroup`. */
+  paperTint: '#ECE6DA',
+  /** Brief's `line-soft` (#EFE9DE) — genuinely new, no existing counterpart. A softer hairline than `line` for the Me redesign's own hairline-separated `RowCard` children. */
+  lineSoft: '#EFE9DE',
+  /** Brief's `ink-soft` (#8A857C) — same value as `subtle`; kept as its own name since the brief's copy ("ink-soft") is what the Me/editor screens' own doc comments and props will refer to. */
+  inkSoft: '#8A857C',
+  /**
+   * Brief's `ink-faint` (#A39D93) — **differs** from the existing `faint`
+   * (#9A958B, the inactive-tab colour) by one shade. Per the "keep existing,
+   * add new" rule: `faint` is untouched (still used by `TabBar`), `inkFaint`
+   * is this new, distinct value for the Me redesign's own faint-text role
+   * (e.g. placeholder/dashed-field captions).
+   */
+  inkFaint: '#A39D93',
+  /** Brief's `ink-disabled` (#B0AAA0) — genuinely new, no existing counterpart. Disabled row/label text in Settings and the editor. */
+  inkDisabled: '#B0AAA0',
+  /** Brief's `signal-deep` (#D4460F) — same value as `signalPressed`; aliased per the task brief's own instruction ("alias the existing pressed value if identical"). Used for `+N%` completion labels and `SectionLabel`'s right-hand note. */
+  signalDeep: '#D4460F',
+  /** Brief's `sage` (#B9C6A8) — same value as `success` (the verified-badge/verification-chip colour); aliased under the brief's own name for the Me redesign's own copy (e.g. the verified check, sage accents). Distinct from `tints.sage` below, which is a different colour (a placeholder-tint shade, not the semantic verified colour). */
+  sage: '#B9C6A8',
+  /** Ruling 8: hard-nos chip text colour, used ONLY for the private card's hard-nos group. `colors.danger` remains the colour for destructive actions (delete account, remove photo, block). */
+  boundaryInk: '#8C3A10',
+  /** Ruling 8: hard-nos chip fill, paired with `boundaryInk`. */
+  boundaryBg: '#F7E3D8',
+
+  /**
+   * The brief's four "named tints" (peach/sky/sage/sand) — all four are
+   * already present, unnamed, as the first four entries of `avatarTints`
+   * (tintA-D). Nested here (not flattened to the top level) so `tints.sage`
+   * — a placeholder-tint shade — is never confused with the semantic
+   * `colors.sage` (the verified-badge colour) above; they are different
+   * colours that happen to share a design-system name.
+   */
+  tints: {
+    peach: '#E8C9B4',
+    sky: '#C9D6E3',
+    sage: '#D5E0CB',
+    sand: '#EBD5B0',
+  },
 } as const;
 
 export type ColorToken = keyof typeof colors;
@@ -169,6 +225,8 @@ export interface TypeStyle {
   lineHeight: number;
   letterSpacing: number;
   color: string;
+  /** Optional — only `sectionLabel` (Me redesign) sets this, for its uppercase treatment. `ui/Text.tsx` passes it through when present. */
+  textTransform?: TextStyle['textTransform'];
 }
 
 /**
@@ -291,6 +349,64 @@ export const typography = {
     letterSpacing: 0,
     color: colors.subtle,
   },
+
+  // -- Me redesign additions (`docs/design/me-redesign/brief.md`) --------
+  /** Brief's `display` (30/800/ls -0.03em) — close to but distinct from `headline` (34/800/ls -0.03em); the Me tab's own "me" header and the editor's name. No existing 30px variant. */
+  display: {
+    fontFamily: fontFamilies.outfitExtraBold,
+    fontSize: 30,
+    fontWeight: '800',
+    lineHeight: 32,
+    letterSpacing: -0.9,
+    color: colors.ink,
+  },
+  /**
+   * Brief's `body` (15/500) — **differs** from the existing `body` (15/400)
+   * by weight only. Per the "keep existing, add new" rule: `body` above is
+   * untouched (chat bubbles/status line read it), this is the Me redesign's
+   * own slightly-heavier body role (e.g. the private-card explainer strips).
+   */
+  bodyMedium: {
+    fontFamily: fontFamilies.outfitMedium,
+    fontSize: 15,
+    fontWeight: '500',
+    lineHeight: 21,
+    letterSpacing: 0,
+    color: colors.ink,
+  },
+  /**
+   * Brief's `label` (13/600) — **differs** from the existing `label` (12/600)
+   * by size only. Per the "keep existing, add new" rule: `label` above is
+   * untouched (`Input`'s field labels read it), this is the Me redesign's
+   * own row/chip label size (e.g. `SettingsRow` titles).
+   */
+  labelLg: {
+    fontFamily: fontFamilies.outfitSemiBold,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 16,
+    letterSpacing: 0,
+    color: colors.ink,
+  },
+  /** Brief's `micro` (12/500) — no existing 12px/500 variant (`caption`/`label` are 12/600). Fine print — e.g. the photos rules card, footer notes. */
+  micro: {
+    fontFamily: fontFamilies.outfitMedium,
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 16,
+    letterSpacing: 0,
+    color: colors.muted,
+  },
+  /** Brief's `section-label` (11/700/ls 0.1em/uppercase) — `SectionLabel`'s own uppercase eyebrow text. No existing uppercase variant. */
+  sectionLabel: {
+    fontFamily: fontFamilies.outfitBold,
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 14,
+    letterSpacing: 1.1,
+    color: colors.muted,
+    textTransform: 'uppercase',
+  },
 } as const satisfies Record<string, TypeStyle>;
 
 export type TypographyVariant = keyof typeof typography;
@@ -304,6 +420,13 @@ export type TypographyVariant = keyof typeof typography;
  * often. Not a strict geometric scale — the screens themselves aren't one
  * (4/6/8/10/12/14/16/18/20/24/28/32 all appear) — so this is a lookup table,
  * not a multiplier chain.
+ *
+ * Me redesign note (`docs/design/me-redesign/brief.md`): its spacing scale
+ * (4 8 12 16 20 24 32, plus `top` 56) needed no new tokens — every value is
+ * already here under an existing name: `xs`=4, `smMd`=8, `mdLg`=12,
+ * `lgXl`=16, `xlXxl`=20, `xxl`=24, `huge`=32, and `layout.topInset`=56 for
+ * `top`. Screen agents building the Me/editor screens should reach for
+ * those names.
  */
 export const spacing = {
   none: 0,
@@ -365,6 +488,23 @@ export const radii = {
   pill: 999,
   /** Icon/back buttons, notification bell, avatar-circle chrome. */
   circle: 9999,
+
+  // -- Me redesign additions (`docs/design/me-redesign/brief.md`) --------
+  /**
+   * Brief's `radius.sm` (8px) — **name collides** with the existing `sm`
+   * (16px, small square onboarding-location thumbnails, still used there).
+   * Per the "keep existing, add new" rule this can't share the key `sm`, so
+   * it's added here as `xs` instead; `sm` above is untouched. Used for the
+   * Me redesign's own small corner rounding (e.g. the pencil-badge circle's
+   * inset, small dashed accents).
+   */
+  xs: 8,
+  /** Brief's `radius.tile` (20px) — the Me row's 76x95 thumbnail tile and the editor's photo-grid tiles. No existing counterpart. */
+  tile: 20,
+  /** Brief's `radius.card` (22px) — same value as `lg`, added under the brief's own name for `RowCard`/the redesign's white containers. */
+  card: 22,
+  /** Brief's `radius.hero` (34px) — same value as `xl`, added under the brief's own name for the profile hero / Preview tile. */
+  hero: 34,
 } as const;
 
 export type RadiusToken = keyof typeof radii;
@@ -394,6 +534,14 @@ export const shadows = {
   xl: { shadowColor: colors.ink, shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.14, shadowRadius: 40, elevation: 10 },
   /** Bottom sheet (`0 -12px 40px rgba(...,0.18)` — the one shadow that points *up*). */
   sheet: { shadowColor: colors.ink, shadowOffset: { width: 0, height: -12 }, shadowOpacity: 0.18, shadowRadius: 40, elevation: 12 },
+
+  // -- Me redesign additions (`docs/design/me-redesign/brief.md`) --------
+  /** Brief's `shadow.float` (`0 2px 8px rgba(...,.08)`) — close to but distinct from both `xs` (blur 8, opacity .06) and `sm` (blur 9, opacity .08); added as its own value rather than aliasing either. Floating pills/buttons in the Me redesign (e.g. "see how you look on the grid"). */
+  float: { shadowColor: colors.ink, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 },
+  /** Brief's `shadow.card` — same values as `md`, added under the brief's own name for `RowCard`. */
+  card: { shadowColor: colors.ink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 18, elevation: 4 },
+  /** Brief's `shadow.hero` — same values as `xl`, added under the brief's own name for the profile hero / Preview tile. */
+  hero: { shadowColor: colors.ink, shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.14, shadowRadius: 40, elevation: 10 },
 } as const satisfies Record<string, ShadowStyle>;
 
 export type ShadowToken = keyof typeof shadows;

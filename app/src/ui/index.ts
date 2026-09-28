@@ -13,3 +13,8 @@ export * from './Header';
 export * from './EmptyState';
 export * from './Toggle';
 export * from './icons';
+// Me redesign foundation additions (docs/design/me-redesign/brief.md).
+export * from './SectionLabel';
+export * from './CompletionBar';
+export * from './RowCard';
+export * from './SettingsRow';

@@ -1446,3 +1446,166 @@ hour both read as `away`) plus a new `is_online` column (active within 15 minute
   `chat/MessageBubble.tsx`); nothing in grid/card/presence/profile/`types/database.ts`.
 - `npx expo export --platform web` — succeeds.
 <!-- END: Grid shows everyone -->
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Me redesign: foundation section below — tokens, shared components,     -->
+<!-- ProfileTile, completion math and label maps that the eight Me-redesign -->
+<!-- screens (built by other agents afterwards) all import. Please keep     -->
+<!-- further additions after this point in their own clearly delimited      -->
+<!-- section.                                                                -->
+<!-- ---------------------------------------------------------------------- -->
+
+<!-- BEGIN: Me redesign: foundation -->
+## Me redesign: foundation
+
+`docs/design/me-redesign/brief.md` and its **Rulings** section, 28 September 2026. This pass
+builds only the shared contract — tokens, `ui/` components, `ProfileTile`, completion math and
+label maps — for eight screens (`Me`, `PrivateCard`, `Albums`, `Settings`, `ProfileEditor` +
+its three sub-screens, `QuickStatus`) that other agents build next. Nothing under
+`src/app/me/`, `src/app/profile-editor/`, `src/app/quick-status*` or `src/me/` exists yet.
+
+### Tokens (`src/theme/tokens.ts`)
+
+Every addition is documented inline at its own definition; this is the summary a screen agent
+needs to pick the right name on the first try.
+
+- **Colors** — `paperRaised`, `paperTint`, `lineSoft`, `inkSoft`, `inkFaint`, `inkDisabled`,
+  `signalDeep`, `sage`, `boundaryInk` (`#8C3A10`), `boundaryBg` (`#F7E3D8`, ruling 8 — hard-nos
+  chips/label only, never `colors.danger`), `tints.peach`/`tints.sky`/`tints.sage`/`tints.sand`
+  (nested — distinct from the top-level `colors.sage`, a different colour).
+- **Radii** — `radii.tile` (20), `radii.card` (22, alias of `lg`), `radii.hero` (34, alias of
+  `xl`), `radii.xs` (8 — **not** `radii.sm`, see deviations below). `radii.pill` already existed.
+- **Shadows** — `shadows.float`, `shadows.card` (alias of `md`), `shadows.hero` (alias of `xl`).
+- **Typography** — `typography.display` (30/800), `typography.bodyMedium` (15/500),
+  `typography.labelLg` (13/600), `typography.micro` (12/500), `typography.sectionLabel`
+  (11/700/uppercase/ls 0.1em). `typography.title` (17/700) already matched the brief exactly —
+  use it as-is. `TypeStyle` gained an optional `textTransform`; `ui/Text.tsx` passes it through.
+- **Spacing** — no new tokens; the brief's 4/8/12/16/20/24/32 scale is already covered exactly by
+  `spacing.xs`/`smMd`/`mdLg`/`lgXl`/`xlXxl`/`xxl`/`huge`, and `layout.topInset` is the brief's
+  `top` (56).
+
+**Token pairs where the brief's value differs from an existing token of the same name/role**
+(existing token kept untouched, brief's value added under a new name):
+
+| Existing token | Value | Role | New token (brief's value) |
+|---|---|---|---|
+| `colors.faint` | `#9A958B` | inactive tab colour | `colors.inkFaint` (`#A39D93`) |
+| `radii.sm` | 16 | small square thumbnails | `radii.xs` (8) — name collision, brief's `sm` could not reuse the key |
+| `typography.body` | 15/**400** | chat bubbles, status line | `typography.bodyMedium` (15/**500**) |
+| `typography.label` | **12**/600 | `Input`'s field label | `typography.labelLg` (**13**/600) |
+
+Same-value aliases added under the brief's own name (no conflict, just a second name for screen
+agents reaching for the brief's vocabulary): `paperRaised`=`surface`, `paperTint`=`tint`,
+`inkSoft`=`subtle`, `signalDeep`=`signalPressed`, `sage`=`success`, `radii.card`=`radii.lg`,
+`radii.hero`=`radii.xl`, `shadows.card`=`shadows.md`, `shadows.hero`=`shadows.xl`.
+
+### Shared components (`src/ui/`, exported from `ui/index.ts`)
+
+- **`SectionLabel`** — `{ label, signalDot?, note?, weight? }`. `weight` renders `+N%` in
+  `signalDeep` (pass `sectionWeight('photos', input)` from `completion.ts`); `note` renders a
+  plain string in `inkSoft` (`"2 picked"`, `"never on the grid"`); omit both for a bare label.
+- **`Chip`** (extended, not duplicated) — `tone` gained `'boundary'` (ruling 8: `boundaryBg`/
+  `boundaryInk`, selected = `boundaryInk` fill/white text) and `'action'` (`paperTint` fill,
+  `signalDeep` text, for `change`/`+ add your own`). Existing `'surface'`/`'tint'` tones and
+  every existing call site are unchanged.
+- **`ChipGroup`** — `{ options: {value,label}[], value: string[], onChange, mode: 'single'|'multi', max?, tone?, size? }`. Single mode replaces the selection; multi mode toggles up to
+  `max` (a no-op past the cap). Renders `Chip`s with testID `${testID}-${value}`.
+- **`SettingsRow`** — `{ title, subtitle?, icon?, accessory?, onPress?, disabled?, danger? }`.
+  `accessory` is one of `{kind:'chevron'}` / `{kind:'toggle', value, onValueChange}` (uses
+  `ui/Toggle`) / `{kind:'badge', label, tone?}` / `{kind:'value', text}`. `danger` colours the
+  title `colors.danger` — never `boundaryInk` (ruling 8 is hard-nos only). ≥44pt row height.
+- **`CompletionBar`** — `{ percent, showLabel? }`. 6px `paperTint` track, `signal` fill,
+  `accessibilityRole="progressbar"`. Feed it `profileCompletion(input).percent`.
+- **`RowCard`** — `{ children }`. White (`paperRaised`), `radii.card`, `shadows.card`; adds a
+  `lineSoft` hairline under every child except the last (wrap `SettingsRow`s in it).
+- **New icons** (`ui/icons`, same hand-drawn-line style as the existing 16) — `pencil`, `eye`,
+  `image` (albums row — distinct from the existing `album` glyph), `drag` (grip handle),
+  `info`, `chevronRight`, `x`. `gear`/`lock` were **not** re-added — the existing `settings`/
+  `lock` icons already match what the artboards draw.
+
+### `ProfileTile` (`src/profile/ProfileTile.tsx`)
+
+One component, `size: 'grid' | 'thumbnail' | 'hero'`, driven by a plain `ProfileTileData`
+(`firstName`, `gradYear?`, `statusLine?`, `tier`, `hereNow?`, `isOnline?`, `verified?`,
+`photoUrl`, `tint`, `tagLabels?`, `goals?` — already-mapped labels via `goalLabels.ts`,
+`majorLabel?`, `campusShort?`). `grid` and `thumbnail` (the new 76x95 Me-row tile, `radii.tile`)
+take `onPress`. `hero` additionally takes:
+
+- `footer?` — the say-hi/message buttons (and any inline error text); fully caller-owned, the
+  CTA state machine/sheets/navigation never moved.
+- `disabledActions?` — Preview mode: renders `footer` at 40% opacity, `pointerEvents="none"`,
+  hidden from accessibility.
+- `identitySlot?` — content between the name row and the status line (the profile screen's
+  pronouns/orientation "more about" row). Not in the brief's literal data-prop list — documented
+  extension, since that row is a separate `is_public`-gated read this component has no business
+  owning.
+- `photoSlot?` — overrides the built-in single `photoUrl`/`tint` frame with arbitrary content
+  (`PhotoCarousel`, for the profile screen's real multi-photo swipe). Also a documented
+  extension: the brief's data contract is one `photoUrl`, but the existing profile screen's
+  multi-photo carousel has to keep working with zero behaviour change.
+- `topLeft?` / `topRight?` — overlay content in the hero's top corners (back button, overflow
+  menu). `ProfileTile` renders its own here-now badge just before `topRight` when
+  `data.hereNow` is true, matching the pre-refactor layout.
+- `testIDs?` — per-part testID overrides (`root`, `photo`, `placeholder`, `hereNow`, `online`,
+  `tier`, `verified`, `name`, `statusLine`, `goals`, `tags`). `GridTile.tsx` and
+  `profile/[id].tsx` pass the exact legacy testIDs through this, so neither
+  `grid-screen.test.tsx` nor `card-screen.test.tsx` needed a single selector change.
+
+`GridTile.tsx` and `profile/[id].tsx` now render through `ProfileTile` with no behaviour change
+(CTA logic, sheets, navigation, the multi-photo carousel, the broken-image-falls-back-to-tint
+behaviour — now centralized in `ProfileTile`'s own `TilePhoto` helper — all unchanged). `hero`'s
+"here for" chips changed from one solid chip per goal to a single `hereForLabel()` pill plus
+separate tag chips, matching the new artboards; this is a visual update, not the kind of
+behaviour the "no change" instruction was protecting (CTA/sheets/navigation).
+
+### Completion math (`src/profile/completion.ts`)
+
+`profileCompletion({ photoCount, hasStatus, hasHereFor, hasTags })` → `{ percent, items, nextBest }`, weights exactly `photo1 30 / photo2 20 / photo3 20 / status 10 / hereFor 10 / tags 10`. A
+photo counts by row existing at that position, **regardless of moderation state** — the caller
+counts rows, not `ok`-only rows. `nextBest` is the single highest-weight unfilled item (ties
+broken in the table's own order) with one line of product-voice copy — feed it straight to the
+Me tab's copy line under `CompletionBar`. `sectionWeight('photos'|'status'|'hereFor'|'tags', input)` returns the weight of that section's next unfilled item (0 once the section is done) — the
+editor's `SectionLabel` `weight` prop.
+
+### Label maps
+
+- **`src/profile/goalLabels.ts`** — `UserGoal` (`api/goals.ts`'s type extended locally with
+  `'gym'`, pending migration 0011's regeneration of `database.ts` — do not regenerate it here).
+  `GOAL_LABELS` maps every stored value including the retired `group` (`"a group to hang with"`,
+  display-only). `OFFERED_GOALS`/`OFFERED_GOAL_OPTIONS` are the five ruling-7 goals, `group`
+  excluded. `hereForLabel(goals)` → `"here for a · b"`, using the mapped labels. `api/goals.ts`'s
+  `GOAL_OPTIONS` now re-exports `OFFERED_GOAL_OPTIONS` directly.
+- **`src/profile/identityLine.ts`** — `identityLine({ campusShort, majorLabel, gradYear })` →
+  `"CLC · cs '27"`, degrading gracefully as parts go missing (see the file's own doc comment for
+  every combination).
+
+### Voice lint (`src/__tests__/voice-rules.test.ts`)
+
+Scans every string literal (plain + template, comments/imports excluded) in `ui/SectionLabel|SettingsRow|CompletionBar|RowCard`, all of `profile/`, and — so screen agents inherit it for
+free — `app/me/**`, `app/profile-editor/**`, `app/quick-status*`, `me/**` (none of the last four
+exist yet; the scan degrades to an empty list there, not a failure, and picks the screens up
+automatically once they land). Fails on `!`, on any emoji but 👋, on the nine banned words
+(`match, swipe, like, date, single, catch, perfect, connection, journey`, whole-word,
+case-insensitive — `dates` as an enum key is naturally exempt via word-boundary matching, not a
+special case), and on uppercase outside `UPPERCASE_ALLOWLIST` (`CLC` today) for any string
+containing a space. The rule engine (`extractStringLiterals`, `checkLiteral`, `checkSource`) is
+exported and unit-tested directly against synthetic strings, separately from the real-tree scan.
+
+### Verification
+
+- `npx jest` — 86 suites / 849 tests pass (full repo, including this pass's own 8 new suites).
+- `npx tsc --noEmit` — clean.
+- `npx expo export --platform web` — succeeds.
+
+### Deviations
+
+- `radii.xs` (8) rather than reusing the brief's own key name `sm`, `typography.bodyMedium`/
+  `labelLg` rather than reusing `body`/`label` — all four are genuine name/value collisions
+  with an existing token still in use elsewhere; see the token table above.
+- `ProfileTile`'s `photoSlot`/`topLeft`/`topRight`/`identitySlot` aren't in the brief's literal
+  data-prop list — added, and documented at their own definitions, because the profile screen's
+  existing multi-photo carousel, back button, overflow menu and identity row all had to keep
+  working with no behaviour change, and none of the four belongs inside a shared data contract.
+- The private card, `set_my_photo_order` RPC, legal-link placeholder map, and all eight screens
+  themselves are explicitly out of scope for this pass — foundation only.
+<!-- END: Me redesign: foundation -->

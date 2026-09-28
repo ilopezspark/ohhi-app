@@ -1,5 +1,5 @@
 import { Text as RNText, type TextProps as RNTextProps, type TextStyle } from 'react-native';
-import { colors, typography, type TypographyVariant } from '../theme/tokens';
+import { colors, typography, type TypeStyle, type TypographyVariant } from '../theme/tokens';
 
 export interface TextProps extends RNTextProps {
   /** Type-scale role, see `theme/tokens.ts#typography`. Defaults to `'body'`. */
@@ -14,7 +14,12 @@ export interface TextProps extends RNTextProps {
  * for which design screen each variant came from and its size overrides.
  */
 export function Text({ variant = 'body', color, style, ...rest }: TextProps) {
-  const scale = typography[variant];
+  // `typography[variant]`'s inferred type is the union of every individual
+  // variant's own `as const` literal shape (only `sectionLabel` declares
+  // `textTransform`), not the shared `TypeStyle` interface — widen it
+  // explicitly so every variant's optional fields (currently just
+  // `textTransform`) are accessible below regardless of which one it is.
+  const scale: TypeStyle = typography[variant];
   const composed: TextStyle = {
     fontFamily: scale.fontFamily,
     fontSize: scale.fontSize,
@@ -22,6 +27,9 @@ export function Text({ variant = 'body', color, style, ...rest }: TextProps) {
     lineHeight: scale.lineHeight,
     letterSpacing: scale.letterSpacing,
     color: color ?? scale.color,
+    // Only `sectionLabel` (Me redesign) sets this — every other variant
+    // leaves it undefined, which RN treats as "no transform".
+    ...(scale.textTransform ? { textTransform: scale.textTransform } : null),
   };
   return <RNText {...rest} style={[composed, style]} />;
 }

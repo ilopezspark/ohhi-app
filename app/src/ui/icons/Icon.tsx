@@ -3,6 +3,18 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { colors } from '../../theme/tokens';
 
 /**
+ * Me redesign icon additions (`docs/design/me-redesign/brief.md`): the eight
+ * artboards need a handful of glyphs the original 24-screen icon kit above
+ * doesn't have. Drawn in the same hand-drawn-line style as the rest of this
+ * file (24x24 viewBox, `color` prop, default `colors.ink`) rather than
+ * imported from anywhere — there's no source SVG to port them from, since
+ * `me-redesign.pdf`/the PNG artboards aren't machine-readable vector
+ * sources. `gear`/`lock` are NOT re-added here: `SettingsIcon` and
+ * `LockIcon` above already cover the settings-gear and private-card-lock
+ * glyphs the artboards draw, so those are reused as-is.
+ */
+
+/**
  * Hand-drawn line icons extracted verbatim from `docs/design/screens/*.html`'s
  * inline `<svg>` markup (product-owner ruling, 21 September 2026, on deviation
  * 7 / decision 52, `docs/decisions.md`). Every icon below is a de-duplicated
@@ -39,7 +51,15 @@ export type IconName =
   | 'check'
   | 'lock'
   | 'settings'
-  | 'pin';
+  | 'pin'
+  // -- Me redesign additions, see the module doc comment above --
+  | 'pencil'
+  | 'eye'
+  | 'image'
+  | 'drag'
+  | 'info'
+  | 'chevronRight'
+  | 'x';
 
 export interface IconProps {
   /** Rendered width/height — the design's icons are 24px (tab bar) or 18-20px (inline), scaled from a 24x24 viewBox. */
@@ -262,6 +282,92 @@ export function PinIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID
   );
 }
 
+/** Me redesign — the edit pencil badge on photo tiles / the status row's edit accessory. stroke-width 2.2. */
+export function PencilIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-pencil'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Path
+        d="M15.2 4.8a2 2 0 0 1 2.8 0l1.2 1.2a2 2 0 0 1 0 2.8L8 20l-4.5 1 1-4.5z"
+        stroke={color}
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M13.5 6.5l4 4" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/** Me redesign — "see how you look on the grid" preview button. stroke-width 2.2. */
+export function EyeIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-eye'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Path
+        d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"
+        stroke={color}
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Circle cx={12} cy={12} r={3} stroke={color} strokeWidth={2.2} />
+    </Svg>
+  );
+}
+
+/** Me redesign — the "albums" row leading icon. A picture frame with a sun and a peak, distinct from `AlbumIcon`'s two-overlapping-squares glyph. stroke-width 2.2. */
+export function ImageIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-image'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Rect x={3} y={4} width={18} height={16} rx={3} stroke={color} strokeWidth={2.2} />
+      <Circle cx={9} cy={10} r={1.8} stroke={color} strokeWidth={2.2} />
+      <Path d="M4.5 17.5l5-5 4 3.5 3-3 3.5 4" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/** Me redesign — the long-press drag handle on EditPhotos/tag reordering. Two columns of three dots (a standard grip glyph). Filled, not stroked. */
+export function DragIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-drag'} width={size} height={size} viewBox="0 0 24 24" fill={color} style={style}>
+      <Circle cx={9} cy={6} r={1.6} />
+      <Circle cx={9} cy={12} r={1.6} />
+      <Circle cx={9} cy={18} r={1.6} />
+      <Circle cx={15} cy={6} r={1.6} />
+      <Circle cx={15} cy={12} r={1.6} />
+      <Circle cx={15} cy={18} r={1.6} />
+    </Svg>
+  );
+}
+
+/** Me redesign — an inline "i" info glyph (not otherwise used by the 24-screen kit). stroke-width 2.2. */
+export function InfoIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-info'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={2.2} />
+      <Path d="M12 11v5.5" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+      <Circle cx={12} cy={7.75} r={1.15} fill={color} />
+    </Svg>
+  );
+}
+
+/** Me redesign — the disclosure chevron on every `SettingsRow`/`RowCard` navigation row. stroke-width 2.4. */
+export function ChevronRightIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-chevron-right'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Path d="M9 6l6 6-6 6" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/** Me redesign — the status field's "clear" affordance and other explicit dismiss controls (the 24-screen kit has no close glyph, see `Icon.tsx`'s original doc comment). stroke-width 2.4. */
+export function XIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-x'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Path d="M6 6l12 12M18 6L6 18" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 const ICONS: Record<IconName, (props: IconProps) => ReturnType<typeof BackIcon>> = {
   back: BackIcon,
   more: MoreIcon,
@@ -279,6 +385,13 @@ const ICONS: Record<IconName, (props: IconProps) => ReturnType<typeof BackIcon>>
   lock: LockIcon,
   settings: SettingsIcon,
   pin: PinIcon,
+  pencil: PencilIcon,
+  eye: EyeIcon,
+  image: ImageIcon,
+  drag: DragIcon,
+  info: InfoIcon,
+  chevronRight: ChevronRightIcon,
+  x: XIcon,
 };
 
 export interface DispatchIconProps extends IconProps {

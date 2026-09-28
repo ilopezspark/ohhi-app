@@ -9,9 +9,7 @@ import { sendHi } from '../../api/his';
 import { startConversation } from '../../api/conversations';
 import { sendMessage } from '../../api/messages';
 import { signedPhotoUrls } from '../../api/photos';
-import { GOAL_OPTIONS } from '../../api/goals';
 import { PhotoCarousel } from '../../card/PhotoCarousel';
-import { ChipList } from '../../card/ChipList';
 import { CtaButton } from '../../card/CtaButton';
 import { OverflowMenu } from '../../card/OverflowMenu';
 import { MessageSheet } from '../../card/MessageSheet';
@@ -19,10 +17,10 @@ import { DetailsSheet } from '../../card/DetailsSheet';
 import { cardCta } from '../../card/cta';
 import { tierWord } from '../../grid/tierLabel';
 import { tintForPhoto } from '../../photos/tint';
-import { BackIcon, Badge, CheckIcon, Dot, PinIcon, Text } from '../../ui';
-import { colors, layout, radii, shadows, spacing } from '../../theme/tokens';
-
-const GOAL_LABELS: Record<string, string> = Object.fromEntries(GOAL_OPTIONS.map((o) => [o.value, o.label]));
+import { ProfileTile, type ProfileTileData } from '../../profile/ProfileTile';
+import { goalLabel } from '../../profile/goalLabels';
+import { BackIcon, Text } from '../../ui';
+import { colors, layout, radii, spacing } from '../../theme/tokens';
 
 /**
  * Thrown by `messageMutation` when `startConversation` succeeds but the
@@ -188,68 +186,57 @@ export default function ProfileScreen() {
   const identity = identityQuery.data ?? null;
   const showIdentity = !!identity && (!!identity.pronouns || identity.orientation.length > 0);
   const heroTint = tintForPhoto(card.user_id, 0);
-  const goalLabels = (card.goals ?? []).map((goal) => GOAL_LABELS[goal] ?? goal);
-  // Migration 0009: `card.tier` is the effective tier — mirrors
-  // `grid/GridTile.tsx`'s treatment. `away` has no word, so the pill is
-  // omitted rather than shown empty. The online dot mirrors the tile too:
-  // quieter than the here-now badge, and only shown when not here-now.
+  const goalLabels = (card.goals ?? []).map(goalLabel);
+  // Kept only for MessageSheet's subtitle below — ProfileTile now derives
+  // the hero's own tier pill text internally from `tileData.tier`.
   const heroTierWord = tierWord(card.tier);
-  const heroShowOnlineDot = !card.here_now && !!card.is_online;
+
+  const tileData: ProfileTileData = {
+    firstName: card.first_name,
+    gradYear: card.grad_year,
+    statusLine: card.status_line,
+    // Migration 0009: `card.tier` is the effective tier — mirrors
+    // `ProfileTile`'s grid treatment. `away` has no word, so the pill is
+    // omitted rather than shown empty.
+    tier: card.tier,
+    hereNow: card.here_now,
+    isOnline: card.is_online,
+    // Every card `profile_card_for` returns already cleared
+    // `is_grid_visible`'s `verification_status = 'verified'` gate — see
+    // `ProfileTile`'s grid treatment's identical note — so this renders
+    // unconditionally, not from a per-row field the RPC doesn't return.
+    verified: true,
+    photoUrl: null, // photoSlot below supplies the real multi-photo carousel.
+    tint: heroTint,
+    tagLabels: card.tag_labels ?? [],
+    goals: goalLabels,
+    // Single-campus MVP: the pre-refactor hero hardcoded "· CLC" for
+    // on_campus. ProfileTile now derives that suffix from campusShort
+    // instead of hardcoding it internally, so it's passed through here to
+    // keep the exact same rendered text.
+    campusShort: 'CLC',
+  };
 
   return (
     <View style={styles.container} testID="profile-screen">
-      <View style={[styles.hero, shadows.xl, { backgroundColor: heroTint }]}>
-        <PhotoCarousel
-          style={styles.heroPhoto}
-          userId={card.user_id}
-          paths={photoPaths}
-          urls={photoUrlsQuery.data ?? {}}
-        />
-
-        <View style={styles.heroGradient} pointerEvents="none" />
-
-        <View style={styles.topRow}>
-          <BackButtonCircle onPress={() => router.back()} />
-          <View style={styles.topRowRight}>
-            {card.here_now ? <Badge label="here now" dot tone="neutral" testID="profile-here-now-badge" /> : null}
-            <OverflowMenu targetId={card.user_id} />
-          </View>
-        </View>
-
-        <View style={styles.bottom}>
-          {heroTierWord ? (
-            <View style={styles.tierPill} testID="profile-tier-pill">
-              <PinIcon size={12} color={colors.onDark} />
-              <Text variant="caption" color={colors.onDark}>
-                {heroTierWord}
-                {card.tier === 'on_campus' ? ' · CLC' : ''}
-              </Text>
-            </View>
-          ) : null}
-
-          <View style={styles.nameRow}>
-            <Text variant="hero" color={colors.onDark} testID="profile-name">
-              {card.first_name}
-              {card.grad_year ? (
-                <Text variant="hero" color={colors.onDark} style={styles.gradYear}>
-                  {`  '${String(card.grad_year).slice(-2)}`}
-                </Text>
-              ) : null}
-            </Text>
-            {/* Every card `profile_card_for` returns already cleared
-                `is_grid_visible`'s `verification_status = 'verified'` gate —
-                see `grid/GridTile.tsx`'s identical note — so this renders
-                unconditionally, not from a per-row field the RPC doesn't
-                return. */}
-            <View style={styles.verifiedBadge} accessibilityLabel="verified student">
-              <CheckIcon size={12} color={colors.ink} />
-            </View>
-            {heroShowOnlineDot ? (
-              <Dot testID="profile-online-dot" color={colors.success} size={8} />
-            ) : null}
-          </View>
-
-          {showIdentity ? (
+      <ProfileTile
+        size="hero"
+        testID="profile-hero"
+        data={tileData}
+        testIDs={{
+          tier: 'profile-tier-pill',
+          online: 'profile-online-dot',
+          hereNow: 'profile-here-now-badge',
+          name: 'profile-name',
+          statusLine: 'profile-status-line',
+          goals: 'profile-goals',
+          tags: 'profile-tags',
+        }}
+        photoSlot={<PhotoCarousel style={styles.heroPhoto} userId={card.user_id} paths={photoPaths} urls={photoUrlsQuery.data ?? {}} />}
+        topLeft={<BackButtonCircle onPress={() => router.back()} />}
+        topRight={<OverflowMenu targetId={card.user_id} />}
+        identitySlot={
+          showIdentity ? (
             <View style={styles.identityRow}>
               <Text variant="caption" color={colors.onDark} testID="profile-identity">
                 {[identity?.pronouns, identity?.orientation?.length ? identity.orientation.join(', ') : null]
@@ -262,39 +249,31 @@ export default function ProfileScreen() {
                 </Text>
               </PressableIdentity>
             </View>
-          ) : null}
+          ) : null
+        }
+        footer={
+          <>
+            {hiMutation.isError ? (
+              <Text variant="helper" color={colors.onDark} testID="profile-hi-error">
+                {hiMutation.error instanceof Error ? hiMutation.error.message : "That didn't work."}
+              </Text>
+            ) : null}
+            {messageMutation.isError ? (
+              <Text variant="helper" color={colors.onDark} testID="profile-message-error">
+                {messageMutation.error instanceof Error ? messageMutation.error.message : "That didn't work."}
+              </Text>
+            ) : null}
 
-          {card.status_line ? (
-            <Text variant="body" color={colors.onDark} testID="profile-status-line" style={styles.statusLine}>
-              {card.status_line}
-            </Text>
-          ) : null}
-
-          <View style={styles.chipsRow}>
-            <ChipList testID="profile-goals" items={goalLabels} tone="solid" />
-            <ChipList testID="profile-tags" items={card.tag_labels ?? []} tone="translucent" />
-          </View>
-
-          {hiMutation.isError ? (
-            <Text variant="helper" color={colors.onDark} testID="profile-hi-error">
-              {hiMutation.error instanceof Error ? hiMutation.error.message : "That didn't work."}
-            </Text>
-          ) : null}
-          {messageMutation.isError ? (
-            <Text variant="helper" color={colors.onDark} testID="profile-message-error">
-              {messageMutation.error instanceof Error ? messageMutation.error.message : "That didn't work."}
-            </Text>
-          ) : null}
-
-          <CtaButton
-            cta={cta}
-            hiBusy={hiMutation.isPending}
-            messageBusy={messageMutation.isPending || cta.kind === 'message_pending'}
-            onHi={() => hiMutation.mutate()}
-            onMessage={onMessage}
-          />
-        </View>
-      </View>
+            <CtaButton
+              cta={cta}
+              hiBusy={hiMutation.isPending}
+              messageBusy={messageMutation.isPending || cta.kind === 'message_pending'}
+              onHi={() => hiMutation.mutate()}
+              onMessage={onMessage}
+            />
+          </>
+        }
+      />
 
       <Text variant="caption" color={colors.subtle} style={styles.footer}>
         one message to start. they can always say hi back.
@@ -355,27 +334,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.paper, padding: layout.gutterHero, paddingBottom: 0 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, backgroundColor: colors.paper },
   unavailableText: { textAlign: 'center' },
-  hero: { flex: 1, borderRadius: radii.xl, overflow: 'hidden', position: 'relative' },
+  // `PhotoCarousel`'s own frame style override — passed through `ProfileTile`'s
+  // `photoSlot`, unchanged from before the refactor.
   heroPhoto: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, aspectRatio: undefined, borderRadius: 0 },
-  heroGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: '58%',
-    backgroundColor: colors.ink,
-    opacity: 0.5,
-  },
-  topRow: {
-    position: 'absolute',
-    top: 48,
-    left: 14,
-    right: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  topRowRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.smMd },
   backButton: {
     width: 44,
     height: 44,
@@ -384,38 +345,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bottom: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 24,
-    gap: spacing.mdLg,
-  },
-  tierPill: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: 'rgba(247,243,236,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(247,243,236,0.45)',
-    paddingHorizontal: spacing.mdLg,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.pill,
-  },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  gradYear: { fontSize: 22 },
-  verifiedBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: radii.circle,
-    backgroundColor: colors.success,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   identityRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.smMd, flexWrap: 'wrap' },
   identityLink: { opacity: 0.75, textDecorationLine: 'underline' },
-  statusLine: { opacity: 0.92 },
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   footer: { textAlign: 'center', paddingVertical: spacing.mdLg, paddingBottom: spacing.xxxl },
 });
