@@ -1,0 +1,1570 @@
+[
+  {
+    "file": "albums/debbie-0-0.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.shared_with_me[0] (owner=\"tyler\", name=\"group project era\").photo_prompts[0]"
+    },
+    "prompt": "candid phone photo of a whiteboard covered in a database schema sketch",
+    "generation_id": "337718c3-3eb3-43dc-95fb-7d81cfb70bab",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 116643,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-0-1.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.shared_with_me[0] (owner=\"tyler\", name=\"group project era\").photo_prompts[1]"
+    },
+    "prompt": "candid phone photo of a laptop screen with code and a half-drunk energy drink beside it",
+    "generation_id": "ba168156-bb0b-4bf0-b942-0b98fc197fdb",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 157181,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-0-2.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.shared_with_me[0] (owner=\"tyler\", name=\"group project era\").photo_prompts[2]"
+    },
+    "prompt": "candid phone photo of a library study room with two laptops open",
+    "generation_id": "1724d7fd-b81d-4bc7-bebb-b1b63c88429c",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 186776,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-0-3.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.shared_with_me[0] (owner=\"tyler\", name=\"group project era\").photo_prompts[3]"
+    },
+    "prompt": "candid phone photo of a printed project outline covered in pen edits",
+    "generation_id": "fab1bd23-1ba1-4b25-88a2-fe6a490177ac",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 209623,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-0-4.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.shared_with_me[0] (owner=\"tyler\", name=\"group project era\").photo_prompts[4]"
+    },
+    "prompt": "candid phone photo of a campus vending machine snack haul",
+    "generation_id": "64801d64-2ed3-4696-b314-576ee3eff31a",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 286779,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-1-0.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.shared_with_me[1] (owner=\"carlos\", name=\"bio life\").photo_prompts[0]"
+    },
+    "prompt": "candid phone photo of a microscope station in a biology lab",
+    "generation_id": "8fa61b61-013f-4780-a814-07987b13beea",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 144495,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-1-1.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.shared_with_me[1] (owner=\"carlos\", name=\"bio life\").photo_prompts[1]"
+    },
+    "prompt": "candid phone photo of a backpack and a thermos on a classroom desk",
+    "generation_id": "f9349f15-8759-45e8-8b3e-b0cfb4d3e418",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 174588,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-1-2.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.shared_with_me[1] (owner=\"carlos\", name=\"bio life\").photo_prompts[2]"
+    },
+    "prompt": "candid phone photo of a study notebook with labeled cell diagrams",
+    "generation_id": "0cc8a1e2-b469-4286-89ce-8b72e6c32faf",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 194634,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-1-3.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.shared_with_me[1] (owner=\"carlos\", name=\"bio life\").photo_prompts[3]"
+    },
+    "prompt": "candid phone photo of a campus parking lot at golden hour",
+    "generation_id": "d7058423-64cb-4bb9-91a2-9682baade512",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 210080,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-2-0.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.owned_by_me[0] (name=\"campus favorites\").photo_prompts[0]"
+    },
+    "prompt": "candid phone photo of the campus quad in early fall",
+    "generation_id": "c6aefd2f-e6ff-4215-8fd2-0b31c7f0b6ee",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 241806,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-2-1.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.owned_by_me[0] (name=\"campus favorites\").photo_prompts[1]"
+    },
+    "prompt": "candid phone photo of a latte from the campus cafe on a wooden table",
+    "generation_id": "5d932be3-bbb1-4b9b-b6d3-98e8e3691668",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 184815,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-2-2.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.owned_by_me[0] (name=\"campus favorites\").photo_prompts[2]"
+    },
+    "prompt": "candid phone photo of a friend group walking between classes",
+    "generation_id": "bd2d30d8-5452-440a-8ee8-8ab44f02794a",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 206175,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-2-3.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.owned_by_me[0] (name=\"campus favorites\").photo_prompts[3]"
+    },
+    "prompt": "candid phone photo of a sunset view from the commuter parking lot",
+    "generation_id": "bc3aad05-3034-4db4-af0a-bbe7e930c553",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 142633,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-3-0.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.owned_by_me[1] (name=\"study szn\").photo_prompts[0]"
+    },
+    "prompt": "candid phone photo of color-coded notes spread across a desk",
+    "generation_id": "b8c7ebc4-9580-44e7-9bf7-fb0c1fb7f516",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 278916,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-3-1.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.owned_by_me[1] (name=\"study szn\").photo_prompts[1]"
+    },
+    "prompt": "candid phone photo of a library table stacked with textbooks",
+    "generation_id": "30ef0419-7270-4108-9c44-ca130e6c1ad1",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 234366,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-3-2.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.owned_by_me[1] (name=\"study szn\").photo_prompts[2]"
+    },
+    "prompt": "candid phone photo of a whiteboard covered in a study schedule",
+    "generation_id": "6a8a9d93-78ef-449b-b2a9-bc1aa61ea526",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 217645,
+    "flagged": null
+  },
+  {
+    "file": "albums/debbie-3-3.jpg",
+    "group": "albums",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.albums.owned_by_me[1] (name=\"study szn\").photo_prompts[3]"
+    },
+    "prompt": "candid phone photo of a coffee cup next to a laptop late at night",
+    "generation_id": "39928906-d73e-4d64-80c9-b75bb8f90d77",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 130628,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-0-0.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.shared_with_me[0] (owner=\"maya\", name=\"clinical year\").photo_prompts[0]"
+    },
+    "prompt": "candid phone photo of a nursing badge and lanyard on a break room table, natural light",
+    "generation_id": "7ed3a302-b5a0-47db-8e02-16a1cce22668",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 191074,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-0-1.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.shared_with_me[0] (owner=\"maya\", name=\"clinical year\").photo_prompts[1]"
+    },
+    "prompt": "candid phone photo of a study group of nursing students around textbooks and highlighters",
+    "generation_id": "ff19810d-a6db-417a-b5f1-ca781308a405",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 214566,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-0-2.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.shared_with_me[0] (owner=\"maya\", name=\"clinical year\").photo_prompts[2]"
+    },
+    "prompt": "candid phone photo of a hospital cafeteria tray with a sandwich and coffee",
+    "generation_id": "51ccded2-53e2-4423-bb72-fd4749fbbd29",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 147374,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-0-3.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.shared_with_me[0] (owner=\"maya\", name=\"clinical year\").photo_prompts[3]"
+    },
+    "prompt": "candid phone photo of scrubs laid out on a bed before an early clinical shift",
+    "generation_id": "49efb21b-1eaf-4ac9-8d3c-7059687b629b",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 179477,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-0-4.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.shared_with_me[0] (owner=\"maya\", name=\"clinical year\").photo_prompts[4]"
+    },
+    "prompt": "candid phone photo of a sunrise seen from a hospital parking garage",
+    "generation_id": "86cfd435-1457-4d59-8da6-bc7d57365b52",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 122528,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-1-0.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.shared_with_me[1] (owner=\"sofia\", name=\"studio work\").photo_prompts[0]"
+    },
+    "prompt": "candid phone photo of a printmaking press with a fresh print being pulled",
+    "generation_id": "c57734ce-cc24-4b93-9292-ec0e0578dd7b",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 183733,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-1-1.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.shared_with_me[1] (owner=\"sofia\", name=\"studio work\").photo_prompts[1]"
+    },
+    "prompt": "candid phone photo of an art studio table covered in paint tubes and brushes",
+    "generation_id": "2dc06e61-1129-4205-98be-d498705a6c3f",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 225911,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-1-2.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.shared_with_me[1] (owner=\"sofia\", name=\"studio work\").photo_prompts[2]"
+    },
+    "prompt": "candid phone photo of a finished ink print pinned to a drying line",
+    "generation_id": "06910602-7f4d-44c5-8aaa-0e7e65a71867",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 202237,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-1-3.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.shared_with_me[1] (owner=\"sofia\", name=\"studio work\").photo_prompts[3]"
+    },
+    "prompt": "candid phone photo of a sketchbook open to a half-finished drawing",
+    "generation_id": "280cdd2c-5d4a-460b-bee0-61a5f41f1f7c",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 190486,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-1-4.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.shared_with_me[1] (owner=\"sofia\", name=\"studio work\").photo_prompts[4]"
+    },
+    "prompt": "candid phone photo of an art building hallway lined with student work",
+    "generation_id": "10c55e15-2cec-4535-97ee-63ab75c9b914",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 160876,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-2-0.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.owned_by_me[0] (name=\"weekend stuff\").photo_prompts[0]"
+    },
+    "prompt": "candid phone photo of a football game crowd in campus colors under stadium lights",
+    "generation_id": "6d0dc6f9-93d7-462a-95f3-dedf4a369f49",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 286572,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-2-1.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.owned_by_me[0] (name=\"weekend stuff\").photo_prompts[1]"
+    },
+    "prompt": "candid phone photo of a plate of diner food shared with friends",
+    "generation_id": "0279a093-02db-43d5-960c-08b31c913443",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 205079,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-2-2.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.owned_by_me[0] (name=\"weekend stuff\").photo_prompts[2]"
+    },
+    "prompt": "candid phone photo of a walk along a suburban Illinois trail in fall",
+    "generation_id": "520b6b29-b061-43fc-ab24-30864d3335ca",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 382286,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-2-3.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.owned_by_me[0] (name=\"weekend stuff\").photo_prompts[3]"
+    },
+    "prompt": "candid phone photo of a couch and a board game mid-play",
+    "generation_id": "5475674d-edae-4a1f-9fa2-c2be475f60b3",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 160586,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-3-0.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.owned_by_me[1] (name=\"gym progress\").photo_prompts[0]"
+    },
+    "prompt": "candid phone photo of a campus gym weight rack, fully clothed in athletic wear",
+    "generation_id": "307756fe-7e6c-4f1e-8b43-dd79d0c808a2",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 183651,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-3-1.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.owned_by_me[1] (name=\"gym progress\").photo_prompts[1]"
+    },
+    "prompt": "candid phone photo of a post-workout selfie, fully clothed, in a gym mirror",
+    "generation_id": "cb5f896d-2bf5-4c26-93c9-b3b4d5eca483",
+    "attempts": 2,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 147466,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-3-2.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.owned_by_me[1] (name=\"gym progress\").photo_prompts[2]"
+    },
+    "prompt": "candid phone photo of a water bottle and gym bag on a bench",
+    "generation_id": "551c9f0c-b280-48e0-bb60-c64407b49384",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 236185,
+    "flagged": null
+  },
+  {
+    "file": "albums/izaac-3-3.jpg",
+    "group": "albums",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.albums.owned_by_me[1] (name=\"gym progress\").photo_prompts[3]"
+    },
+    "prompt": "candid phone photo of a morning run route along a suburban street",
+    "generation_id": "cbe5e8ed-50a7-43ef-b6b6-d0082e1b5b96",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 218732,
+    "flagged": null
+  },
+  {
+    "file": "cast/aisha-0.jpg",
+    "group": "cast",
+    "owner_key": "aisha",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"aisha\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old South Asian woman with straight black hair and glasses, wearing a hoodie and jeans, sitting on a bench outside a community college computer science building, casual everyday clothing, soft natural light, shot on a phone, head-and-shoulders, friendly relaxed expression.",
+    "generation_id": "4d9b2169-7f1e-4e8d-9be9-761f203cb8db",
+    "attempts": 3,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 208676,
+    "flagged": null
+  },
+  {
+    "file": "cast/aisha-1.jpg",
+    "group": "cast",
+    "owner_key": "aisha",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"aisha\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 19-year-old South Asian woman with straight black hair and glasses, candid photorealistic phone photo, studying late at night at a desk lit by a laptop screen and a small lamp, hoodie, focused expression, waist-up.",
+    "generation_id": "116b0ec1-73e7-4717-a41f-3591e0ffedc4",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 180746,
+    "flagged": null
+  },
+  {
+    "file": "cast/aisha-2.jpg",
+    "group": "cast",
+    "owner_key": "aisha",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"aisha\"].extra_photo_prompts[1]"
+    },
+    "prompt": "The same 19-year-old South Asian woman with straight black hair and glasses, candid photorealistic phone photo, laughing with friends at a small campus esports club meetup, controller in hand, casual clothing, indoor light, waist-up.",
+    "generation_id": "774f89ae-a665-4379-bda1-f4009ac0d4da",
+    "attempts": 2,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 131811,
+    "flagged": null
+  },
+  {
+    "file": "cast/andre-0.jpg",
+    "group": "cast",
+    "owner_key": "andre",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"andre\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 25-year-old Black man with short natural hair, wearing a plain athletic pullover, standing by the soccer field near a community college campus, casual everyday clothing, late afternoon natural light, shot on a phone, waist-up, relaxed grin.",
+    "generation_id": "e61c624f-6270-4b9a-b455-d73b58f4da56",
+    "attempts": 3,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 170907,
+    "flagged": "chest patch/emblem on pullover could not be fully removed after 2 regeneration attempts (each produced a different patch/crest); kept the original, least-prominent version"
+  },
+  {
+    "file": "cast/andre-1.jpg",
+    "group": "cast",
+    "owner_key": "andre",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"andre\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 25-year-old Black man with short natural hair, candid photorealistic phone photo, at an intramural soccer game on the sideline in cleats and a jersey, fully clothed, natural outdoor light, waist-up, energetic expression.",
+    "generation_id": "472f67ba-8972-4f34-80e5-abb0650b64e6",
+    "attempts": 2,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 160719,
+    "flagged": "a Nike swoosh logo was present in both attempts (soccer jersey); kept the version with fewer branding elements, recommend manual review before production use"
+  },
+  {
+    "file": "cast/brandon-0.jpg",
+    "group": "cast",
+    "owner_key": "brandon",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"brandon\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old white man with short curly brown hair, wearing a work jacket over a plain tee, standing near the trades building on a suburban Illinois community college campus, natural daylight, shot on a phone, waist-up, easygoing smile.",
+    "generation_id": "96ebef89-697c-4806-b025-9209f547082e",
+    "attempts": 3,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 170811,
+    "flagged": "a small fabric name-tag/patch persisted through 2 regeneration attempts (text illegible each time); kept the least prominent version"
+  },
+  {
+    "file": "cast/brandon-1.jpg",
+    "group": "cast",
+    "owner_key": "brandon",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"brandon\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 19-year-old white man with short curly brown hair, candid photorealistic phone photo, on a soccer field in cleats and a jersey mid-game, fully clothed, natural outdoor light, waist-up, energetic expression.",
+    "generation_id": "d8178e2a-2fdb-42d8-9252-0b231bcce0eb",
+    "attempts": 3,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 157663,
+    "flagged": null
+  },
+  {
+    "file": "cast/brianna-0.jpg",
+    "group": "cast",
+    "owner_key": "brianna",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"brianna\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Black woman with long braided hair, wearing a cropped denim jacket over a plain top, standing in a campus courtyard on a community college campus, casual everyday clothing, bright natural light, shot on a phone, waist-up, bright easy smile.",
+    "generation_id": "e89350f9-2ebe-4caf-8b5e-0a73784ad47d",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 243444,
+    "flagged": null
+  },
+  {
+    "file": "cast/brianna-1.jpg",
+    "group": "cast",
+    "owner_key": "brianna",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"brianna\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 20-year-old Black woman with long braided hair, candid photorealistic phone photo, holding a to-go latte outside a campus café, casual clothing, morning natural light, head-and-shoulders, relaxed smile.",
+    "generation_id": "5e7bc9e7-8357-4a91-86be-0213656267ee",
+    "attempts": 3,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 228136,
+    "flagged": null
+  },
+  {
+    "file": "cast/carlos-0.jpg",
+    "group": "cast",
+    "owner_key": "carlos",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"carlos\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 36-year-old Latino man with short graying hair and a trimmed beard, wearing a plain button-down shirt, standing outside a science building on a community college campus, natural daylight, shot on a phone, waist-up, warm relaxed smile.",
+    "generation_id": "711c5eae-389c-4877-ac84-eb045afd3350",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 213474,
+    "flagged": null
+  },
+  {
+    "file": "cast/chinelo-0.jpg",
+    "group": "cast",
+    "owner_key": "chinelo",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"chinelo\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Nigerian-American woman with long braided hair, wearing a blazer over a casual top, standing outside the business building on a community college campus, bright natural light, shot on a phone, waist-up, confident warm smile.",
+    "generation_id": "e9e7dee1-48cb-4d2b-8185-4d1d6f722671",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 227204,
+    "flagged": null
+  },
+  {
+    "file": "cast/chinelo-1.jpg",
+    "group": "cast",
+    "owner_key": "chinelo",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"chinelo\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 20-year-old Nigerian-American woman with long braided hair, candid photorealistic phone photo, walking through a campus courtyard with a coffee cup, casual clothing, natural outdoor light, waist-up, relaxed expression.",
+    "generation_id": "f5ec5291-50ea-40f7-a1c5-342aac52e8d2",
+    "attempts": 3,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 138242,
+    "flagged": "cropped t-shirt still exposes midriff despite 2 regeneration attempts requesting full coverage (an earlier attempt also had baked-in caption-text artifacts, since resolved); kept the best available"
+  },
+  {
+    "file": "cast/destiny-0.jpg",
+    "group": "cast",
+    "owner_key": "destiny",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"destiny\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Black woman with long box braids, wearing a graphic hoodie, sitting on a low wall outside a computer science building on a community college campus, natural light, shot on a phone, waist-up, playful grin.",
+    "generation_id": "3a7ada1c-1e08-43e1-9640-c7f63d286ec5",
+    "attempts": 2,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 166952,
+    "flagged": null
+  },
+  {
+    "file": "cast/destiny-1.jpg",
+    "group": "cast",
+    "owner_key": "destiny",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"destiny\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 20-year-old Black woman with long box braids, candid photorealistic phone photo, at a desk setup with a mechanical keyboard and monitor glow late at night, casual clothing, indoor lighting, waist-up, focused expression.",
+    "generation_id": "8190b677-7fa6-41d5-a2aa-c53d3321a15d",
+    "attempts": 2,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 173396,
+    "flagged": null
+  },
+  {
+    "file": "cast/destiny-2.jpg",
+    "group": "cast",
+    "owner_key": "destiny",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"destiny\"].extra_photo_prompts[1]"
+    },
+    "prompt": "The same 20-year-old Black woman with long box braids, candid photorealistic phone photo, holding an iced coffee outside a campus building, casual clothing, bright natural light, head-and-shoulders, cheerful smile.",
+    "generation_id": "a285bc01-12f0-414c-9d4c-873817e84703",
+    "attempts": 2,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 226106,
+    "flagged": null
+  },
+  {
+    "file": "cast/diego-0.jpg",
+    "group": "cast",
+    "owner_key": "diego",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"diego\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 23-year-old Latino man with short buzzed hair and a light beard, wearing a plain gray t-shirt and a canvas work jacket, standing near the trades building on a community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, easygoing smile.",
+    "generation_id": "f29c66d9-b3cf-4dd9-8e8f-2fc869e7da30",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 232431,
+    "flagged": null
+  },
+  {
+    "file": "cast/diego-1.jpg",
+    "group": "cast",
+    "owner_key": "diego",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"diego\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 23-year-old Latino man with short buzzed hair and a light beard, candid photorealistic phone photo at a gym, mid-rep with a dumbbell, fully clothed in athletic wear, natural gym lighting, friendly expression, waist-up.",
+    "generation_id": "250877ed-af4b-41f4-a937-6a81463a27ca",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 187810,
+    "flagged": null
+  },
+  {
+    "file": "cast/dmitri-0.jpg",
+    "group": "cast",
+    "owner_key": "dmitri",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"dmitri\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Eastern European man with light brown messy hair, wearing a zip hoodie, sitting on a low wall outside a student center on a community college campus, casual everyday clothing, natural light, shot on a phone, head-and-shoulders, easygoing smile.",
+    "generation_id": "0fec73c8-f24f-4be2-a11e-88ac7607aaa0",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 240487,
+    "flagged": null
+  },
+  {
+    "file": "cast/dmitri-1.jpg",
+    "group": "cast",
+    "owner_key": "dmitri",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"dmitri\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 20-year-old Eastern European man with light brown messy hair, candid photorealistic phone photo, at a computer setup with a headset around his neck, monitor glow, casual clothing, indoor lighting, waist-up, focused half-smile.",
+    "generation_id": "cc2b745d-d39d-4dbc-94cf-0f1bf3f7c961",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 149513,
+    "flagged": null
+  },
+  {
+    "file": "cast/emily-0.jpg",
+    "group": "cast",
+    "owner_key": "emily",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"emily\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old white woman with shoulder-length blonde hair, wearing a cozy cardigan, standing outside an education building on a suburban Illinois community college campus, casual everyday clothing, soft overcast light, shot on a phone, waist-up, cheerful smile.",
+    "generation_id": "9c41cc06-5dc2-42fe-a7ba-bf61207b4252",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 275052,
+    "flagged": null
+  },
+  {
+    "file": "cast/emily-1.jpg",
+    "group": "cast",
+    "owner_key": "emily",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"emily\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 19-year-old white woman with shoulder-length blonde hair, candid photorealistic phone photo, sitting cross-legged on a dorm-style rug studying with color-coded flashcards, casual clothing, warm indoor light, waist-up, focused expression.",
+    "generation_id": "79702edb-27db-4bf2-9523-f64ac76fc1ce",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 123208,
+    "flagged": null
+  },
+  {
+    "file": "cast/fatima-0.jpg",
+    "group": "cast",
+    "owner_key": "fatima",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"fatima\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 24-year-old Middle Eastern woman wearing a light patterned hijab and a cardigan, standing outside an education building on a community college campus, casual everyday clothing, warm natural light, shot on a phone, waist-up, warm friendly smile.",
+    "generation_id": "6ec8abde-f532-49ff-9022-44f5c5ed8dab",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 215662,
+    "flagged": null
+  },
+  {
+    "file": "cast/fatima-1.jpg",
+    "group": "cast",
+    "owner_key": "fatima",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"fatima\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 24-year-old Middle Eastern woman in a light patterned hijab, candid photorealistic phone photo, cooking in a small apartment kitchen, stirring a pot, casual clothing, warm indoor light, waist-up, relaxed expression.",
+    "generation_id": "5a02569a-b0dd-49f1-8445-4854a9fc14a0",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 126145,
+    "flagged": null
+  },
+  {
+    "file": "cast/hassan-0.jpg",
+    "group": "cast",
+    "owner_key": "hassan",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"hassan\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 23-year-old Middle Eastern man with short dark hair and a trimmed beard, wearing a plain button-down shirt with sleeves rolled up, standing outside a science building on a community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, tired but friendly smile.",
+    "generation_id": "35788520-b55b-421f-89a3-fd7316bb7521",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 179270,
+    "flagged": null
+  },
+  {
+    "file": "cast/jordan-0.jpg",
+    "group": "cast",
+    "owner_key": "jordan",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"jordan\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 21-year-old Black man with short twisted hair, wearing a fitted quarter-zip pullover, standing in a parking lot on a suburban Illinois community college campus, casual everyday clothing, natural daylight, shot on a phone, waist-up, confident friendly smile.",
+    "generation_id": "60152792-ca3b-491a-8f9b-794f08c4ec10",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 230604,
+    "flagged": null
+  },
+  {
+    "file": "cast/josh-0.jpg",
+    "group": "cast",
+    "owner_key": "josh",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"josh\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 30-year-old white man with short hair and a close-cropped beard, wearing a plain zip-up jacket, standing outside a classroom building at dusk on a community college campus, casual everyday clothing, soft evening light, shot on a phone, waist-up, tired but friendly smile.",
+    "generation_id": "4e952077-d539-48de-9f1b-a35d07df69e9",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 189180,
+    "flagged": null
+  },
+  {
+    "file": "cast/keisha-0.jpg",
+    "group": "cast",
+    "owner_key": "keisha",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"keisha\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 22-year-old Black woman with short natural curls, wearing a tailored blazer over a plain top, standing outside the business building on a community college campus, casual everyday clothing, bright natural light, shot on a phone, waist-up, confident smile.",
+    "generation_id": "4802b123-edca-4759-86c0-35aa37111e81",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 198655,
+    "flagged": null
+  },
+  {
+    "file": "cast/keisha-1.jpg",
+    "group": "cast",
+    "owner_key": "keisha",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"keisha\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 22-year-old Black woman with short natural curls, candid photorealistic phone photo, holding a latte at a small campus café table, casual clothing, warm indoor light, head-and-shoulders, relaxed expression.",
+    "generation_id": "4757d5b4-a3aa-4d64-9bec-737dab54fef9",
+    "attempts": 2,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 170493,
+    "flagged": "off-shoulder top framing on the regenerated attempt; judged acceptable (no cleavage or torso exposure) but kept as best of 2 attempts requesting fuller coverage"
+  },
+  {
+    "file": "cast/keisha-2.jpg",
+    "group": "cast",
+    "owner_key": "keisha",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"keisha\"].extra_photo_prompts[1]"
+    },
+    "prompt": "The same 22-year-old Black woman with short natural curls, candid photorealistic phone photo, sitting on a bench with a small dog on a leash beside her, casual clothing, natural outdoor light, waist-up, happy expression.",
+    "generation_id": "3eee669f-f5c7-4600-b9aa-d2e6809554b3",
+    "attempts": 2,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 190583,
+    "flagged": "cropped top still exposes midriff despite the regeneration requesting full coverage; kept the best available, recommend review"
+  },
+  {
+    "file": "cast/kevin-0.jpg",
+    "group": "cast",
+    "owner_key": "kevin",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"kevin\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 29-year-old white man with short cropped hair and a well-kept beard, wearing a plain olive henley, standing near the main entrance of a suburban Illinois community college, casual everyday clothing, natural daylight, shot on a phone, waist-up, steady friendly expression.",
+    "generation_id": "281272c4-e1f4-4933-96ef-d10c65cba24b",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 183478,
+    "flagged": null
+  },
+  {
+    "file": "cast/luz-0.jpg",
+    "group": "cast",
+    "owner_key": "luz",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"luz\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 33-year-old Latina woman with shoulder-length dark hair, wearing a cardigan over scrubs, standing outside a health sciences building on a community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, warm composed smile.",
+    "generation_id": "9ca95c87-029a-4933-9733-54ab7c5ec916",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 222858,
+    "flagged": null
+  },
+  {
+    "file": "cast/marcus-0.jpg",
+    "group": "cast",
+    "owner_key": "marcus",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"marcus\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 26-year-old Black man with a short fade haircut and a neat beard, wearing a plain crewneck sweatshirt, standing on a walkway on a suburban Illinois community college campus, casual everyday clothing, late afternoon natural light, shot on a phone, waist-up, calm confident expression.",
+    "generation_id": "3bb4f3b0-700f-4db0-a4df-0cc2798efdc2",
+    "attempts": 3,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 225337,
+    "flagged": "faint tonal embroidery text remains on the sweatshirt (low-contrast, not clearly legible); kept as best of 3 attempts"
+  },
+  {
+    "file": "cast/maya-0.jpg",
+    "group": "cast",
+    "owner_key": "maya",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"maya\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Latina woman with long dark brown hair in a loose ponytail, wearing scrubs with a cardigan over them, standing outside the nursing building on a community college campus, casual everyday clothing, natural daylight, shot on a phone, waist-up, friendly warm smile.",
+    "generation_id": "a49227c6-a608-42ec-b406-1c9668dd83e8",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 221443,
+    "flagged": null
+  },
+  {
+    "file": "cast/maya-1.jpg",
+    "group": "cast",
+    "owner_key": "maya",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"maya\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 20-year-old Latina woman with long dark brown hair, now sitting at a library table surrounded by nursing textbooks and a highlighter, candid photorealistic phone photo, natural indoor light, focused but relaxed expression, head-and-shoulders.",
+    "generation_id": "03d46ea7-c9d4-4a33-b3b6-d23d5fa6eaa5",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 229423,
+    "flagged": null
+  },
+  {
+    "file": "cast/miguel-0.jpg",
+    "group": "cast",
+    "owner_key": "miguel",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"miguel\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, an 18-year-old Latino man with short dark hair, wearing a plain zip hoodie and a backpack over one shoulder, standing outside a classroom building on a community college campus, casual everyday clothing, natural daylight, shot on a phone, waist-up, slightly nervous friendly smile.",
+    "generation_id": "639c3e17-4aa8-4914-86d4-1b32a5874a14",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 185937,
+    "flagged": null
+  },
+  {
+    "file": "cast/miguel-1.jpg",
+    "group": "cast",
+    "owner_key": "miguel",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"miguel\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 18-year-old Latino man with short dark hair, candid photorealistic phone photo, studying at a library table with an open laptop and a coffee cup, casual clothing, natural indoor light, waist-up, focused expression.",
+    "generation_id": "347bba15-ffb8-43eb-bc19-65d332912402",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 170373,
+    "flagged": null
+  },
+  {
+    "file": "cast/nadia-0.jpg",
+    "group": "cast",
+    "owner_key": "nadia",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"nadia\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 27-year-old Middle Eastern woman wearing a dark hijab and a cardigan over scrubs, standing outside a health sciences building on a community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, calm composed smile.",
+    "generation_id": "c6bc5ce3-0e02-48c7-9061-4d438e0e8be5",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 230331,
+    "flagged": null
+  },
+  {
+    "file": "cast/omar-0.jpg",
+    "group": "cast",
+    "owner_key": "omar",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"omar\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 21-year-old Middle Eastern man with short dark hair and a light beard, wearing a plain gray hoodie, standing near the trades building on a suburban Illinois community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, calm friendly expression.",
+    "generation_id": "de068578-38c6-4322-be56-c841d895fa08",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 156331,
+    "flagged": null
+  },
+  {
+    "file": "cast/priya-0.jpg",
+    "group": "cast",
+    "owner_key": "priya",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"priya\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 21-year-old South Asian woman with long straight black hair pulled back in a bun, wearing scrubs with a zip-up hoodie over them, standing outside a health sciences building on a community college campus, casual everyday clothing, bright natural light, shot on a phone, waist-up, warm confident smile.",
+    "generation_id": "1d448591-6ed3-48a7-856d-d22048a762e0",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 184553,
+    "flagged": null
+  },
+  {
+    "file": "cast/priya-1.jpg",
+    "group": "cast",
+    "owner_key": "priya",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"priya\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 21-year-old South Asian woman with long black hair, candid photorealistic phone photo, at the campus gym on a treadmill, athletic wear, fully clothed, indoor gym lighting, focused expression, waist-up.",
+    "generation_id": "23950cc5-e6ad-4658-93a2-fdfaa9602dd7",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 156214,
+    "flagged": null
+  },
+  {
+    "file": "cast/rachel-0.jpg",
+    "group": "cast",
+    "owner_key": "rachel",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"rachel\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 24-year-old white woman with short dyed-auburn hair, wearing a canvas apron over a t-shirt, standing outside the art building on a community college campus, soft natural light, shot on a phone, waist-up, thoughtful smile.",
+    "generation_id": "1c55b700-d398-4f75-a1ae-413bf7f6b79c",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 188446,
+    "flagged": null
+  },
+  {
+    "file": "cast/rachel-1.jpg",
+    "group": "cast",
+    "owner_key": "rachel",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"rachel\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 24-year-old white woman with short dyed-auburn hair, candid photorealistic phone photo, at a pottery wheel mid-throw with clay-covered hands, apron on, focused expression, natural indoor light, waist-up.",
+    "generation_id": "e011509b-3729-43b9-84e4-b37b5be7ea82",
+    "attempts": 2,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 162328,
+    "flagged": null
+  },
+  {
+    "file": "cast/sofia-0.jpg",
+    "group": "cast",
+    "owner_key": "sofia",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"sofia\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old white woman with wavy auburn hair and a few visible ink smudges on her hands, wearing an oversized denim jacket, standing outside the art building on a community college campus, casual everyday clothing, soft natural light, shot on a phone, waist-up, playful smile.",
+    "generation_id": "149b6d69-554a-499a-b154-c93f7353e900",
+    "attempts": 3,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 185966,
+    "flagged": null
+  },
+  {
+    "file": "cast/sofia-1.jpg",
+    "group": "cast",
+    "owner_key": "sofia",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"sofia\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 19-year-old white woman with wavy auburn hair, candid photorealistic phone photo, working at a print studio table covered in art supplies, apron on, focused expression, natural indoor light, waist-up.",
+    "generation_id": "54d29697-a6f2-40ed-9449-fa3ac68c05b1",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 194368,
+    "flagged": null
+  },
+  {
+    "file": "cast/sofia-2.jpg",
+    "group": "cast",
+    "owner_key": "sofia",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"sofia\"].extra_photo_prompts[1]"
+    },
+    "prompt": "The same 19-year-old white woman with wavy auburn hair, candid photorealistic phone photo, sitting on a porch step with a small dog in her lap, casual clothing, golden hour natural light, head-and-shoulders, happy expression.",
+    "generation_id": "7518ebc2-02d0-480a-9482-e527d0c4e79e",
+    "attempts": 2,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 176956,
+    "flagged": null
+  },
+  {
+    "file": "cast/tyler-0.jpg",
+    "group": "cast",
+    "owner_key": "tyler",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"tyler\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old white man with short sandy-blond hair, wearing a plain crewneck sweatshirt, sitting on steps outside a library on a community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, friendly grin.",
+    "generation_id": "96fbbfd5-821a-4913-a881-d643c658d7a6",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 179158,
+    "flagged": null
+  },
+  {
+    "file": "cast/tyler-1.jpg",
+    "group": "cast",
+    "owner_key": "tyler",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"tyler\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 19-year-old white man with short sandy-blond hair, candid photorealistic phone photo, studying at a library table with a laptop and scattered notes, casual clothing, natural indoor light, waist-up, focused expression.",
+    "generation_id": "01a22aa6-aa40-4b25-9d70-bf35a3a163c6",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 169975,
+    "flagged": null
+  },
+  {
+    "file": "cast/tyrell-0.jpg",
+    "group": "cast",
+    "owner_key": "tyrell",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"tyrell\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 22-year-old Black man with short locs pulled back, wearing a graphic tee under an open flannel shirt, sitting on steps outside a computer science building on a community college campus, casual everyday clothing, natural light, shot on a phone, waist-up, relaxed half-smile.",
+    "generation_id": "d9c631c7-2264-4214-858a-69525aa22157",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 219138,
+    "flagged": null
+  },
+  {
+    "file": "cast/tyrell-1.jpg",
+    "group": "cast",
+    "owner_key": "tyrell",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"tyrell\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 22-year-old Black man with short locs, candid photorealistic phone photo, at a small campus esports lounge with a controller in hand and a monitor glow lighting his face, casual clothing, indoor lighting, waist-up, focused expression.",
+    "generation_id": "b3df9ee7-b15c-4821-a245-c2d988b1ea26",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 128636,
+    "flagged": null
+  },
+  {
+    "file": "cast/valentina-0.jpg",
+    "group": "cast",
+    "owner_key": "valentina",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"valentina\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 21-year-old Latina woman with long wavy dark hair, wearing a soft cardigan, standing outside an education building on a community college campus, warm natural light, shot on a phone, waist-up, bright friendly smile.",
+    "generation_id": "c5ce8793-7a69-4984-886b-e6a9fdc340c1",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 271242,
+    "flagged": null
+  },
+  {
+    "file": "cast/valentina-1.jpg",
+    "group": "cast",
+    "owner_key": "valentina",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"valentina\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 21-year-old Latina woman with long wavy dark hair, candid photorealistic phone photo, sitting outside with a small dog curled up beside her, casual clothing, golden hour natural light, waist-up, happy relaxed expression.",
+    "generation_id": "31576a13-8ffb-4c62-ae7a-cb2ea85e187d",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 201048,
+    "flagged": null
+  },
+  {
+    "file": "cast/wei-0.jpg",
+    "group": "cast",
+    "owner_key": "wei",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"wei\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old East Asian man with straight black hair and a beanie, wearing a fleece jacket, standing outside the library entrance on a community college campus, casual everyday clothing, overcast natural light, shot on a phone, head-and-shoulders, calm friendly expression.",
+    "generation_id": "1d333e78-a9d5-44fa-85bd-9b9065e59e3c",
+    "attempts": 3,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 252608,
+    "flagged": null
+  },
+  {
+    "file": "cast/wei-1.jpg",
+    "group": "cast",
+    "owner_key": "wei",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"wei\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 20-year-old East Asian man with straight black hair, candid photorealistic phone photo, sitting at a library table with a biology textbook and a notebook full of diagrams, focused expression, natural indoor light, waist-up.",
+    "generation_id": "810c705c-e9a5-4cc4-8f86-e8470cafb0a0",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 271583,
+    "flagged": null
+  },
+  {
+    "file": "cast/yuki-0.jpg",
+    "group": "cast",
+    "owner_key": "yuki",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"yuki\"].portrait_prompt"
+    },
+    "prompt": "A natural, candid, photorealistic portrait of an adult, a 22-year-old East Asian woman with a sleek black bob haircut, wearing an oversized cardigan, standing outside the art building on a community college campus, soft natural light, shot on a phone, waist-up, calm confident smile.",
+    "generation_id": "c42bfab7-7fa5-466c-bdd2-3846aeac22e6",
+    "attempts": 1,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 220478,
+    "flagged": null
+  },
+  {
+    "file": "cast/yuki-1.jpg",
+    "group": "cast",
+    "owner_key": "yuki",
+    "source": {
+      "file": "cast.json",
+      "pointer": "cast[key=\"yuki\"].extra_photo_prompts[0]"
+    },
+    "prompt": "The same 22-year-old East Asian woman with a sleek black bob haircut, candid photorealistic phone photo, standing beside a painting easel at a small student gallery show, casual clothing, warm indoor light, waist-up, proud expression.",
+    "generation_id": "800155b0-8333-4c70-84e7-ef8aeacdc9a6",
+    "attempts": 3,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 172834,
+    "flagged": null
+  },
+  {
+    "file": "chat/debbie-0-9.jpg",
+    "group": "chat",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.conversations[0] (cast_key=\"tyler\").messages[9].media.prompt"
+    },
+    "prompt": "a study setup with an open laptop, notebook, and a mug of coffee on a library table, phone photo",
+    "generation_id": "c8a2654a-dfce-40ac-a10e-abb9396d045e",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 210674,
+    "flagged": null
+  },
+  {
+    "file": "chat/debbie-1-7.jpg",
+    "group": "chat",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.conversations[1] (cast_key=\"chinelo\").messages[7].media.prompt"
+    },
+    "prompt": "a campus view of the main building with fall trees, phone photo, natural light",
+    "generation_id": "b5a70d23-9755-4018-bce8-c64b24c32d64",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 236444,
+    "flagged": null
+  },
+  {
+    "file": "chat/debbie-4-3.jpg",
+    "group": "chat",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.conversations[4] (cast_key=\"brandon\").messages[3].media.prompt"
+    },
+    "prompt": "a soccer intramural game action shot, fully clothed in jersey and cleats, phone photo",
+    "generation_id": "583d16ac-cf0e-48c2-949a-79b2640debe9",
+    "attempts": 3,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 175178,
+    "flagged": null
+  },
+  {
+    "file": "chat/debbie-6-4.jpg",
+    "group": "chat",
+    "account": "debbie",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "debbie.conversations[6] (cast_key=\"carlos\").messages[4].media.prompt"
+    },
+    "prompt": "a sunset over a parking lot with a few cars left, phone photo",
+    "generation_id": "3003cf1b-96f2-4ebb-9415-377a97995488",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 88364,
+    "flagged": null
+  },
+  {
+    "file": "chat/izaac-0-9.jpg",
+    "group": "chat",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.conversations[0] (cast_key=\"maya\").messages[9].media.prompt"
+    },
+    "prompt": "a to-go latte on a hospital break room table, phone photo, natural light",
+    "generation_id": "79ef5575-16e1-479f-b97d-19bd5b68532a",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 90318,
+    "flagged": null
+  },
+  {
+    "file": "chat/izaac-1-7.jpg",
+    "group": "chat",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.conversations[1] (cast_key=\"diego\").messages[7].media.prompt"
+    },
+    "prompt": "a gym selfie, fully clothed, post-workout, casual athletic wear, phone photo",
+    "generation_id": "4c01e399-6025-4ae9-9d58-e117016e73b8",
+    "attempts": 2,
+    "width": 1152,
+    "height": 1536,
+    "bytes": 144607,
+    "flagged": null
+  },
+  {
+    "file": "chat/izaac-6-4.jpg",
+    "group": "chat",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.conversations[6] (cast_key=\"marcus\").messages[4].media.prompt"
+    },
+    "prompt": "a sunset over a community college parking lot after a late shift, phone photo",
+    "generation_id": "5487f88a-9f22-49ee-a148-3399b9656934",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 106605,
+    "flagged": null
+  },
+  {
+    "file": "chat/izaac-7-3.jpg",
+    "group": "chat",
+    "account": "izaac",
+    "source": {
+      "file": "interactions.json",
+      "pointer": "izaac.conversations[7] (cast_key=\"sofia\").messages[3].media.prompt"
+    },
+    "prompt": "a messy print studio table covered in ink, brushes, and paper, phone photo",
+    "generation_id": "bee08ea8-9c79-448f-8ee8-2fe884c8755c",
+    "attempts": 1,
+    "width": 1536,
+    "height": 1152,
+    "bytes": 278770,
+    "flagged": null
+  }
+]
