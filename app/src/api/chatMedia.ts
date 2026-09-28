@@ -186,21 +186,19 @@ export interface ResendChatMediaResult {
 }
 
 /**
- * Re-sending from the recently-shared tray (§5, decision CM-2): gives the new
- * message its own independently-owned object rather than pointing at the
+ * Re-sending from the recently-shared tray (§5, decision 59/CM-2): gives the
+ * new message its own independently-owned object rather than pointing at the
  * original path, so every bucket read policy's "path segment 1 is the owning
  * conversation" assumption stays intact.
  *
- * CM-2's write-up describes this as a storage-to-storage `copy` op under the
- * service role. No such server-side copy is in this build's scope (only
- * migration 0010 and the `media-open` function are — neither performs a
- * resend copy), so this achieves the identical *outcome* — a new object at
- * the target conversation's path, the original untouched — client-side: sign
- * the source (60s, `chat-media` only, which the tray's own `view_limit is
- * null` scoping guarantees is readable), fetch the bytes, and upload them to
- * the target path/bucket. Functionally equivalent for the read-policy model
- * this whole design leans on; flagged as a deviation from the service-role
- * mechanism CM-2 names, not from the outcome it requires.
+ * Decision 59 (amended 28 September 2026) settled on exactly this client-side
+ * shape rather than a service-role storage-to-storage `copy` op: sign the
+ * source (60s, `chat-media` only, which the tray's own `view_limit is null`
+ * scoping guarantees is readable), fetch the bytes, and upload them to the
+ * target path/bucket. Same outcome as a server-side copy — a new object at
+ * the target conversation's path, the original untouched — without adding a
+ * service-role copy function; the cost is a client-side re-read of the bytes
+ * on every resend.
  */
 export async function resendChatMedia({
   sourcePath,

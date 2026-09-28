@@ -54,6 +54,7 @@ function videoOpened(overrides: Partial<OpenedMedia> = {}): OpenedMedia {
     media_kind: "video",
     views_used: 1,
     view_limit: 2,
+    views_remaining: 1,
     ...overrides,
   };
 }
@@ -222,6 +223,7 @@ Deno.test("recipient: happy path calls the RPC once and returns a signed URL", a
       media_kind: "photo",
       views_used: 1,
       view_limit: 1,
+      views_remaining: 0,
     },
   }, RECIPIENT);
   const res = await h.handle(post({ message_id: MESSAGE }));
@@ -236,11 +238,16 @@ Deno.test("recipient: happy path calls the RPC once and returns a signed URL", a
   assertEquals(h.calls.filter((c) => c.startsWith("openLimitedMedia")).length, 1);
 });
 
-Deno.test("recipient: exhausted is 404 and no URL is minted", async () => {
+Deno.test("recipient: exhausted is 404 and the minted URL never appears in the response", async () => {
   const h = harness({ message: photoRow(), canRead: true, opened: null }, RECIPIENT);
   const res = await h.handle(post({ message_id: MESSAGE }));
   assertEquals(res.status, 404);
-  assert(!h.calls.some((c) => c.startsWith("sign:")));
+  // The URL is still minted before the RPC runs (see the reorder note in
+  // router.ts) so a Storage failure can never share a code path with a
+  // counted view -- but it must never leak into the refusal response.
+  assert(h.calls.some((c) => c.startsWith("sign:")));
+  const text = await res.text();
+  assertEquals(text.includes("https://signed/"), false);
 });
 
 Deno.test("recipient: an RPC exception is also a plain 404, not a 500", async () => {
@@ -252,9 +259,20 @@ Deno.test("recipient: an RPC exception is also a plain 404, not a 500", async ()
   assertEquals(res.status, 404);
 });
 
+Deno.test("recipient: a signing failure never calls the RPC, so no view is consumed", async () => {
+  const h = harness({ message: photoRow(), canRead: true, signFails: true }, RECIPIENT);
+  const res = await h.handle(post({ message_id: MESSAGE }));
+  assertEquals(res.status, 500);
+  assert(!h.calls.some((c) => c.startsWith("openLimitedMedia")));
+});
+
 Deno.test("video: also signs the poster path", async () => {
   const h = harness({
-    message: photoRow({ media_kind: "video" }),
+    message: photoRow({
+      media_kind: "video",
+      media_path: `${CONVERSATION}/${MESSAGE}.mp4`,
+      media_poster_path: `${CONVERSATION}/${MESSAGE}-poster.jpg`,
+    }),
     canRead: true,
     opened: videoOpened(),
   }, RECIPIENT);
@@ -273,13 +291,6 @@ Deno.test("signing failure is a 500, not a leaked 404", async () => {
   const h = harness({
     message: photoRow(),
     canRead: true,
-    opened: {
-      media_path: `${CONVERSATION}/${MESSAGE}.jpg`,
-      media_poster_path: null,
-      media_kind: "photo",
-      views_used: 1,
-      view_limit: 1,
-    },
     signFails: true,
   }, RECIPIENT);
   const res = await h.handle(post({ message_id: MESSAGE }));

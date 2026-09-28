@@ -96,16 +96,24 @@ export interface SendMessageInput {
 /**
  * Insert one message.
  *
- * Only the columns a client may meaningfully set are sent — `id,
- * conversation_id, sender_id, body, media_path` plus, since
- * `docs/chat-media-plan.md` §3, `media_kind, view_limit, media_duration_ms,
- * media_bytes, media_width, media_height, media_poster_path`. `created_at` and
- * `views_used` are left to their column defaults — `views_used` is only ever
- * advanced by the security-definer `open_limited_media` RPC (§4), never by a
- * client insert/update — so the ordering key is always server time and the
- * view counter is always server-recorded. The table's insert grant is not
- * column-limited, so this restraint is a convention enforced here and
- * asserted in `chat-api.test.ts`, not by the database.
+ * Only the columns a client may meaningfully set are sent — and since
+ * migration 0010 that is also the entire client insert surface: `authenticated`
+ * holds a column-list grant, not a whole-table one (`grant insert (id,
+ * conversation_id, sender_id, body, media_path, media_kind, view_limit,
+ * media_duration_ms, media_bytes, media_width, media_height,
+ * media_poster_path) on public.messages to authenticated`). `created_at` and
+ * `views_used` are deliberately left out of both this insert and the grant —
+ * they are server-owned: `created_at` defaults to server time (the thread's
+ * ordering key, never client-supplied), and `views_used` is only ever advanced
+ * by the security-definer `open_limited_media` RPC (§4), never by a client
+ * insert/update. A limited message (`view_limit` set) must also name its own
+ * conversation and message id: `enforce_message_rules`' rule 4b requires
+ * `media_path = {conversation_id}/{id}.jpg|.mp4` and, if set,
+ * `media_poster_path = {conversation_id}/{id}-poster.jpg`, both matching this
+ * insert's own `conversation_id` and `id` — a message can never point at
+ * another message's limited-media object. This restraint is now enforced by
+ * the database (the column-list grant, rule 4b), not only by convention, and
+ * is still asserted in `chat-api.test.ts`.
  *
  * Every refusal `enforce_message_rules` can raise — unverified sender, not a
  * participant, opener already spoke, opener over 240 characters, media outside

@@ -42,6 +42,8 @@ export interface OpenedMedia {
   media_kind: MediaKind;
   views_used: number;
   view_limit: number;
+  /** `view_limit - views_used`, computed by the RPC itself — never recomputed here. */
+  views_remaining: number;
 }
 
 /**
@@ -137,7 +139,7 @@ export function createDb(): Db {
       try {
         const rows = await asServiceRole<OpenedMedia[]>((tx) =>
           tx`
-            select media_path, media_poster_path, media_kind, views_used, view_limit
+            select media_path, media_poster_path, media_kind, views_used, view_limit, views_remaining
               from private.open_limited_media(${messageId}::uuid, ${viewerId}::uuid)
           `
         );

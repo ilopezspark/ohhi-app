@@ -64,9 +64,14 @@ the new conversation's path, giving the new message its own independently-owned 
 **Copy-on-resend is the pick** — every bucket policy stays exactly as written (segment 1 is always
 the conversation that owns the object), no reference counting or cross-conversation orphan
 tracking, and §8's purge sweep stays a simple 1:1-per-conversation query identical in shape to the
-`album-photos`/`profile-photos` pattern. Cost: a storage-to-storage copy (Supabase Storage's
-`copy` op, service role) instead of a metadata-only insert — invisible to the user (no client-side
-re-read of the bytes) and cheap against objects already resized/transcoded once.
+`album-photos`/`profile-photos` pattern. **Amended 28 September 2026 (decision 59)**: built as a
+client-side download-and-re-upload — `resendChatMedia` (`app/src/api/chatMedia.ts`) signs the
+source object (60s, `chat-media` only, which the tray's own `view_limit is null` scoping already
+guarantees is readable), fetches the bytes, and uploads them to the target conversation's path —
+rather than a service-role storage-to-storage copy. Same outcome (an independently-owned object at
+the target path, the original untouched), reached without adding a service-role copy function; the
+cost is a client-side re-read of the bytes on every resend, not the metadata-only op a server-side
+`copy` would allow.
 
 ## 3. Schema (migration 0010)
 

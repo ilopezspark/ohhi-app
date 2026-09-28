@@ -192,6 +192,18 @@ async function openMedia(
     return notFound();
   }
 
+  // Reordered (fix): mint the signed URL(s) from the row's own paths *before*
+  // calling the counted-open RPC. The row already names the paths the RPC
+  // would return on success, so nothing is gained by waiting for the RPC to
+  // echo them back, and signing first means a Storage failure here is a 500
+  // with no view recorded, rather than a consumed view followed by a 500.
+  const signed = await signMediaUrls(deps.storage, {
+    mediaPath: row.media_path,
+    posterPath: row.media_poster_path,
+    kind: row.media_kind,
+  });
+  if (!signed) return internalError();
+
   // Plan §4 step 4: "any failure [from the RPC] -> caught as notFound(), no
   // sub-reason surfaces". db.ts already collapses a thrown RPC error to
   // `null`, but this call is wrapped again here as defense in depth, so the
@@ -202,14 +214,18 @@ async function openMedia(
   } catch {
     return notFound();
   }
+  // Refused (not the recipient, exhausted, row vanished under the lock): the
+  // URL minted above is discarded, never returned to the caller.
   if (!opened) return notFound();
 
-  return await mintResponse(deps.storage, {
-    mediaPath: opened.media_path,
-    posterPath: opened.media_poster_path,
+  return json({
+    url: signed.url,
+    ...(signed.posterUrl ? { poster_url: signed.posterUrl } : {}),
     kind: opened.media_kind,
-    viewsUsed: opened.views_used,
-    viewLimit: opened.view_limit,
+    expires_in: SIGNED_URL_TTL_SECONDS,
+    // The RPC's own views_remaining (view_limit - views_used, computed at the
+    // instant it recorded this view), not recomputed here.
+    views_remaining: opened.views_remaining,
   });
 }
 
@@ -240,4 +256,39 @@ async function mintResponse(storage: StorageClient, input: MintInput): Promise<R
     expires_in: SIGNED_URL_TTL_SECONDS,
     views_remaining: Math.max(0, input.viewLimit - input.viewsUsed),
   });
+}
+
+interface SignedMedia {
+  url: string;
+  posterUrl?: string;
+}
+
+interface SignMediaInput {
+  mediaPath: string;
+  posterPath: string | null;
+  kind: "photo" | "video";
+}
+
+/**
+ * Signs the media (and poster, for video) named by a `messages` row against
+ * `chat-media-limited`, without touching `open_limited_media` — used on the
+ * recipient path so signing happens before the view is counted (see the
+ * reorder note above `openMedia`'s recipient branch). Returns null on any
+ * Storage signing failure, which the caller turns into a 500.
+ */
+async function signMediaUrls(
+  storage: StorageClient,
+  input: SignMediaInput,
+): Promise<SignedMedia | null> {
+  const url = await signLimitedMediaUrl(storage, input.mediaPath);
+  if (!url) return null;
+
+  let posterUrl: string | undefined;
+  if (input.kind === "video" && input.posterPath) {
+    const signedPoster = await signLimitedMediaUrl(storage, input.posterPath);
+    if (!signedPoster) return null;
+    posterUrl = signedPoster;
+  }
+
+  return { url, posterUrl };
 }

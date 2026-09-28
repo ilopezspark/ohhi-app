@@ -339,6 +339,42 @@ export type Database = {
           },
         ]
       }
+      message_media_views: {
+        Row: {
+          message_id: string
+          ordinal: number
+          viewed_at: string
+          viewer_id: string
+        }
+        Insert: {
+          message_id: string
+          ordinal: number
+          viewed_at?: string
+          viewer_id: string
+        }
+        Update: {
+          message_id?: string
+          ordinal?: number
+          viewed_at?: string
+          viewer_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_media_views_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_media_views_viewer_id_fkey"
+            columns: ["viewer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_reads: {
         Row: {
           conversation_id: string
@@ -373,11 +409,6 @@ export type Database = {
         ]
       }
       messages: {
-        // Hand-extended for `docs/chat-media-plan.md` §3 (migration 0010, not
-        // yet applied): `media_kind`, `view_limit`, `views_used`,
-        // `media_duration_ms`, `media_bytes`, `media_width`, `media_height`,
-        // `media_poster_path`. Regenerate this table from the schema once
-        // migration 0010 lands and drop this comment.
         Row: {
           body: string | null
           conversation_id: string
@@ -2134,8 +2165,6 @@ export type Database = {
         | "closed_deleted"
       device_platform: "ios" | "android"
       hi_state: "sent" | "answered" | "dismissed" | "expired"
-      // Hand-extended for `docs/chat-media-plan.md` §3 (migration 0010, not
-      // yet applied). Regenerate once the migration lands.
       media_kind: "photo" | "video"
       moderation_action:
         | "warn"
@@ -2325,6 +2354,7 @@ export const Constants = {
       ],
       device_platform: ["ios", "android"],
       hi_state: ["sent", "answered", "dismissed", "expired"],
+      media_kind: ["photo", "video"],
       moderation_action: [
         "warn",
         "suspend_7d",

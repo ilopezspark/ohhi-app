@@ -17,6 +17,8 @@ Migration 0009 (`grid_shows_everyone`, decisions 53-57) was applied on 28 Septem
 
 Migration 0010 (`chat_media`, decisions 58-69) was applied on 28 September 2026 and is recorded in hosted history as `20260918000010 after the CLI history repair`; it needs a repair to `20260918000010`. Hosted runs: 0010 66/66, then 0002 98/98 and 0009 37/37 re-run against it.
 
+**`media-open` deployed — 28 September 2026.** Deployed to the hosted project (`yvmxyynxpheudnyoveqx`), `ACTIVE` at version 1, `verify_jwt = true`. Unauthenticated boot check (`POST /functions/v1/media-open` with no auth header) returned `401` from the platform's own JWT gate, not a `5xx`. Before this deploy, the recipient path's ordering was fixed: `open_limited_media` is now called only after the signed URL(s) are minted from the row's own paths, so a Storage signing failure returns 500 with no view consumed, and an RPC refusal (exhausted, not the recipient) discards the already-minted URL and returns the generic 404 — never leaking it. Still to do: the end-to-end test between two accounts (open a view-once photo/video as the recipient, confirm the sender sees "Opened"/"Opened N of 2" over realtime, confirm exhaustion both purges storage and reads back as a 404).
+
 ## What is here
 
 - `supabase/migrations/20260918000002_core_schema.sql` — the core schema, now with defects
