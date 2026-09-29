@@ -27,10 +27,12 @@
       "friends"
     ],
     "tags": [
-      "nursing",
-      "library",
-      "coffee"
+      "library regular",
+      "coffee",
+      "study groups",
+      "8ams"
     ],
+    "major": "nursing",
     "presence_profile": "regular_on_campus",
     "photo_count": 2,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Latina woman with long dark brown hair in a loose ponytail, wearing scrubs with a cardigan over them, standing outside the nursing building on a community college campus, casual everyday clothing, natural daylight, shot on a phone, waist-up, friendly warm smile.",
@@ -66,8 +68,20 @@
       "whatever"
     ],
     "tags": [
-      "gym"
+      "fixing things",
+      "working on my car",
+      "gym",
+      "lifting"
     ],
+    "major": "welding",
+    "about": {
+      "graduating_term": "spring",
+      "work_type": "trades_apprentice",
+      "job_title": "apprentice welder",
+      "work_hours": [
+        "part_time"
+      ]
+    },
     "presence_profile": "regular_on_campus",
     "photo_count": 2,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 23-year-old Latino man with short buzzed hair and a light beard, wearing a plain gray t-shirt with no logos and plain athletic shorts, at a gym with plain unbranded equipment in the background, natural gym lighting, casual athletic clothing, shot on a phone, waist-up, easygoing smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing and equipment with no graphics.",
@@ -102,10 +116,13 @@
       "friends"
     ],
     "tags": [
-      "cs",
-      "coffee",
-      "esports"
+      "coding",
+      "night owl",
+      "lo-fi",
+      "pc gaming",
+      "coffee"
     ],
+    "major": "cs",
     "presence_profile": "night_owl",
     "photo_count": 3,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old South Asian woman with straight black hair and glasses, wearing a hoodie and jeans, sitting on a bench outside a community college computer science building, casual everyday clothing, soft natural light, shot on a phone, head-and-shoulders, friendly relaxed expression.",
@@ -129,9 +146,12 @@
       "friends"
     ],
     "tags": [
-      "business",
-      "gym"
+      "gym",
+      "my car is my third place",
+      "lifting",
+      "hip hop"
     ],
+    "major": "business",
     "presence_profile": "commuter_nearby",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 21-year-old Black man with short twisted hair, wearing a plain fitted quarter-zip pullover with no logos, taking a selfie at arm's length while sitting in a car seat, natural daylight through the window, casual everyday clothing, shot on a phone, waist-up, confident friendly smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -163,9 +183,12 @@
       "study"
     ],
     "tags": [
-      "bio",
-      "library"
+      "library regular",
+      "study groups",
+      "introvert",
+      "sci fi"
     ],
+    "major": "bio",
     "presence_profile": "regular_on_campus",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old East Asian man with straight black hair and a beanie, wearing a plain fleece jacket, standing in a library aisle between shelves with blurred, unreadable book spines behind him, overcast natural light from a nearby window, casual everyday clothing, shot on a phone, head-and-shoulders, calm friendly expression, no signs, no lettering, no text anywhere in the image including on the blurred book spines, plain unbranded clothing with no graphics.",
@@ -186,8 +209,12 @@
       "whatever"
     ],
     "tags": [
-      "transfer"
+      "transfer track",
+      "cooking",
+      "family recipes",
+      "gardening"
     ],
+    "major": "education",
     "presence_profile": "commuter_nearby",
     "photo_count": 2,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 24-year-old Middle Eastern woman wearing a light patterned hijab and a plain cardigan, sitting on a bench in a garden, warm natural light, casual everyday clothing, shot on a phone, waist-up, warm friendly smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -210,9 +237,20 @@
       "friends"
     ],
     "tags": [
+      "night shift",
+      "working full time",
       "gym",
       "soccer"
     ],
+    "major": null,
+    "about": {
+      "work_type": "security",
+      "job_title": "night security",
+      "work_hours": [
+        "full_time",
+        "nights"
+      ]
+    },
     "presence_profile": "mostly_away",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 26-year-old Black man with a short fade haircut and a neat beard, wearing a plain crewneck sweatshirt with no print or logo, sitting on a park bench, late afternoon natural light, casual everyday clothing, shot on a phone, waist-up, calm confident expression, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -245,9 +283,15 @@
       "dates"
     ],
     "tags": [
-      "art",
-      "coffee"
+      "printmaking",
+      "coffee",
+      "drawing",
+      "dogs"
     ],
+    "major": "art",
+    "about": {
+      "minor": "business"
+    },
     "presence_profile": "regular_on_campus",
     "photo_count": 2,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old white woman with wavy auburn hair and a few visible ink smudges on her hands, wearing a plain oversized denim jacket, sitting at a small café table taking a selfie, soft natural light, casual everyday clothing, shot on a phone, waist-up, playful smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -275,9 +319,12 @@
       "group"
     ],
     "tags": [
-      "cs",
-      "esports"
+      "coding",
+      "pc gaming",
+      "valorant",
+      "catching the bus"
     ],
+    "major": "cs",
     "presence_profile": "night_owl",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 22-year-old Black man with short locs pulled back, wearing a plain tee under an open flannel shirt with no graphics, sitting at a desk with a plain closed laptop, natural indoor light, casual everyday clothing, shot on a phone, waist-up, relaxed half-smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing and objects with no graphics.",
@@ -298,9 +345,19 @@
       "friends"
     ],
     "tags": [
-      "nursing",
-      "gym"
+      "gym",
+      "morning workouts",
+      "meal prep"
     ],
+    "major": "nursing",
+    "about": {
+      "work_type": "healthcare_aide",
+      "job_title": "patient care tech",
+      "work_hours": [
+        "part_time",
+        "weekends"
+      ]
+    },
     "presence_profile": "regular_on_campus",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 21-year-old South Asian woman with long straight black hair pulled back in a bun, wearing scrubs with a plain zip-up hoodie over them with no visible text, at a gym near a plain treadmill, bright indoor gym lighting, casual everyday clothing, shot on a phone, waist-up, warm confident smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing and equipment with no graphics.",
@@ -321,8 +378,19 @@
       "whatever"
     ],
     "tags": [
-      "gym"
+      "veteran",
+      "back after a break",
+      "gym",
+      "lifting"
     ],
+    "major": null,
+    "about": {
+      "work_type": "military_or_reserves",
+      "job_title": "army reserve",
+      "work_hours": [
+        "weekends"
+      ]
+    },
     "presence_profile": "commuter_nearby",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 29-year-old white man with short cropped hair and a well-kept beard, wearing a plain olive henley, at a gym with plain unbranded equipment in the background, natural gym lighting, casual everyday clothing, shot on a phone, waist-up, steady friendly expression, no signs, no lettering, no text anywhere in the image, plain unbranded clothing and equipment with no graphics.",
@@ -348,9 +416,21 @@
       "friends"
     ],
     "tags": [
-      "business",
-      "coffee"
+      "coffee",
+      "i live in the parking lot",
+      "thrifting",
+      "extrovert"
     ],
+    "major": "business",
+    "about": {
+      "graduating_term": "spring",
+      "work_type": "retail",
+      "job_title": "sales associate",
+      "work_hours": [
+        "part_time",
+        "weekends"
+      ]
+    },
     "presence_profile": "regular_on_campus",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Black woman with long braided hair, wearing a zipped-up denim jacket over a plain full-coverage top, sitting at a small café table, bright natural light, modest everyday clothing with nothing revealing, shot on a phone, close waist-up crop, bright easy smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -370,9 +450,11 @@
       "study"
     ],
     "tags": [
-      "bio",
-      "library"
+      "library regular",
+      "study groups",
+      "dry humor"
     ],
+    "major": "bio",
     "presence_profile": "mostly_away",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 23-year-old Middle Eastern man with short dark hair and a trimmed beard, wearing a plain button-down shirt with sleeves rolled up, standing in a library aisle between shelves with blurred, unreadable book spines behind him, natural indoor light, casual everyday clothing, shot on a phone, waist-up, tired but friendly smile, no signs, no lettering, no text anywhere in the image including on the blurred book spines, plain unbranded clothing with no graphics.",
@@ -393,8 +475,19 @@
       "whatever"
     ],
     "tags": [
-      "transfer"
+      "transfer track",
+      "coffee",
+      "baking",
+      "morning person"
     ],
+    "major": "early childhood education",
+    "about": {
+      "work_type": "childcare",
+      "job_title": "daycare assistant",
+      "work_hours": [
+        "part_time"
+      ]
+    },
     "presence_profile": "commuter_nearby",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old white woman with shoulder-length blonde hair, wearing a cozy plain cardigan, taking a selfie at arm's length in a kitchen, soft overcast light through a window, casual everyday clothing, shot on a phone, waist-up, cheerful smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -423,9 +516,12 @@
       "whatever"
     ],
     "tags": [
+      "soccer",
+      "intramurals",
       "gym",
-      "soccer"
+      "fantasy leagues"
     ],
+    "major": null,
     "presence_profile": "regular_on_campus",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 25-year-old Black man with short natural hair, wearing a plain athletic pullover with no logos, sitting on a park bench taking a selfie at arm's length, late afternoon natural light, casual everyday clothing, shot on a phone, waist-up, relaxed grin, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -446,8 +542,20 @@
       "whatever"
     ],
     "tags": [
-      "nursing"
+      "back after a break",
+      "family first",
+      "cooking",
+      "coffee"
     ],
+    "major": "nursing",
+    "about": {
+      "graduating_term": "fall",
+      "work_type": "office_or_admin",
+      "job_title": "medical billing",
+      "work_hours": [
+        "part_time"
+      ]
+    },
     "presence_profile": "mostly_away",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 33-year-old Latina woman with shoulder-length dark hair, wearing a plain cardigan over scrubs with no name badge or visible text, standing at a kitchen counter, natural light through a window, casual everyday clothing, shot on a phone, waist-up, warm composed smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -468,9 +576,12 @@
       "group"
     ],
     "tags": [
-      "cs",
-      "esports"
+      "pc gaming",
+      "valorant",
+      "league",
+      "pc building"
     ],
+    "major": "cs",
     "presence_profile": "night_owl",
     "photo_count": 2,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Eastern European man with light brown messy hair, wearing a plain zip hoodie with no graphics, sitting by a window with soft daylight coming in, casual everyday clothing, shot on a phone, head-and-shoulders, easygoing smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -501,9 +612,20 @@
       "friends"
     ],
     "tags": [
-      "business",
-      "coffee"
+      "coffee",
+      "always early",
+      "planner",
+      "brunch"
     ],
+    "major": "business",
+    "about": {
+      "graduating_term": "spring",
+      "work_type": "internship",
+      "job_title": "accounting intern",
+      "work_hours": [
+        "part_time"
+      ]
+    },
     "presence_profile": "regular_on_campus",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 22-year-old Black woman with short natural curls, wearing a tailored blazer over a plain top with no graphics, sitting at a small café table taking a selfie, bright natural light, casual everyday clothing, shot on a phone, waist-up, confident smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -514,7 +636,7 @@
     "first_name": "Omar",
     "email_local": "omar.y",
     "date_of_birth": "2005-05-27",
-    "grad_year": 2027,
+    "grad_year": null,
     "status_line": null,
     "place_line": null,
     "usual_places": [],
@@ -523,8 +645,16 @@
       "whatever"
     ],
     "tags": [
-      "gym"
+      "hiking",
+      "gym",
+      "forest preserves",
+      "chill"
     ],
+    "major": null,
+    "about": {
+      "graduating_unsure": true,
+      "work_type": "not_working_right_now"
+    },
     "presence_profile": "commuter_nearby",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 21-year-old Middle Eastern man with short dark hair and a light beard, wearing a plain gray hoodie, walking on an outdoor trail, natural light, casual everyday clothing, shot on a phone, waist-up, calm friendly expression, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -545,8 +675,12 @@
       "dates"
     ],
     "tags": [
-      "art"
+      "ceramics",
+      "pottery",
+      "gardening",
+      "night owl"
     ],
+    "major": "art",
     "presence_profile": "mostly_away",
     "photo_count": 2,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 24-year-old white woman with short dyed-auburn hair, wearing a plain canvas apron over a t-shirt with no patches or logos, sitting on a step in a garden, soft natural light, shot on a phone, waist-up, thoughtful smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics or patches.",
@@ -578,10 +712,11 @@
       "friends"
     ],
     "tags": [
-      "bio",
-      "library",
+      "first semester nerves",
+      "library regular",
       "coffee"
     ],
+    "major": "bio",
     "presence_profile": "regular_on_campus",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, an 18-year-old Latino man with short dark hair, wearing a plain zip hoodie and a backpack over one shoulder, standing in a library aisle between shelves with blurred, unreadable book spines behind him, natural indoor light, casual everyday clothing, shot on a phone, waist-up, slightly nervous friendly smile, no signs, no lettering, no text anywhere in the image including on the blurred book spines, plain unbranded clothing with no graphics.",
@@ -601,8 +736,11 @@
       "whatever"
     ],
     "tags": [
-      "nursing"
+      "homebody",
+      "reading",
+      "early nights"
     ],
+    "major": "nursing",
     "presence_profile": "rarely_active",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 27-year-old Middle Eastern woman wearing a dark hijab and a plain cardigan over scrubs with no name badge or visible text, sitting by a window, soft natural light, casual everyday clothing, shot on a phone, waist-up, calm composed smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -636,9 +774,12 @@
       "friends"
     ],
     "tags": [
-      "cs",
-      "library"
+      "group projects",
+      "study groups",
+      "coding",
+      "overthinker"
     ],
+    "major": "cs",
     "presence_profile": "regular_on_campus",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old white man with short sandy-blond hair, wearing a plain crewneck sweatshirt, sitting on a couch with a plain closed laptop beside him, natural indoor light, casual everyday clothing, shot on a phone, waist-up, friendly grin, no signs, no lettering, no text anywhere in the image, plain unbranded clothing and objects with no graphics.",
@@ -659,9 +800,12 @@
       "whatever"
     ],
     "tags": [
-      "business",
-      "transfer"
+      "transfer track",
+      "coffee",
+      "planner",
+      "phi theta kappa"
     ],
+    "major": "business",
     "presence_profile": "commuter_nearby",
     "photo_count": 2,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Nigerian-American woman with long braided hair, wearing a blazer over a casual top, standing outside the business building on a community college campus, bright natural light, shot on a phone, waist-up, confident warm smile.",
@@ -683,8 +827,20 @@
       "whatever"
     ],
     "tags": [
-      "night classes"
+      "night classes",
+      "working full time",
+      "night owl",
+      "dry humor"
     ],
+    "major": "criminal justice",
+    "about": {
+      "graduating_term": "winter",
+      "work_type": "office_or_admin",
+      "job_title": "records clerk",
+      "work_hours": [
+        "full_time"
+      ]
+    },
     "presence_profile": "night_owl",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 30-year-old white man with short hair and a close-cropped beard, wearing a plain zip-up jacket, standing on a porch at dusk, soft evening light, casual everyday clothing, shot on a phone, waist-up, tired but friendly smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -705,8 +861,21 @@
       "dates"
     ],
     "tags": [
-      "transfer"
+      "transfer track",
+      "reading",
+      "baking",
+      "family first"
     ],
+    "major": "education",
+    "about": {
+      "minor": "art",
+      "graduating_term": "spring",
+      "work_type": "tutoring",
+      "job_title": "after school tutor",
+      "work_hours": [
+        "part_time"
+      ]
+    },
     "presence_profile": "regular_on_campus",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 21-year-old Latina woman with long wavy dark hair, wearing a plain soft cardigan, sitting on a porch step, warm natural light, casual everyday clothing, shot on a phone, waist-up, bright friendly smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -727,9 +896,20 @@
       "whatever"
     ],
     "tags": [
-      "gym",
-      "soccer"
+      "soccer",
+      "intramurals",
+      "fixing things",
+      "gym"
     ],
+    "major": null,
+    "about": {
+      "work_type": "landscaping",
+      "job_title": "landscaping crew",
+      "work_hours": [
+        "weekends",
+        "seasonal"
+      ]
+    },
     "presence_profile": "commuter_nearby",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 19-year-old white man with short curly brown hair, wearing a plain work jacket over a plain tee with no visible labels, sitting on a porch step, natural daylight, casual everyday clothing, shot on a phone, waist-up, easygoing smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -750,9 +930,12 @@
       "dates"
     ],
     "tags": [
-      "art",
-      "coffee"
+      "painting",
+      "art shows",
+      "coffee",
+      "museums"
     ],
+    "major": "art",
     "presence_profile": "mostly_away",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 22-year-old East Asian woman with a sleek black bob haircut, wearing a plain oversized cardigan, sitting by a window, soft natural light, casual everyday clothing, shot on a phone, waist-up, calm confident smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",
@@ -773,8 +956,20 @@
       "whatever"
     ],
     "tags": [
-      "bio"
+      "parent",
+      "back after a break",
+      "family first",
+      "grilling"
     ],
+    "major": "bio",
+    "about": {
+      "graduating_term": "summer",
+      "work_type": "family_business",
+      "job_title": "bookkeeper",
+      "work_hours": [
+        "part_time"
+      ]
+    },
     "presence_profile": "rarely_active",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 36-year-old Latino man with short graying hair and a trimmed beard, wearing a plain button-down shirt, sitting at a desk with a plain closed laptop nearby, soft indoor natural light, casual everyday clothing, shot on a phone, waist-up, warm relaxed smile, no signs, no lettering, no text anywhere in the image, plain unbranded clothing and objects with no graphics.",
@@ -808,10 +1003,12 @@
       "group"
     ],
     "tags": [
-      "cs",
-      "esports",
+      "i know where the good outlets are",
+      "pc gaming",
+      "always has headphones in",
       "coffee"
     ],
+    "major": "cs",
     "presence_profile": "night_owl",
     "photo_count": 1,
     "portrait_prompt": "A natural, candid, photorealistic portrait of an adult, a 20-year-old Black woman with long box braids, wearing a plain hoodie with no graphics, sitting on a couch, slightly off-centre framing, natural indoor light, casual everyday clothing, shot on a phone, close waist-up crop, playful grin, no signs, no lettering, no text anywhere in the image, plain unbranded clothing with no graphics.",

@@ -21,6 +21,12 @@
 --   Eve  open conversation with Mia; Mia blocks Eve, then unblocks
 --   Fay  open conversation with Mia; Fay blocks Mia, then unblocks
 --   Rev  deletes the account and signs up again (purge + revive)
+--
+-- Amended by migration 0018 (tags_and_about): complete_onboarding() now requires
+-- at least 3 tags, and user_tags is written only through set_my_tags(), so the
+-- fixture helper sets 3 catalog tags before onboarding. The profile_card_for() return-type
+-- assertion now includes 0018's trailing about jsonb column; the plan count is
+-- unchanged.
 
 create extension if not exists pgtap with schema public;
 
@@ -133,6 +139,8 @@ begin
   update public.users_private set date_of_birth = '2003-01-01' where user_id = p_uid;
   update public.user_photos set moderation_state = 'ok' where id = v_photo;
 
+  -- (amended by migration 0018: complete_onboarding() needs 3 tags, written through set_my_tags())
+  perform pg_temp._as15(p_uid, $q$select public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label))$q$);
   perform pg_temp._as15(p_uid, 'select public.complete_onboarding()');
   perform pg_temp._as15(p_uid, $q$select public.set_my_tier('on_campus')$q$);
 
@@ -299,7 +307,7 @@ begin
     'grid_for_me() returns the 0015 column list (place_line after status_line)') into v_line; out := out || v_line || E'\n';
 
   select is(pg_get_function_result('public.profile_card_for(uuid)'::regprocedure),
-    'TABLE(user_id uuid, first_name text, grad_year smallint, status_line text, tier presence_tier, here_now boolean, is_online boolean, photos text[], tag_labels text[], goals user_goal[], my_hi_state hi_state, conversation_id uuid, joined_month date, joined_recency text, place_line text, prompts jsonb, usual_places text[], gate_open boolean)',
+    'TABLE(user_id uuid, first_name text, grad_year smallint, status_line text, tier presence_tier, here_now boolean, is_online boolean, photos text[], tag_labels text[], goals user_goal[], my_hi_state hi_state, conversation_id uuid, joined_month date, joined_recency text, place_line text, prompts jsonb, usual_places text[], gate_open boolean, about jsonb)',
     'profile_card_for() returns the 0015 column list (six columns appended)') into v_line; out := out || v_line || E'\n';
 
   select is(pg_get_function_result('public.my_profile_fields()'::regprocedure),

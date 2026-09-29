@@ -20,6 +20,8 @@
 //   upload-plan.json         one entry per image: local file, bucket, object path.
 //   profile-fields.generated.sql  migration 0015's profile fields only, for an
 //                            already-seeded demo.
+//   about-fields.generated.sql  migration 0018's tags (global catalog) and about
+//                            section only, for an already-seeded demo.
 //   heartbeat.generated.sql  the liveness functions only (as the seed installs
 //                            them), for an already-seeded demo.
 //
@@ -673,6 +675,53 @@ const profileFieldTotals = {
 };
 
 // -----------------------------------------------------------------------------
+// Tags and the about section (migration 0018). tags: 3-10 labels from the
+// global interest catalog, in the order picked (position 0 first; the first
+// two show on the grid tile). major (cast.json top level) and about.minor are
+// CLC program labels; the rest of about maps 1:1 onto the profiles columns.
+// validate.mjs checks all of it against the migration.
+// -----------------------------------------------------------------------------
+
+const WORK_HOURS_ORDER = ["part_time", "full_time", "nights", "weekends", "seasonal", "on_call"];
+function aboutFields(p) {
+  const a = p.about ?? {};
+  const hours = Array.isArray(a.work_hours) && a.work_hours.length
+    ? [...a.work_hours].sort((x, y) => WORK_HOURS_ORDER.indexOf(x) - WORK_HOURS_ORDER.indexOf(y))
+    : null;
+  return {
+    major: p.major ?? null,
+    minor: a.minor ?? null,
+    graduating_term: a.graduating_term ?? null,
+    graduating_unsure: a.graduating_unsure === true,
+    work_type: a.work_type ?? null,
+    work_hours: hours,
+    job_title: a.job_title ?? null,
+  };
+}
+for (const p of people) {
+  if (!Array.isArray(p.tags) || p.tags.length < 3 || p.tags.length > 10) {
+    throw new Error(`cast.json: ${p.key} needs 3-10 tags (run validate.mjs)`);
+  }
+  if (aboutFields(p).graduating_unsure && p.grad_year !== null) {
+    throw new Error(`cast.json: ${p.key} is graduating_unsure, so grad_year must be null`);
+  }
+}
+const aboutTotals = (() => {
+  const a = people.map(aboutFields);
+  return {
+    tags: people.reduce((n, p) => n + p.tags.length, 0),
+    majors: a.filter((x) => x.major !== null).length,
+    minors: a.filter((x) => x.minor !== null).length,
+    terms: a.filter((x) => x.graduating_term !== null).length,
+    unsure: a.filter((x) => x.graduating_unsure).length,
+    workTypes: a.filter((x) => x.work_type !== null).length,
+    jobTitles: a.filter((x) => x.job_title !== null).length,
+    workHours: a.filter((x) => x.work_hours !== null).length,
+    gradYears: people.filter((p) => p.grad_year !== null).length,
+  };
+})();
+
+// -----------------------------------------------------------------------------
 // SQL: seed
 // -----------------------------------------------------------------------------
 
@@ -685,6 +734,7 @@ function seedPlan() {
     presence_profile: p.presence_profile, goals: p.goals, tags: p.tags,
     photos: p.photos.map((ph) => ({ id: ph.id, pos: ph.position, path: ph.path, tint: ph.tint })),
     ...profileFields(p),
+    ...aboutFields(p),
   }));
   const accts = accounts.map((A) => ({
     key: A.key,
@@ -748,6 +798,7 @@ declare
   v_now    timestamptz := now();
   v_prev   text := coalesce(current_setting('app.bypass_profiles_guard', true), 'off');
   v_campus uuid;
+  v_ctype  text;
   v_n      integer;
   v_state  text;
   v_demo   uuid[];
@@ -765,9 +816,19 @@ declare
   v_al     jsonb;
   v_s      jsonb;
 begin
-  select id into v_campus from public.campuses where slug = '${CAMPUS_SLUG}';
+  select id, campus_type::text into v_campus, v_ctype from public.campuses where slug = '${CAMPUS_SLUG}';
   if v_campus is null then
     raise exception 'demo seed: campus ${CAMPUS_SLUG} not found';
+  end if;
+
+  -- Majors and minors (migration 0018) must name ${CAMPUS_SLUG} programs.
+  select count(*) into v_n
+    from jsonb_array_elements(v_plan -> 'people') p
+    cross join lateral (values (p ->> 'major'), (p ->> 'minor')) as x(label)
+   where x.label is not null
+     and not exists (select 1 from public.programs pr where pr.campus_id = v_campus and pr.label = x.label);
+  if v_n > 0 then
+    raise exception 'demo seed: % major/minor label(s) did not resolve against the ${CAMPUS_SLUG} programs', v_n;
   end if;
 
   select array_agg((p ->> 'id')::uuid) into v_demo from jsonb_array_elements(v_plan -> 'people') p;
@@ -839,11 +900,23 @@ begin
 
   -- profiles_from_auth() derives campus_id from the demo domain and stamps
   -- email_verified; verification_status is raised to verified right after.
-  insert into public.profiles (id, first_name, grad_year, status_line, status, last_active_at, created_at, updated_at)
+  -- The about section (migration 0018) is written with the row: major/minor
+  -- from ${CAMPUS_SLUG}'s programs (checked above), work_hours in enum order.
+  insert into public.profiles
+    (id, first_name, grad_year, status_line, status, last_active_at, created_at, updated_at,
+     major_id, minor_id, graduating_term, graduating_unsure, work_type, work_hours, job_title)
   select (p ->> 'id')::uuid, p ->> 'first_name', (p ->> 'grad_year')::smallint, p ->> 'status_line', 'active',
          v_now - interval '2 hours',
          v_now - make_interval(days => (p ->> 'created_days')::int),
-         v_now - make_interval(days => (p ->> 'created_days')::int)
+         v_now - make_interval(days => (p ->> 'created_days')::int),
+         (select pr.id from public.programs pr where pr.campus_id = v_campus and pr.label = p ->> 'major'),
+         (select pr.id from public.programs pr where pr.campus_id = v_campus and pr.label = p ->> 'minor'),
+         (p ->> 'graduating_term')::public.graduating_term,
+         coalesce((p ->> 'graduating_unsure')::boolean, false),
+         (p ->> 'work_type')::public.work_type,
+         (select array_agg(h::public.work_hours order by h::public.work_hours)
+            from jsonb_array_elements_text(coalesce(nullif(p -> 'work_hours', 'null'::jsonb), '[]'::jsonb)) h),
+         p ->> 'job_title'
     from jsonb_array_elements(v_plan -> 'people') p
   on conflict (id) do nothing;
 
@@ -871,15 +944,18 @@ begin
     from jsonb_array_elements(v_plan -> 'people') p, jsonb_array_elements_text(p -> 'goals') g
   on conflict do nothing;
 
+  -- Tags (migration 0018): the global interest catalog (campus_id null), only
+  -- tags offered on ${CAMPUS_SLUG}'s campus type, in the order picked (position 0 first).
   insert into public.user_tags (user_id, tag_id, position, created_at)
   select (p ->> 'id')::uuid, t.id, (x.ord - 1)::smallint, v_now
     from jsonb_array_elements(v_plan -> 'people') p
     cross join lateral jsonb_array_elements_text(p -> 'tags') with ordinality as x(label, ord)
-    join public.tags t on t.campus_id = v_campus and t.label = x.label
+    join public.tags t on t.campus_id is null and t.label = x.label
+                      and (t.campus_type = 'all' or t.campus_type::text = v_ctype)
   on conflict do nothing;
   if (select count(*) from public.user_tags where user_id = any(v_demo))
      <> (select count(*) from jsonb_array_elements(v_plan -> 'people') p, jsonb_array_elements(p -> 'tags')) then
-    raise exception 'demo seed: a demo tag label did not resolve against the CLC tag seed';
+    raise exception 'demo seed: a demo tag label did not resolve against the global tag catalog (or a demo user already holds other tags: apply about-fields.generated.sql instead)';
   end if;
 
   -- Photos: approved (ok) as a moderator would; written as the table owner, so
@@ -1154,7 +1230,8 @@ begin
 
   -- 2c. Each demo user through private.purge_user (conversations, hi's and
   -- shares in either direction, including any made live during the demo; their
-  -- albums, photos, tags, goals, presence, devices, prefs, consents, identity).
+  -- albums, photos, tags, goals, presence, devices, prefs, consents, identity,
+  -- and since migration 0018 their notices and tag suggestions).
   -- purge_user enqueues any remaining storage objects itself.
   foreach v_uid in array v_ids loop
     perform private.purge_user(v_uid);
@@ -1172,6 +1249,10 @@ begin
       or report_id in (select r.id from public.reports r where r.reporter_id = any(v_ids) or r.subject_id = any(v_ids));
   delete from public.reports where reporter_id = any(v_ids) or subject_id = any(v_ids);
   delete from public.blocks where blocker_id = any(v_ids) or blocked_id = any(v_ids);
+  -- (migration 0018) both reference profiles(id); purge_user already empties
+  -- them, this keeps the profile delete below safe whatever purge_user does.
+  delete from public.user_notices where user_id = any(v_ids);
+  delete from public.tag_suggestions where user_id = any(v_ids);
   delete from public.verifications where user_id = any(v_ids);
   delete from private.verification_start_rate_limit where user_id = any(v_ids);
   delete from public.users_private where user_id = any(v_ids);
@@ -1195,6 +1276,9 @@ begin
        + (select count(*) from public.shares where id = any(v_seeded_shares))
        + (select count(*) from public.user_prompts where user_id = any(v_demo_fixed))
        + (select count(*) from public.user_usual_places where user_id = any(v_demo_fixed))
+       + (select count(*) from public.user_tags where user_id = any(v_demo_fixed))
+       + (select count(*) from public.user_notices where user_id = any(v_demo_fixed))
+       + (select count(*) from public.tag_suggestions where user_id = any(v_demo_fixed))
     into v_left;
   if v_left <> 0 then
     raise exception 'demo unseed: % seeded row(s) remain', v_left;
@@ -1218,6 +1302,7 @@ const BASELINE_TABLES = [
   "public.shares", "public.consents", "public.notification_prefs", "public.blocks", "public.reports",
   "public.campuses", "private.storage_purge_queue",
   "public.user_prompts", "public.user_usual_places",
+  "public.user_notices", "public.tag_suggestions",
 ];
 
 function rehearsalSql(seed, unseed) {
@@ -1255,6 +1340,13 @@ insert into _demo_baseline select * from pg_temp._demo_snapshot();
   push(`  perform pg_temp._chk((select count(*) from public.user_prompts where user_id = any(v_demo)) = ${profileFieldTotals.prompts}, 'demo prompt answers: ${profileFieldTotals.prompts}');`);
   push(`  perform pg_temp._chk(not exists (select 1 from public.profiles p join public.user_presence up on up.user_id = p.id where p.id = any(v_demo) and p.place_line_until is not null and up.tier not in ('on_campus', 'nearby')), 'no demo place line is live while its owner is away');`);
   push(`  perform pg_temp._chk(not exists (select 1 from public.profiles p join public.user_presence up on up.user_id = p.id where p.id = any(v_demo) and p.place_line is not null and up.tier in ('on_campus', 'nearby') and (p.place_line_until is null or p.place_line_until <= now())), 'every demo place line is live while its owner is on campus or nearby');`);
+  const at = aboutTotals;
+  push(`  perform pg_temp._chk((select count(*) from public.user_tags where user_id = any(v_demo)) = ${at.tags}, 'demo tags: ${at.tags}');`);
+  push(`  perform pg_temp._chk(not exists (select 1 from unnest(v_demo) d(id) where (select count(*) from public.user_tags ut where ut.user_id = d.id) not between 3 and 10 or (select max(ut.position) + 1 from public.user_tags ut where ut.user_id = d.id) <> (select count(*) from public.user_tags ut where ut.user_id = d.id)), 'every demo user has 3-10 tags at positions 0..n-1');`);
+  push(`  perform pg_temp._chk(not exists (select 1 from public.user_tags ut join public.tags t on t.id = ut.tag_id where ut.user_id = any(v_demo) and (t.campus_id is not null or not private.tag_available(ut.tag_id, ut.user_id))), 'every demo tag is a global tag offered on ${CAMPUS_SLUG}');`);
+  push(`  perform pg_temp._chk((select count(major_id) from public.profiles where id = any(v_demo)) = ${at.majors} and (select count(minor_id) from public.profiles where id = any(v_demo)) = ${at.minors}, 'demo majors ${at.majors}, minors ${at.minors}');`);
+  push(`  perform pg_temp._chk((select count(graduating_term) from public.profiles where id = any(v_demo)) = ${at.terms} and (select count(*) filter (where graduating_unsure) from public.profiles where id = any(v_demo)) = ${at.unsure} and (select count(grad_year) from public.profiles where id = any(v_demo)) = ${at.gradYears}, 'demo graduating: ${at.terms} terms, ${at.unsure} not sure yet, ${at.gradYears} years');`);
+  push(`  perform pg_temp._chk((select count(work_type) from public.profiles where id = any(v_demo)) = ${at.workTypes} and (select count(job_title) from public.profiles where id = any(v_demo)) = ${at.jobTitles} and (select count(work_hours) from public.profiles where id = any(v_demo)) = ${at.workHours}, 'demo work: ${at.workTypes} work types, ${at.jobTitles} job titles, ${at.workHours} with hours');`);
 
   accounts.forEach((A, i) => {
     const e = exp[i];
@@ -1295,7 +1387,8 @@ insert into _demo_baseline select * from pg_temp._demo_snapshot();
      and (r.last_read_at is null or c.last_message_at > r.last_read_at);
   select count(*) into v_n5 from public.albums a where a.owner_id = any(v_demo);
   select count(*) into v_n6 from public.album_photos ap join public.albums a on a.id = ap.album_id where a.owner_id = any(v_demo);
-  select count(*), max(array_length(photos, 1)), max(conversation_id::text) into v_n7, v_n8, v_txt from public.profile_card_for('${probe.uid}');
+  select count(*), max(array_length(photos, 1)), max(conversation_id::text), max(array_to_string(tag_labels, '|')), max(about -> 'major' ->> 'label')
+    into v_n7, v_n8, v_txt, v_txt4, v_txt5 from public.profile_card_for('${probe.uid}');
   select my_hi_state::text into v_txt2 from public.profile_card_for('${demo(hiSent.cast).uid}');
   select my_hi_state::text into v_txt3 from public.profile_card_for('${demo(hiExpired.cast).uid}');
   execute 'reset role';
@@ -1305,6 +1398,7 @@ insert into _demo_baseline select * from pg_temp._demo_snapshot();
   perform pg_temp._chk(v_n4 = ${e.unread}, '${A.key}: ${e.unread} unread threads by the app''s rule (got ' || v_n4 || ')');
   perform pg_temp._chk(v_n5 = ${e.albumsSharedIn} and v_n6 = ${e.albumPhotosSharedIn}, '${A.key}: sees ${e.albumsSharedIn} shared albums / ${e.albumPhotosSharedIn} photos (got ' || v_n5 || '/' || v_n6 || ')');
   perform pg_temp._chk(v_n7 = 1 and v_n8 = ${probe.photo_count} and v_txt = '${firstConv.id}', '${A.key}: profile_card_for(${probe.key}) returns the card, ${probe.photo_count} photos, the thread');
+  perform pg_temp._chk(v_txt4 = ${q(probe.tags.join("|"))} and v_txt5 is not distinct from ${q(probe.major ?? null)}, '${A.key}: profile_card_for(${probe.key}) shows the tags in order and the major (' || coalesce(v_txt4, '-') || ' / ' || coalesce(v_txt5, '-') || ')');
   perform pg_temp._chk(v_txt2 = 'sent' and v_txt3 = 'expired', '${A.key}: card my_hi_state sent (${hiSent.cast}) / expired (${hiExpired.cast})');`);
   });
 
@@ -1364,7 +1458,7 @@ declare
 ${accounts.map((A) => `  v_convs_${A.key} uuid[] := ${arr(A.conversations.map((c) => c.id))};`).join("\n")}
   v_izaac uuid; v_debbie uuid;
   v_n int; v_n2 int; v_n3 int; v_n4 int; v_n5 int; v_n6 int; v_n7 int; v_n8 int; v_hr int;
-  v_txt text; v_txt2 text; v_txt3 text; v_h1 text; v_h2 text; v_h3 text; v_h4 text; v_h5 text;
+  v_txt text; v_txt2 text; v_txt3 text; v_txt4 text; v_txt5 text; v_h1 text; v_h2 text; v_h3 text; v_h4 text; v_h5 text;
 begin
 ${ACCOUNTS.map((a) => `  select p.id into v_${a.key} from public.profiles p join auth.users u on u.id = p.id where lower(p.first_name) = lower(${q(a.firstName)}) and not (${DEMO_EMAIL_PRED("u.email")});`).join("\n")}
   perform pg_temp._chk((select count(*) from public.profiles) = (select v::int from _demo_baseline where k = 'rows:public.profiles') + ${people.length}, 'idempotent: the second seed run added nothing (profiles = baseline + ${people.length})');
@@ -1519,6 +1613,195 @@ $pf$;
 }
 
 // -----------------------------------------------------------------------------
+// SQL: tags and about section only, for a demo that is already seeded (0018)
+// -----------------------------------------------------------------------------
+// Migration 0018 replaced the CLC tag seed with the global interest catalog:
+// the demo users came out of its data step with 0-1 tags, a major taken from
+// their old major tag, and a 'tags_changed' notice about the pre-0018 tags.
+// This sets exactly the cast's tags, major/minor and about fields on the
+// existing demo users, drops those stale notices, and touches nothing else.
+// Idempotent: every run replaces the same fields with the same values.
+
+function aboutFieldsSql() {
+  const rows = people.map((p) => JSON.stringify({ id: p.uid, key: p.key, tags: p.tags, ...aboutFields(p) }));
+  const body = "[\n" + rows.join(",\n") + "\n]";
+  if (body.includes("$plan$")) throw new Error("content contains the $plan$ delimiter");
+  const at = aboutTotals;
+  return `${header("OhHi demo: tags and about section only (migration 0018) for the already-seeded demo users")}
+-- Replaces, for the ${people.length} demo users on @${DEMO_DOMAIN}, from cast.json, exactly:
+--   * public.user_tags: the cast's tags from the global interest catalog
+--     (tags.campus_id is null), positions 0..n-1 in the order picked (the
+--     first two show on the grid tile). A label that does not resolve, or that
+--     is not offered on the demo users' campus type (a residential tag on
+--     commuter CLC), raises.
+--   * public.profiles.major_id / minor_id (public.programs of the demo users'
+--     campus; a label that does not resolve raises), graduating_term,
+--     graduating_unsure, work_type, work_hours and job_title; grad_year only
+--     for a demo user marked graduating_unsure (set to null).
+--   * public.user_notices of kind 'tags_changed' for the demo users: migration
+--     0018's data step wrote them about the pre-0018 demo tags, so they are stale.
+-- Demo users only: every id is checked against auth.users on the demo domain
+-- first, and the block raises (changing nothing) if any is missing or is not
+-- a demo account. No other row is read or written: no chats, messages, hi's,
+-- albums, album photos, shares, photos, goals, presence, status lines or
+-- 0015 profile fields. Needs migration 0018.
+--
+-- Idempotent: each run replaces these fields for the demo users with the
+-- cast's values, so a second run ends in the same state. The profiles write
+-- runs under app.bypass_profiles_guard, saved and restored.
+--
+-- Apply with apply_migration, then remove the history row it records:
+--   supabase migration repair --status reverted <version>
+-- Expected: ${at.tags} tags across ${people.length} users (3-10 each), ${at.majors} majors, ${at.minors} minors,
+-- ${at.terms} graduating terms, ${at.unsure} not sure yet (grad_year null; ${at.gradYears} demo users keep a grad_year),
+-- ${at.workTypes} work types, ${at.jobTitles} job titles, ${at.workHours} with work hours; 0 'tags_changed' notices left.
+
+do $af$
+declare
+  v_plan    jsonb := $plan$${body}$plan$::jsonb;
+  v_ids     uuid[];
+  v_campus  uuid;
+  v_ctype   text;
+  v_n       integer;
+  v_notices integer;
+  v_prev    text := coalesce(current_setting('app.bypass_profiles_guard', true), 'off');
+begin
+  select array_agg((x ->> 'id')::uuid) into v_ids from jsonb_array_elements(v_plan) x;
+
+  -- Demo users only.
+  select count(*) into v_n
+    from unnest(v_ids) as d(id)
+    join auth.users u on u.id = d.id
+    join public.profiles p on p.id = d.id
+   where ${DEMO_EMAIL_PRED("u.email")};
+  if v_n <> cardinality(v_ids) then
+    raise exception 'about fields: expected % demo users on @${DEMO_DOMAIN}, found %; is the demo seeded?', cardinality(v_ids), v_n;
+  end if;
+
+  -- One campus for all of them; its programs and campus type drive the lookups.
+  select count(distinct p.campus_id), min(p.campus_id::text)::uuid into v_n, v_campus
+    from public.profiles p where p.id = any(v_ids);
+  if v_n <> 1 or v_campus is null then
+    raise exception 'about fields: the demo users are not all on one campus';
+  end if;
+  select c.campus_type::text into v_ctype from public.campuses c where c.id = v_campus;
+  if v_ctype is null then
+    raise exception 'about fields: the demo users'' campus has no campus_type; is migration 0018 applied?';
+  end if;
+
+  -- Everything resolves before anything is written.
+  if exists (select 1 from jsonb_array_elements(v_plan) pp where jsonb_array_length(pp -> 'tags') not between 3 and 10) then
+    raise exception 'about fields: every demo user needs 3-10 tags';
+  end if;
+  select count(*) into v_n
+    from jsonb_array_elements(v_plan) pp
+    cross join lateral jsonb_array_elements_text(pp -> 'tags') as x(label)
+   where not exists (select 1 from public.tags t
+                      where t.campus_id is null and t.label = x.label
+                        and (t.campus_type = 'all' or t.campus_type::text = v_ctype));
+  if v_n > 0 then
+    raise exception 'about fields: % tag label(s) are not global tags offered on a % campus', v_n, v_ctype;
+  end if;
+  select count(*) into v_n
+    from jsonb_array_elements(v_plan) pp
+    cross join lateral (values (pp ->> 'major'), (pp ->> 'minor')) as x(label)
+   where x.label is not null
+     and not exists (select 1 from public.programs pr where pr.campus_id = v_campus and pr.label = x.label);
+  if v_n > 0 then
+    raise exception 'about fields: % major/minor label(s) are not programs of the demo users'' campus', v_n;
+  end if;
+  select count(*) into v_n
+    from jsonb_array_elements(v_plan) pp
+    join public.profiles pr on pr.id = (pp ->> 'id')::uuid
+   where pp ->> 'graduating_term' is not null and pr.grad_year is null;
+  if v_n > 0 then
+    raise exception 'about fields: % demo user(s) have a graduating term in the cast but no stored grad_year', v_n;
+  end if;
+
+  -- Tags: replaced whole, in the cast's order.
+  delete from public.user_tags where user_id = any(v_ids);
+  insert into public.user_tags (user_id, tag_id, position)
+  select (pp ->> 'id')::uuid, t.id, (x.ord - 1)::smallint
+    from jsonb_array_elements(v_plan) pp
+    cross join lateral jsonb_array_elements_text(pp -> 'tags') with ordinality as x(label, ord)
+    join public.tags t on t.campus_id is null and t.label = x.label
+                      and (t.campus_type = 'all' or t.campus_type::text = v_ctype);
+
+  -- About: every column for every demo user, so a field the cast leaves out is cleared.
+  perform set_config('app.bypass_profiles_guard', 'on', true);
+  update public.profiles pr
+     set major_id          = (select g.id from public.programs g where g.campus_id = v_campus and g.label = pp ->> 'major'),
+         minor_id          = (select g.id from public.programs g where g.campus_id = v_campus and g.label = pp ->> 'minor'),
+         graduating_unsure = (pp ->> 'graduating_unsure')::boolean,
+         grad_year         = case when (pp ->> 'graduating_unsure')::boolean then null else pr.grad_year end,
+         graduating_term   = case when (pp ->> 'graduating_unsure')::boolean then null
+                                  else (pp ->> 'graduating_term')::public.graduating_term end,
+         work_type         = (pp ->> 'work_type')::public.work_type,
+         work_hours        = (select array_agg(h::public.work_hours order by h::public.work_hours)
+                                from jsonb_array_elements_text(coalesce(nullif(pp -> 'work_hours', 'null'::jsonb), '[]'::jsonb)) h),
+         job_title         = pp ->> 'job_title'
+    from jsonb_array_elements(v_plan) pp
+   where pr.id = (pp ->> 'id')::uuid;
+  perform set_config('app.bypass_profiles_guard', v_prev, true);
+
+  -- The pre-0018 'tags_changed' notices describe tags the demo users no longer have.
+  delete from public.user_notices where user_id = any(v_ids) and kind = 'tags_changed';
+  get diagnostics v_notices = row_count;
+
+  -- Verify: exactly the cast, nothing more.
+  if (select count(*) from public.user_tags where user_id = any(v_ids)) <> ${at.tags} then
+    raise exception 'about fields: expected ${at.tags} demo tags after the write';
+  end if;
+  select count(*) into v_n
+    from jsonb_array_elements(v_plan) pp
+    cross join lateral jsonb_array_elements_text(pp -> 'tags') with ordinality as x(label, ord)
+    join public.user_tags ut on ut.user_id = (pp ->> 'id')::uuid and ut.position = x.ord - 1
+    join public.tags t on t.id = ut.tag_id and t.label = x.label and t.campus_id is null;
+  if v_n <> ${at.tags} then
+    raise exception 'about fields: % of ${at.tags} demo tags are at their cast position', v_n;
+  end if;
+  if exists (select 1 from unnest(v_ids) d(id)
+              where (select count(*) from public.user_tags ut where ut.user_id = d.id) not between 3 and 10) then
+    raise exception 'about fields: a demo user does not have 3-10 tags';
+  end if;
+  select count(*) into v_n
+    from jsonb_array_elements(v_plan) pp
+    join public.profiles pr on pr.id = (pp ->> 'id')::uuid
+    left join public.programs mj on mj.id = pr.major_id
+    left join public.programs mn on mn.id = pr.minor_id
+   where mj.label is not distinct from pp ->> 'major'
+     and mn.label is not distinct from pp ->> 'minor'
+     and pr.graduating_term::text is not distinct from pp ->> 'graduating_term'
+     and pr.graduating_unsure = (pp ->> 'graduating_unsure')::boolean
+     and (not pr.graduating_unsure or pr.grad_year is null)
+     and pr.work_type::text is not distinct from pp ->> 'work_type'
+     and pr.job_title is not distinct from pp ->> 'job_title'
+     and coalesce(to_jsonb(pr.work_hours), 'null'::jsonb) = pp -> 'work_hours';
+  if v_n <> cardinality(v_ids) then
+    raise exception 'about fields: % of % demo users match the cast''s about section', v_n, cardinality(v_ids);
+  end if;
+  if (select count(major_id) from public.profiles where id = any(v_ids)) <> ${at.majors}
+     or (select count(minor_id) from public.profiles where id = any(v_ids)) <> ${at.minors}
+     or (select count(graduating_term) from public.profiles where id = any(v_ids)) <> ${at.terms}
+     or (select count(*) filter (where graduating_unsure) from public.profiles where id = any(v_ids)) <> ${at.unsure}
+     or (select count(work_type) from public.profiles where id = any(v_ids)) <> ${at.workTypes}
+     or (select count(job_title) from public.profiles where id = any(v_ids)) <> ${at.jobTitles}
+     or (select count(work_hours) from public.profiles where id = any(v_ids)) <> ${at.workHours}
+     or exists (select 1 from public.user_notices where user_id = any(v_ids) and kind = 'tags_changed') then
+    raise exception 'about fields: counts after the write do not match the cast';
+  end if;
+  if current_setting('app.bypass_profiles_guard', true) is not distinct from 'on' and v_prev <> 'on' then
+    raise exception 'about fields: app.bypass_profiles_guard was not restored';
+  end if;
+
+  raise notice 'about fields: % tags, % majors, % minors, % graduating terms, % not sure yet, % work types, % job titles, % with work hours on % demo users; % stale notice(s) removed',
+    ${at.tags}, ${at.majors}, ${at.minors}, ${at.terms}, ${at.unsure}, ${at.workTypes}, ${at.jobTitles}, ${at.workHours}, cardinality(v_ids), v_notices;
+end;
+$af$;
+`;
+}
+
+// -----------------------------------------------------------------------------
 // SQL: the liveness functions only, for a demo that is already seeded
 // -----------------------------------------------------------------------------
 // Exactly the functions seed.generated.sql installs (create or replace), with
@@ -1543,6 +1826,7 @@ ${heartbeatSql()}`;
 // -----------------------------------------------------------------------------
 
 writeFileSync(join(HERE, "profile-fields.generated.sql"), profileFieldsSql());
+writeFileSync(join(HERE, "about-fields.generated.sql"), aboutFieldsSql());
 writeFileSync(join(HERE, "heartbeat.generated.sql"), heartbeatOnlySql());
 const seed = seedSql();
 const unseed = unseedSql();
@@ -1573,4 +1857,5 @@ if (adjustments.length) {
 }
 if (warnings.length) console.log(`\n${warnings.length} warning(s)`);
 console.log(`profile fields (0015): ${JSON.stringify(profileFieldTotals)}`);
-console.log("\nwrote seed.generated.sql, unseed.generated.sql, rehearsal.generated.sql, upload-plan.json, profile-fields.generated.sql, heartbeat.generated.sql");
+console.log(`tags and about (0018): ${JSON.stringify(aboutTotals)}`);
+console.log("\nwrote seed.generated.sql, unseed.generated.sql, rehearsal.generated.sql, upload-plan.json, profile-fields.generated.sql, about-fields.generated.sql, heartbeat.generated.sql");

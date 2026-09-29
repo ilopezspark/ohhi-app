@@ -34,6 +34,11 @@
 --     Kip  hi to Vic, Vic blocks Kip
 --     Lou  hi to Vic, expired
 --     Ivy  hi to Vic, suspended then reinstated
+--
+-- Amended by migration 0018 (tags_and_about): complete_onboarding() now requires
+-- at least 3 tags, and user_tags is written only through set_my_tags(), so the
+-- fixture helper sets 3 catalog tags before onboarding. No assertion changed;
+-- the plan count is unchanged.
 
 create extension if not exists pgtap with schema public;
 
@@ -159,6 +164,8 @@ begin
   update public.users_private set date_of_birth = '2003-01-01' where user_id = p_uid;
   update public.user_photos set moderation_state = 'ok' where id = v_photo;
 
+  -- (amended by migration 0018: complete_onboarding() needs 3 tags, written through set_my_tags())
+  perform pg_temp._as17(p_uid, $q$select public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label))$q$);
   perform pg_temp._as17(p_uid, 'select public.complete_onboarding()');
   perform pg_temp._as17(p_uid, $q$select public.set_my_tier('on_campus')$q$);
 

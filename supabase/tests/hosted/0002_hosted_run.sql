@@ -15,6 +15,13 @@
 -- assertion that updated the dropped column is now a hasnt_column check, so
 -- the plan stays 98. See the pgTAP file's header.
 
+-- Migration 0018 (tags and about) amended this runner: the 0002 CLC tags
+-- (nursing, cs, business, ...) no longer exist, user_tags is written only
+-- through set_my_tags(), and complete_onboarding() needs 3 tags. Every fixture
+-- that onboards now sets 3 catalog tags first, and acceptance 25's user_tags
+-- half now expects the privilege refusal (42501) for a direct insert at
+-- position 10. The plan stays 98.
+
 create extension if not exists pgtap with schema public;
 
 -- Defect A is fixed in the migration on disk (private.campus_id_for_email
@@ -101,9 +108,8 @@ begin
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated';
   update public.profiles set first_name = 'Ann' where id = auth.uid();
   insert into public.user_goals (user_id, goal) values (auth.uid(), 'friends');
-  insert into public.user_tags (user_id, tag_id, position) select auth.uid(), id, 0 from public.tags where label = 'nursing';
-  insert into public.user_tags (user_id, tag_id, position) select auth.uid(), id, 1 from public.tags where label = 'cs';
-  insert into public.user_tags (user_id, tag_id, position) select auth.uid(), id, 2 from public.tags where label = 'business';
+  -- (amended by migration 0018: the 0002 CLC tags are gone and user_tags is written only through set_my_tags())
+  perform public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label));
   insert into public.user_photos (user_id, position, storage_path) values (auth.uid(), 0, 'ann/0.jpg');
   insert into public.user_photos (user_id, position, storage_path) values (auth.uid(), 1, 'ann/1.jpg');
   insert into public.user_photos (user_id, position, storage_path) values (auth.uid(), 2, 'ann/2.jpg');
@@ -111,24 +117,28 @@ begin
 
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000002', true); execute 'set local role authenticated';
   update public.profiles set first_name = 'Bea' where id = auth.uid();
+  perform public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label));  -- (amended by migration 0018: 3 tags to publish)
   insert into public.user_goals (user_id, goal) values (auth.uid(), 'study');
   insert into public.user_photos (user_id, position, storage_path) values (auth.uid(), 0, 'bea/0.jpg');
   execute 'reset role';
 
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000004', true); execute 'set local role authenticated';
   update public.profiles set first_name = 'Dee' where id = auth.uid();
+  perform public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label));  -- (amended by migration 0018: 3 tags to publish)
   insert into public.user_goals (user_id, goal) values (auth.uid(), 'whatever');
   insert into public.user_photos (user_id, position, storage_path) values (auth.uid(), 0, 'dee/0.jpg');
   execute 'reset role';
 
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000006', true); execute 'set local role authenticated';
   update public.profiles set first_name = 'Fay' where id = auth.uid();
+  perform public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label));  -- (amended by migration 0018: 3 tags to publish)
   insert into public.user_goals (user_id, goal) values (auth.uid(), 'group');
   insert into public.user_photos (user_id, position, storage_path) values (auth.uid(), 0, 'fay/0.jpg');
   execute 'reset role';
 
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000007', true); execute 'set local role authenticated';
   update public.profiles set first_name = 'Gus' where id = auth.uid();
+  perform public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label));  -- (amended by migration 0018: 3 tags to publish)
   insert into public.user_goals (user_id, goal) values (auth.uid(), 'dates');
   insert into public.user_photos (user_id, position, storage_path) values (auth.uid(), 0, 'gus/0.jpg');
   execute 'reset role';
@@ -571,9 +581,12 @@ begin
 
   -- 25
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated';
+  -- (amended by migration 0018: the cap is 10 (positions 0-9, constraint plus
+  -- set_my_tags) and a client has no direct insert on user_tags at all, so a
+  -- direct insert past the cap is refused for privilege, 42501)
   select throws_ok($$insert into public.user_tags (user_id, tag_id, position)
-      select 'f00d0000-0000-0000-0000-000000000001', id, 3 from public.tags where label='bio'$$,
-    '23514') into v_line; out := out || v_line || E'\n';
+      select 'f00d0000-0000-0000-0000-000000000001', id, 10 from public.tags where campus_id is null and label='golf'$$,
+    '42501') into v_line; out := out || v_line || E'\n';
   select throws_ok($$insert into public.user_photos (user_id, position, storage_path)
       values ('f00d0000-0000-0000-0000-000000000001', 3, 'ann/3.jpg')$$,
     '23514') into v_line; out := out || v_line || E'\n';
@@ -587,6 +600,7 @@ begin
   select throws_like($$select public.complete_onboarding()$$, '%at least one goal is required%',
     'acceptance 26: complete_onboarding fails with zero goals') into v_line; out := out || v_line || E'\n';
   insert into public.user_goals (user_id, goal) values (auth.uid(), 'friends');
+  perform public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label));  -- (amended by migration 0018: 3 tags to publish)
   select is(public.complete_onboarding()::text, 'active', 'acceptance 26: complete_onboarding succeeds once one goal exists') into v_line; out := out || v_line || E'\n';
   execute 'reset role';
 
@@ -603,6 +617,7 @@ begin
   update public.profiles set first_name = 'Eve' where id = auth.uid();
   insert into public.user_goals (user_id, goal) values (auth.uid(), 'friends');
   insert into public.user_photos (user_id, position, storage_path) values (auth.uid(), 0, 'eve/0.jpg');
+  perform public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label));  -- (amended by migration 0018: 3 tags to publish)
   select is(public.complete_onboarding()::text, 'active', 'acceptance 26: a pending main photo still allows onboarding to succeed') into v_line; out := out || v_line || E'\n';
   execute 'reset role';
 

@@ -11,6 +11,10 @@
 -- never touches auth.users, public.profiles or public.user_photos — the one
 -- real user and their photo on the hosted project are untouched either way,
 -- and the final raise rolls the transaction back regardless.
+--
+-- Amended by migration 0018: assertion 24 (user_tags' whole-table update grant)
+-- now asserts the opposite, since 0018 revoked every client write on user_tags.
+-- The plan stays 27.
 
 create extension if not exists pgtap with schema public;
 
@@ -223,11 +227,13 @@ begin
   -- ===========================================================================
 
   -- 24
+  -- (amended by migration 0018: user_tags lost every client write; set_my_tags() is the only write path)
   select ok(
-    has_column_privilege('authenticated', 'public.user_tags', 'user_id', 'update')
-    and has_column_privilege('authenticated', 'public.user_tags', 'tag_id', 'update')
-    and has_column_privilege('authenticated', 'public.user_tags', 'position', 'update'),
-    'user_tags'' whole-table update grant already covers both conflict-key sets'
+    not has_column_privilege('authenticated', 'public.user_tags', 'user_id', 'update')
+    and not has_column_privilege('authenticated', 'public.user_tags', 'tag_id', 'update')
+    and not has_column_privilege('authenticated', 'public.user_tags', 'position', 'update')
+    and not has_any_column_privilege('authenticated', 'public.user_tags', 'insert'),
+    'user_tags: no client insert or update at all since migration 0018 (writes go through set_my_tags())'
   ) into v_line; out := out || v_line || E'\n';
 
   -- 25

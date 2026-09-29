@@ -20,7 +20,8 @@ below turns it into SQL, uploads the images, keeps the demo alive, and removes i
    manifest when present (a missing manifest is a warning; names then follow the convention
    above) and reads each chat image's size and pixel dimensions for the message row, so run it
    again after the images change. It also prints what the schema could not represent as written.
-   It also writes `profile-fields.generated.sql` (see step 7).
+   It also writes `profile-fields.generated.sql` (see step 7) and `about-fields.generated.sql`
+   (see step 8).
 3. **`node supabase/seed/demo/upload.mjs --dry-run`**, then **`node supabase/seed/demo/upload.mjs`**:
    uploads every planned image with the service role (`upsert: true`, `image/jpeg`). The key comes
    from `SUPABASE_SERVICE_ROLE_KEY` or `supabase projects api-keys --project-ref
@@ -29,7 +30,7 @@ below turns it into SQL, uploads the images, keeps the demo alive, and removes i
    their user ids at upload time. The two exhausted view-once photos are skipped on purpose (see
    below).
 4. **Optional rehearsal**: apply `rehearsal.generated.sql` with `apply_migration`, name
-   `tmp_demo_rehearsal`. It runs the seed twice, 81 assertions, the unseed twice, compares every
+   `tmp_demo_rehearsal`. It runs the seed twice, 94 assertions, the unseed twice, compares every
    touched table against a baseline, and always raises, so nothing persists; the report is the
    error text. Confirm afterwards that no `tmp_demo_rehearsal` history row exists.
 5. **Apply `seed.generated.sql`** with `apply_migration` (for example name `demo_seed`).
@@ -45,6 +46,24 @@ below turns it into SQL, uploads the images, keeps the demo alive, and removes i
    `heartbeat.generated.sql` replaces the three liveness functions with the seed's definitions
    (no rows, no cron change), so the `demo-heartbeat` job keeps place lines fresh from then on.
    Applied on hosted on 29 September 2026.
+8. **Tags and about on an already-seeded demo** (migration 0018): apply
+   `about-fields.generated.sql` with `apply_migration`, then remove its history row the same way.
+   0018 replaced the CLC tag seed with the global interest catalog, so its data step left each demo
+   user with 0-1 tags, a major taken from their old major tag and a `tags_changed` notice about the
+   old tags. The file touches **demo users only** (every id is checked against `auth.users` on
+   `@demo.sayohhi.com` first; if any is missing or not a demo account it raises and changes
+   nothing) and only: their `user_tags` (replaced with the cast's tags from the global catalog,
+   positions in order; a label that does not resolve, or a residential tag, raises), `profiles.major_id`
+   / `minor_id` (from `public.programs` of the demo users' campus; an unknown label raises),
+   `graduating_term`, `graduating_unsure`, `work_type`, `work_hours`, `job_title` (and `grad_year`,
+   set to null, only for the one person marked `graduating_unsure`), and it deletes the demo users'
+   `user_notices` of kind `tags_changed` (they describe the pre-0018 tags). The profiles write runs
+   under `app.bypass_profiles_guard`, saved and restored. No chats, messages, hi's, albums, album
+   photos, shares, photos, goals or presence are touched. It is idempotent and ends by verifying
+   what it wrote (every demo user has 3-10 tags at their cast positions, every about field matches
+   the cast, the counts in its header's "Expected" line, no `tags_changed` notice left), raising
+   otherwise. Do not re-apply `seed.generated.sql` for this: its tag guard refuses when a demo user
+   already holds tags other than the cast's.
 
 ## What the seed writes
 
@@ -60,8 +79,13 @@ below turns it into SQL, uploads the images, keeps the demo alive, and removes i
   with a demo user raises and rolls the whole seed back. No pre-existing row of theirs is updated
   or deleted; their conversation with each other is never touched.
 - **People**: 30 `auth.users` (no password, `banned_until` 2999 so nobody can sign in as one,
-  presence profile in `raw_user_meta_data`), `profiles` (`active`, `verified`, CLC), `users_private`
-  (DOB), `user_presence`, `user_goals`, `user_tags`, and 55 `user_photos` (`ok`,
+  presence profile in `raw_user_meta_data`), `profiles` (`active`, `verified`, CLC, with the
+  migration 0018 about section: `major_id` / `minor_id` resolved by label from CLC's
+  `public.programs`, raising if one does not resolve, plus `graduating_term`, `graduating_unsure`,
+  `work_type`, `work_hours`, `job_title`), `users_private` (DOB), `user_presence`, `user_goals`,
+  `user_tags` (3-10 per person from the global interest catalog, `tags.campus_id is null`, only
+  tags offered on CLC's campus type, positions 0..n-1 in the cast's order; raises if a label does
+  not resolve), and 55 `user_photos` (`ok`,
   `{user_id}/{position}.jpg`, tint from the app's nine `avatarTints` by the same hash as
   `app/src/photos/tint.ts`). No `notification_prefs` or `consents`: the app creates the former on
   first visit and never reads the latter for other users.
@@ -119,12 +143,17 @@ Apply `unseed.generated.sql` with `apply_migration`, then remove its history row
    albums and album photos, media views, reads, messages, conversations, hi's);
 4. runs `private.purge_user` for every `@demo.sayohhi.com` user (their conversations, hi's and
    shares in either direction, including any made live during the demo; their albums, photos,
-   tags, goals, presence, devices, prefs, consents, and since migration 0015 their place line,
-   usual places and prompt answers; it enqueues their storage objects itself);
+   tags, goals, presence, devices, prefs, consents, since migration 0015 their place line,
+   usual places and prompt answers, and since migration 0018 their about section, notices and tag
+   suggestions; it enqueues their storage objects itself);
 5. deletes what `purge_user` deliberately leaves: blocks, reports and moderation rows that name a
-   demo user, then the `users_private`, `profiles` and `auth.users` rows;
+   demo user, the demo users' `user_notices` and `tag_suggestions` rows (migration 0018; both
+   reference `profiles(id)`, so they go before the profile), then the `users_private`, `profiles`
+   and `auth.users` rows;
 6. removes `demo.sayohhi.com` from CLC, and raises if any seeded row remains (including any
-   demo user's `user_prompts` / `user_usual_places` row).
+   demo user's `user_prompts`, `user_usual_places`, `user_tags`, `user_notices` or
+   `tag_suggestions` row). The rehearsal's baseline also covers `user_notices` and
+   `tag_suggestions`.
 
 **Storage objects cannot be deleted from SQL** (`storage.protect_delete()`): the unseed only
 enqueues them. The deployed `purge-drain` edge function removes them on its daily run (03:15
@@ -157,6 +186,17 @@ The sections below describe the content files.
   Optional (migration 0015): `place_line` (null or 1-40 chars), `usual_places` (0-3 entries,
   1-30 chars each) and `prompts` (0-3 `{prompt_id, answer}`, ids from the 0015 prompt list,
   answers 1-140 chars); `validate.mjs` checks them against the limits the RPCs enforce.
+  Migration 0018: `tags` is 3-10 labels from the global interest catalog (see "Tags" below);
+  `major` is a CLC program label or `null`; `about` (optional) may hold `minor` (a CLC program
+  label, different from `major`, only with a `major`), `graduating_term` (`spring` / `summer` /
+  `fall` / `winter`, only with a `grad_year`), `graduating_unsure` (`true` for "not sure yet":
+  then `grad_year` is `null` and there is no term; at most one person), `work_type` (one of the 21
+  `public.work_type` values, e.g. `retail`, `trades_apprentice`, `not_working_right_now`),
+  `job_title` (1-48 chars, lowercase, no employer brand names, no contact info) and `work_hours`
+  (1-3 distinct `public.work_hours` values in enum order — `part_time`, `full_time`, `nights`,
+  `weekends`, `seasonal`, `on_call` — never both `part_time` and `full_time`, none with
+  `not_working_right_now`). A field left out is stored as null (`graduating_unsure` false).
+  `grad_year` is the one stored graduating year: `null` or 2026-2034.
 - `interactions.json` — scripted state for the two real test accounts, keyed `izaac` and
   `debbie` (their first names; the seed script looks up the real user ids). For each account:
   `hi_received`, `hi_sent`, `conversations` (with full message histories, including inline `media`
@@ -167,7 +207,8 @@ The sections below describe the content files.
 - `validate.mjs` — a standalone Node script (no dependencies) that checks both files against the
   schema limits and the task's consistency rules. Run with `node supabase/seed/demo/validate.mjs`.
 - `build-seed.mjs` — the generator (standard library only); writes the generated files
-  (`seed`, `unseed`, `rehearsal`, `profile-fields`, `heartbeat`, and `upload-plan.json`).
+  (`seed`, `unseed`, `rehearsal`, `profile-fields`, `about-fields`, `heartbeat`, and
+  `upload-plan.json`).
 - `upload.mjs` — the image uploader (uses `@supabase/supabase-js` from `app/node_modules`).
 - `seed.generated.sql`, `unseed.generated.sql`, `rehearsal.generated.sql`, `upload-plan.json` —
   generated; never edit by hand.
@@ -191,11 +232,15 @@ The sections below describe the content files.
 - **Voice**: lowercase, casual, short — status lines and messages read like real texting
   (`"at the library till 10 if anyone wants to pretend to study"`), per
   `docs/design/screens/Grid.html`, `Profile.html`, `Chat-List.html`, `Chat-Thread.html`.
-- **Tags**: only the twelve labels seeded for CLC in
-  `supabase/migrations/20260918000002_core_schema.sql` §15 — `nursing`, `cs`, `business`, `bio`,
-  `library`, `gym`, `coffee`, `soccer`, `art`, `esports`, `transfer`, `night classes` — 0-3 per
-  person, exact spelling. (The design mockups show illustrative chips like "gym rat" or "coffee?"
-  that aren't in the seeded set; those were not used.)
+- **Tags** (migration 0018): interests only, from the 411 global tags (`tags.campus_id is null`)
+  listed per category in `supabase/migrations/20260918000018_tags_and_about.sql` §4, exact
+  lowercase spelling. 3-10 per person, no repeats, in the order the person would pick them
+  (most defining first): positions 0..n-1, and the grid tile shows the first two. CLC is a
+  commuter campus, so the four residential tags (`fraternity`, `sorority`, `dorm life`, `stays on
+  campus weekends`) are never used; commuter ones (`i live in the parking lot`) are fine. The old
+  CLC tags are gone: majors are now `major` / `about.minor` (CLC programs: `art`, `bio`,
+  `business`, `criminal justice`, `cs`, `early childhood education`, `education`, `nursing`,
+  `welding`), and places are not tags any more.
 - **Goals**: 1-3 per person from the `user_goal` enum (`friends`, `study`, `dates`, `group`,
   `whatever`).
 - **Schema limits respected**: `first_name` 2-20 chars, `status_line` ≤140 chars (or `null`),
@@ -224,8 +269,15 @@ The sections below describe the content files.
 
 ## Validation
 
-Run `node supabase/seed/demo/validate.mjs` from the repo root. It checks: every tag label exists
-in the migration's CLC seed, every goal is in the `user_goal` enum, `first_name`/`status_line`/
+Run `node supabase/seed/demo/validate.mjs` from the repo root. It checks: each person's tags are
+3-10 distinct labels that exist in migration 0018's catalog (parsed from §4 of the migration
+file itself) and are not residential; `major` / `about.minor` are CLC programs (the list is
+cross-checked against §5), the minor differs from the major and needs one; the about enums,
+`work_hours` rules, `job_title` 1-48 chars, `graduating_unsure` only with a null `grad_year` and
+no term (at most one person), `grad_year` null or 2026-2034; and that `job_title`, status lines,
+place lines, usual places and prompt answers pass migration 0018's word filter patterns (no email,
+link, bare web address, 10-digit phone number, platform handle or @handle with a dot, underscore
+or digits, no core blocked word). It also checks every goal is in the `user_goal` enum, `first_name`/`status_line`/
 album-name lengths, ages ≥18, every `cast_key` referenced from `interactions.json` exists in
 `cast.json`, message-length limits (240 for an opener's first message, 1000 otherwise),
 `awaiting_reply`/`expired` conversations have exactly one message from the opener and none from

@@ -10,6 +10,12 @@
 -- users on the hosted project never appear in the grid under test and are
 -- never written to; the final raise rolls back the campus, the personas and
 -- the two pg_temp helpers below.
+--
+-- Amended by migration 0018 (tags_and_about): complete_onboarding() now requires
+-- at least 3 tags, and user_tags is written only through set_my_tags(), so the
+-- fixture helper sets 3 catalog tags before onboarding. The profile_card_for() return-type
+-- assertion now includes 0018's trailing about jsonb column; the plan count is
+-- unchanged.
 
 create extension if not exists pgtap with schema public;
 
@@ -50,6 +56,8 @@ begin
     update public.user_photos set moderation_state = 'ok' where user_id = p_uid and position = 0;
   end if;
 
+  -- (amended by migration 0018: complete_onboarding() needs 3 tags, written through set_my_tags())
+  perform pg_temp._run_as09(p_uid, $q$select public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label))$q$);
   perform pg_temp._run_as09(p_uid, 'select public.complete_onboarding()');
   perform pg_temp._run_as09(p_uid, format('select public.set_my_tier(%L)', p_tier));
   if p_here_now then
@@ -123,7 +131,7 @@ begin
   --     joined_recency, place_line, prompts, usual_places and gate_open; the
   --     0009 columns and their order are unchanged.
   select is(pg_get_function_result('public.profile_card_for(uuid)'::regprocedure),
-    'TABLE(user_id uuid, first_name text, grad_year smallint, status_line text, tier presence_tier, here_now boolean, is_online boolean, photos text[], tag_labels text[], goals user_goal[], my_hi_state hi_state, conversation_id uuid, joined_month date, joined_recency text, place_line text, prompts jsonb, usual_places text[], gate_open boolean)',
+    'TABLE(user_id uuid, first_name text, grad_year smallint, status_line text, tier presence_tier, here_now boolean, is_online boolean, photos text[], tag_labels text[], goals user_goal[], my_hi_state hi_state, conversation_id uuid, joined_month date, joined_recency text, place_line text, prompts jsonb, usual_places text[], gate_open boolean, about jsonb)',
     'profile_card_for() returns the 0009 column list (is_online added after here_now), plus 0015''s six appended columns') into v_line; out := out || v_line || E'\n';
   -- 3
   select ok((select p.prosecdef and p.provolatile = 's' and p.proconfig = array['search_path=""']

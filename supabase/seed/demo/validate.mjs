@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Validates supabase/seed/demo/cast.json and interactions.json against the
-// schema limits in supabase/migrations/20260918000002_core_schema.sql and
+// schema limits in supabase/migrations/20260918000002_core_schema.sql, the
+// profile fields of 0015, the tags / about / word filter of 0018 (whose tag
+// catalog and CLC programs are read from the migration file itself), and
 // the scripted-state rules from the seed task. Run with:
 //   node supabase/seed/demo/validate.mjs
 // Exits non-zero on any failure.
@@ -23,11 +25,85 @@ const warn = (msg) => errors.push(msg);
 // Constants mirrored from the migration
 // -----------------------------------------------------------------------
 
-const TAG_LABELS = new Set([
-  "nursing", "cs", "business", "bio",
-  "library", "gym",
-  "coffee", "soccer", "art", "esports", "transfer", "night classes",
+// The tag catalog (migration 0018 §4): 411 global interest tags, one line per
+// category, labels separated by " · ", a "(commuter)" / "(residential)" suffix
+// marking the campus type. Parsed from the migration itself so a label that is
+// not in the migration's catalog always fails. CLC is a commuter campus, so the
+// residential tags are not offered to demo users.
+const MIGRATION_0018 = join(__dirname, "..", "..", "migrations", "20260918000018_tags_and_about.sql");
+const CAMPUS_TYPE = "commuter"; // CLC (migration 0018 §2)
+const TAG_CATALOG = new Map(); // label -> { category, campusType }
+{
+  const sql = readFileSync(MIGRATION_0018, "utf8");
+  const start = sql.indexOf("insert into public.tags (campus_id, label, category, category_new, campus_type, sort_order)");
+  const end = sql.indexOf(") as src(category, items)", start);
+  if (start < 0 || end < 0) throw new Error("validate: could not find the tag catalog in migration 0018 §4");
+  const block = sql.slice(start, end);
+  const lineRe = /^\s*\('([a-z_]+)', '((?:[^']|'')*)'\),?\s*$/gm;
+  let m;
+  while ((m = lineRe.exec(block))) {
+    for (const rawItem of m[2].replace(/''/g, "'").split(" · ")) {
+      const suffix = rawItem.match(/ \((commuter|residential)\)$/);
+      const label = suffix ? rawItem.slice(0, -suffix[0].length) : rawItem;
+      if (TAG_CATALOG.has(label)) throw new Error(`validate: tag "${label}" appears twice in the 0018 catalog`);
+      TAG_CATALOG.set(label, { category: m[1], campusType: suffix ? suffix[1] : "all" });
+    }
+  }
+  if (TAG_CATALOG.size !== 411) throw new Error(`validate: parsed ${TAG_CATALOG.size} tags from migration 0018, expected 411`);
+}
+
+// public.programs for CLC (migration 0018 §5): the major/minor catalog.
+const PROGRAMS = new Set([
+  "art", "bio", "business", "criminal justice", "cs",
+  "early childhood education", "education", "nursing", "welding",
 ]);
+{
+  const sql = readFileSync(MIGRATION_0018, "utf8");
+  const start = sql.indexOf("insert into public.programs (campus_id, label, sort_order)");
+  const end = sql.indexOf(") as v(label, sort_order)", start);
+  if (start < 0 || end < 0) throw new Error("validate: could not find the CLC programs in migration 0018 §5");
+  const found = new Set([...sql.slice(start, end).matchAll(/\('([a-z ]+)', \d+\)/g)].map((x) => x[1]));
+  if (found.size !== PROGRAMS.size || [...PROGRAMS].some((p) => !found.has(p))) {
+    throw new Error(`validate: the CLC programs in migration 0018 §5 (${[...found].join(", ")}) differ from validate.mjs`);
+  }
+}
+
+// Migration 0018 §1 enums.
+const GRADUATING_TERMS = new Set(["spring", "summer", "fall", "winter"]);
+const WORK_TYPES = new Set([
+  "food_service", "retail", "warehouse", "delivery", "healthcare_aide",
+  "childcare", "tutoring", "landscaping", "construction", "trades_apprentice",
+  "office_or_admin", "customer_service", "security", "campus_job",
+  "internship", "family_business", "freelance", "military_or_reserves",
+  "rideshare", "not_working_right_now", "rather_not_say",
+]);
+const WORK_HOURS = ["part_time", "full_time", "nights", "weekends", "seasonal", "on_call"]; // enum order
+const ABOUT_KEYS = new Set(["minor", "graduating_term", "graduating_unsure", "work_type", "job_title", "work_hours"]);
+
+// The word filter's contact patterns (migration 0018 §7, private.blocked_terms,
+// match_kind 'pattern', run on the lowercased text) and its core slur list.
+const CONTACT_PATTERNS = [
+  ["a 10-digit phone number", /(^|[^0-9])(\+?1[ .-]?)?\(?[2-9][0-9]{2}\)?[ .-]?[0-9]{3}[ .-]?[0-9]{4}([^0-9]|$)/],
+  ["an email address", /[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}/],
+  ["a link", /(https?:\/\/|www\.)[a-z0-9]/],
+  ["a bare web address", /(^|[^a-z0-9@._-])[a-z0-9-]+\.(com|net|org|io|me|co|app|gg|tv|ly|xyz|link|bio|us|info|biz|site|online)([^a-z0-9]|$)/],
+  ["a social handle", /(^|[^a-z])(ig|insta|instagram|snap|snapchat|tiktok|twitter|discord|telegram|whatsapp|kik|venmo|cashapp|onlyfans) *[:@] *@?[a-z0-9_.]{2,}/],
+  ["an @handle", /(^|[^a-z0-9_.])@([a-z][a-z0-9]*[_.][a-z0-9_.]*[a-z0-9]|[a-z]+[0-9]{2,})/],
+];
+// The migration 0018 core slur list, base64-encoded so the repo holds none of
+// them in plain text (same encodings as the migration and
+// docs/design/tags-about/blocked-terms-proposed.md).
+const SLURS = [
+  "bmlnZ2Vy", "bmlnZ2E=", "ZmFnZ290", "a2lrZQ==", "d2V0YmFjaw==", "Z29vaw==", "cmFnaGVhZA==",
+  "dG93ZWxoZWFk", "emlwcGVyaGVhZA==", "c2hlbWFsZQ==", "cG9yY2ggbW9ua2V5", "anVuZ2xlIGJ1bm55",
+].map((b) => Buffer.from(b, "base64").toString("utf8"));
+function dirtyReason(text) {
+  const t = String(text).toLowerCase();
+  for (const [what, re] of CONTACT_PATTERNS) if (re.test(t)) return what;
+  const words = " " + t.replace(/[^a-z]+/g, " ").trim() + " ";
+  for (const s of SLURS) if (words.includes(` ${s} `) || words.includes(` ${s}s `)) return "a blocked word";
+  return null;
+}
 
 const GOALS = new Set(["friends", "study", "dates", "group", "whatever"]);
 
@@ -85,8 +161,8 @@ for (const person of cast) {
   if (age < 18) warn(`${tag}: age ${age} is under 18 (dob ${person.date_of_birth})`);
   if (age > 36) warn(`${tag}: age ${age} is over the requested 18-36 range`);
 
-  if (person.grad_year < 2026 || person.grad_year > 2029) {
-    warn(`${tag}: grad_year ${person.grad_year} out of range 2026-2029`);
+  if (person.grad_year !== null && (!Number.isInteger(person.grad_year) || person.grad_year < 2026 || person.grad_year > 2034)) {
+    warn(`${tag}: grad_year ${person.grad_year} must be null or 2026-2034`);
   }
 
   if (
@@ -138,15 +214,87 @@ for (const person of cast) {
     }
   }
 
-  if (!Array.isArray(person.tags) || person.tags.length > 3) {
-    warn(`${tag}: tags must have 0-3 entries`);
+  // Tags (migration 0018): 3-10 interests from the global catalog, in the
+  // order picked (the first two show on the grid tile), none residential.
+  if (!Array.isArray(person.tags) || person.tags.length < 3 || person.tags.length > 10) {
+    warn(`${tag}: tags must have 3-10 entries`);
   } else {
     for (const t of person.tags) {
-      if (!TAG_LABELS.has(t)) warn(`${tag}: tag "${t}" not in CLC tag seed`);
+      const entry = TAG_CATALOG.get(t);
+      if (!entry) warn(`${tag}: tag "${t}" not in the migration 0018 catalog`);
+      else if (entry.campusType !== "all" && entry.campusType !== CAMPUS_TYPE) {
+        warn(`${tag}: tag "${t}" is ${entry.campusType}-only; CLC is ${CAMPUS_TYPE}`);
+      }
     }
     if (new Set(person.tags).size !== person.tags.length) {
       warn(`${tag}: duplicate tags`);
     }
+  }
+
+  // Major and the about section (migration 0018 §5, §6, §15).
+  if (person.major !== undefined && person.major !== null && !PROGRAMS.has(person.major)) {
+    warn(`${tag}: major "${person.major}" is not a CLC program`);
+  }
+  const about = person.about;
+  if (about !== undefined && about !== null) {
+    if (typeof about !== "object" || Array.isArray(about)) {
+      warn(`${tag}: about must be an object`);
+    } else {
+      for (const k of Object.keys(about)) if (!ABOUT_KEYS.has(k)) warn(`${tag}: about has unknown key "${k}"`);
+      if (about.minor !== undefined && about.minor !== null) {
+        if (!PROGRAMS.has(about.minor)) warn(`${tag}: minor "${about.minor}" is not a CLC program`);
+        if (!person.major) warn(`${tag}: a minor needs a major`);
+        if (about.minor === person.major) warn(`${tag}: the minor must differ from the major`);
+      }
+      if (about.graduating_term !== undefined && about.graduating_term !== null) {
+        if (!GRADUATING_TERMS.has(about.graduating_term)) warn(`${tag}: graduating_term "${about.graduating_term}" is not spring/summer/fall/winter`);
+        if (person.grad_year === null) warn(`${tag}: a graduating term needs a grad_year`);
+      }
+      if (about.graduating_unsure !== undefined && typeof about.graduating_unsure !== "boolean") {
+        warn(`${tag}: graduating_unsure must be true or false`);
+      }
+      if (about.graduating_unsure === true) {
+        if (person.grad_year !== null) warn(`${tag}: graduating_unsure needs grad_year null`);
+        if (about.graduating_term !== undefined && about.graduating_term !== null) warn(`${tag}: graduating_unsure can't have a term`);
+      }
+      if (about.work_type !== undefined && about.work_type !== null && !WORK_TYPES.has(about.work_type)) {
+        warn(`${tag}: work_type "${about.work_type}" is not in the work_type enum`);
+      }
+      if (about.job_title !== undefined && about.job_title !== null) {
+        if (blank(about.job_title) || about.job_title.length > 48) warn(`${tag}: job_title must be 1-48 chars`);
+        else if (about.job_title !== about.job_title.toLowerCase()) warn(`${tag}: job_title should be lowercase`);
+      }
+      if (about.work_hours !== undefined && about.work_hours !== null) {
+        const wh = about.work_hours;
+        if (!Array.isArray(wh) || wh.length < 1 || wh.length > 3) {
+          warn(`${tag}: work_hours must be null or 1-3 values`);
+        } else {
+          for (const h of wh) if (!WORK_HOURS.includes(h)) warn(`${tag}: work_hours value "${h}" is not in the work_hours enum`);
+          if (new Set(wh).size !== wh.length) warn(`${tag}: work_hours must not repeat`);
+          if (wh.includes("part_time") && wh.includes("full_time")) warn(`${tag}: work_hours can't have both part_time and full_time`);
+          const sorted = [...wh].sort((a, b) => WORK_HOURS.indexOf(a) - WORK_HOURS.indexOf(b));
+          if (sorted.join() !== wh.join()) warn(`${tag}: work_hours must be in enum order (${WORK_HOURS.join(", ")})`);
+          if (about.work_type === "not_working_right_now") warn(`${tag}: work_hours need a job (work_type is not_working_right_now)`);
+        }
+      }
+    }
+  } else if (person.grad_year === null) {
+    // grad_year null without graduating_unsure is allowed by the schema; flag it
+    // so a missing year is a choice, not an accident.
+    warn(`${tag}: grad_year is null but about.graduating_unsure is not set`);
+  }
+  // The word filter (migration 0018 §7) on every free-text profile field.
+  const texts = [
+    ["status_line", person.status_line],
+    ["place_line", person.place_line],
+    ...(person.usual_places ?? []).map((x) => ["usual place", x]),
+    ...(person.prompts ?? []).map((x) => [`prompt ${x?.prompt_id}`, x?.answer]),
+    ["job_title", about?.job_title],
+  ];
+  for (const [field, text] of texts) {
+    if (typeof text !== "string") continue;
+    const why = dirtyReason(text);
+    if (why) warn(`${tag}: ${field} "${text}" would be refused by the word filter (${why})`);
   }
 
   if (!PRESENCE_PROFILES.has(person.presence_profile)) {
@@ -174,6 +322,9 @@ for (const person of cast) {
   totalMainPhotos += 1;
   totalExtraPhotos += Math.max(extras, 0);
 }
+
+const unsureCount = cast.filter((p) => p.about?.graduating_unsure === true).length;
+if (unsureCount > 1) warn(`cast: graduating_unsure is set for ${unsureCount} people (at most one)`);
 
 // -----------------------------------------------------------------------
 // interactions.json
