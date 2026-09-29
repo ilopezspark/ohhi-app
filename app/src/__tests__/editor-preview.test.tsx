@@ -8,7 +8,10 @@ jest.mock('../me/editor/useMyPhotos', () => ({ useMyPhotos: jest.fn() }));
 import { useProfileEditorDraftContext } from '../me/editor/ProfileEditorDraftContext';
 import { useMyPhotos } from '../me/editor/useMyPhotos';
 import { PreviewCard } from '../me/editor/PreviewCard';
+import { buildPreviewData } from '../me/editor/previewData';
 import { usePresenceStore } from '../presence/store';
+
+const thisYear = new Date().getFullYear();
 
 const BASE_DRAFT_STATE = {
   loading: false,
@@ -20,10 +23,25 @@ const BASE_DRAFT_STATE = {
   verified: true,
   photoCount: 1,
   campusTags: [
-    { id: 't1', label: 'library', category: 'other', campus_id: null },
-    { id: 't2', label: 'gym', category: 'other', campus_id: null },
+    { id: 't1', label: 'library', category: 'place', campus_id: null },
+    { id: 't2', label: 'gym', category: 'place', campus_id: null },
+    { id: 't3', label: 'nursing', category: 'major', campus_id: null },
   ],
-  draft: { statusLine: 'at the library', goals: ['friends'], tagIds: ['t1'] },
+  draft: {
+    statusLine: 'at the library',
+    goals: ['friends'],
+    tagIds: ['t1'],
+    placeLine: '',
+    usualPlaces: [] as string[],
+    prompts: [] as { promptId: string; question: string; gated: boolean; answer: string }[],
+  },
+  fieldsMeta: {
+    savedPlaceLine: null as string | null,
+    placeLineUntil: null as string | null,
+    placeLineShown: false,
+    joinedMonth: `${thisYear}-09-01`,
+    joinedRecency: null,
+  },
   setStatusLine: jest.fn(),
   setGoals: jest.fn(),
   setTagIds: jest.fn(),
@@ -35,11 +53,19 @@ const BASE_DRAFT_STATE = {
   completion: { percent: 50, items: [], nextBest: null },
 };
 
+function withDraft(draft: Partial<typeof BASE_DRAFT_STATE.draft>, fieldsMeta: Partial<typeof BASE_DRAFT_STATE.fieldsMeta> = {}) {
+  (useProfileEditorDraftContext as jest.Mock).mockReturnValue({
+    ...BASE_DRAFT_STATE,
+    draft: { ...BASE_DRAFT_STATE.draft, ...draft },
+    fieldsMeta: { ...BASE_DRAFT_STATE.fieldsMeta, ...fieldsMeta },
+  });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   (useProfileEditorDraftContext as jest.Mock).mockReturnValue(BASE_DRAFT_STATE);
   (useMyPhotos as jest.Mock).mockReturnValue({
-    photos: [],
+    photos: [{ storage_path: 'u1/a.jpg' }, { storage_path: 'u1/b.jpg' }],
     urls: {},
     isLoading: false,
     refetch: jest.fn(),
@@ -49,70 +75,114 @@ beforeEach(() => {
 });
 
 /**
- * `PreviewCard` must render through the exact same `ProfileTile` the grid
- * and `profile/[id].tsx` use — not a copy (`docs/design/me-redesign/
- * brief.md`'s own instruction). This suite doesn't mock `ProfileTile`
- * itself (only the editor's own data hooks), so every assertion below only
- * passes because the REAL `ProfileTile` hero variant is what's actually
- * rendering — its own distinctive testID scheme (`ui/ProfileTile.tsx`'s
- * `testIDs` prop) and its own `disabledActions` opacity/pointer-events
- * wiring, neither of which this file re-implements.
+ * Preview and the real profile are one component: `PreviewCard` renders the
+ * same `ProfileView` as `profile/[id].tsx`, in `preview` mode, fed from the
+ * draft plus `my_profile_fields()`. Nothing here is mocked below the draft
+ * hooks, so every assertion is against the real view.
  */
 describe('PreviewCard', () => {
-  it('renders through the shared ProfileTile hero (the same testID scheme profile/[id].tsx uses)', async () => {
+  it('renders the full ProfileView (hero, details, footer)', async () => {
     const { findByTestId } = await render(<PreviewCard />);
-    await findByTestId('profile-editor-preview-tile');
-    const name = await findByTestId('profile-editor-preview-name');
-    expect(name).toHaveTextContent('izaac');
+    await findByTestId('profile-editor-preview-view');
+    expect(await findByTestId('profile-editor-preview-name')).toHaveTextContent('izaac');
+    await findByTestId('profile-editor-preview-details');
+    await findByTestId('profile-editor-preview-photo-card-1');
+    expect(await findByTestId('profile-editor-preview-footer-verified')).toHaveTextContent(
+      'verified student at CLC · on ohhi since september'
+    );
   });
 
-  it('disables the say-hi/message footer (accessibilityElementsHidden, matching ProfileTile\'s own disabledActions wiring)', async () => {
-    const { root } = await render(<PreviewCard />);
-    const hiddenFooters = root!.queryAll((i) => i.props.accessibilityElementsHidden === true);
-    expect(hiddenFooters.length).toBeGreaterThan(0);
-    const nonInteractive = root!.queryAll((i) => i.props.pointerEvents === 'none');
-    expect(nonInteractive.length).toBeGreaterThan(0);
+  it('greys out the say-hi/message bar and hides report/block', async () => {
+    const screen = await render(<PreviewCard />);
+    const bar = screen.getByTestId('profile-editor-preview-action-bar', { includeHiddenElements: true });
+    expect(bar.props.pointerEvents).toBe('none');
+    expect(bar.props.accessibilityElementsHidden).toBe(true);
+    screen.getByTestId('profile-editor-preview-cta-hi', { includeHiddenElements: true });
+    screen.getByTestId('profile-editor-preview-cta-message', { includeHiddenElements: true });
+    expect(screen.queryByTestId('profile-editor-preview-report-block')).toBeNull();
+    expect(screen.queryByTestId('profile-editor-preview-overflow-trigger')).toBeNull();
   });
 
-  it('still renders the say-hi/message buttons underneath (just non-interactive, not absent)', async () => {
-    // The footer is deliberately hidden from accessibility (the test above),
-    // so RNTL's default queries skip it; opt in to hidden elements to prove
-    // the buttons are still mounted and visible at 40% opacity.
-    const { findByTestId } = await render(<PreviewCard />);
-    await findByTestId('profile-editor-preview-cta-hi', { includeHiddenElements: true });
-    await findByTestId('profile-editor-preview-cta-message', { includeHiddenElements: true });
+  it('reflects the DRAFT status line, goals and tags', async () => {
+    withDraft({ statusLine: 'a brand new unsaved status', goals: ['study'], tagIds: ['t2', 't3'] });
+    const screen = await render(<PreviewCard />);
+    expect(screen.getByTestId('profile-editor-preview-status-line')).toHaveTextContent('a brand new unsaved status');
+    expect(screen.getByTestId('profile-editor-preview-goals')).toHaveTextContent('here for study');
+    expect(screen.getByTestId('profile-editor-preview-tags')).toHaveTextContent('here for studygym');
+    // the major goes to the pin line, not a chip
+    expect(screen.getByTestId('profile-editor-preview-meta')).toHaveTextContent("on campus · nursing '27");
   });
 
-  it('reflects the DRAFT status line, not any separately-saved value', async () => {
-    (useProfileEditorDraftContext as jest.Mock).mockReturnValue({
-      ...BASE_DRAFT_STATE,
-      draft: { ...BASE_DRAFT_STATE.draft, statusLine: 'a brand new unsaved status' },
+  it('shows draft prompts between the photos, with the gated note on a gated one', async () => {
+    withDraft({
+      prompts: [
+        { promptId: 'find_me_on_campus', question: "you'll find me on campus at", gated: true, answer: 'second floor' },
+        { promptId: 'cafe_order', question: 'my order at the campus cafe', gated: false, answer: 'oat latte' },
+      ],
     });
-    const { findByTestId } = await render(<PreviewCard />);
-    const status = await findByTestId('profile-editor-preview-status');
-    expect(status.props.children).toBe('a brand new unsaved status');
+    const screen = await render(<PreviewCard />);
+    expect(screen.getByTestId('profile-editor-preview-prompt-0-note')).toHaveTextContent('only shown after a hi has been answered.');
+    expect(screen.getByTestId('profile-editor-preview-prompt-1-answer')).toHaveTextContent('oat latte');
+    expect(screen.queryByTestId('profile-editor-preview-prompt-1-note')).toBeNull();
   });
 
-  it('reflects DRAFT goals and tags, mapped to their display labels', async () => {
-    (useProfileEditorDraftContext as jest.Mock).mockReturnValue({
-      ...BASE_DRAFT_STATE,
-      draft: { statusLine: '', goals: ['study'], tagIds: ['t2'] },
-    });
-    const { findByText } = await render(<PreviewCard />);
-    await findByText('here for study buddies');
-    await findByText('gym');
+  it('shows the owner their own usual places, with the note', async () => {
+    withDraft({ usualPlaces: ['library', 'the gym'] });
+    const screen = await render(<PreviewCard />);
+    expect(screen.getByTestId('profile-editor-preview-around-campus-places')).toHaveTextContent('library, the gym');
+    expect(screen.getByTestId('profile-editor-preview-around-campus-note')).toHaveTextContent('only shown after a hi has been answered.');
   });
 
   it('reads tier and here-now from the presence store', async () => {
     usePresenceStore.setState({ tier: 'nearby', hereNow: true });
-    const { findByTestId } = await render(<PreviewCard />);
-    const hereNowBadge = await findByTestId('profile-editor-preview-here-now');
-    expect(hereNowBadge).toBeTruthy();
+    const screen = await render(<PreviewCard />);
+    screen.getByTestId('profile-editor-preview-here-now-badge');
+    expect(screen.getByTestId('profile-editor-preview-tier-pill')).toHaveTextContent('nearby');
   });
 
-  it('shows the before/after captions', async () => {
+  it('shows the captions', async () => {
     const { findByText } = await render(<PreviewCard />);
-    await findByText('this is you on the grid right now.');
-    await findByText("their buttons are greyed out. you can't say hi to yourself.");
+    await findByText('this is your profile as people on campus see it.');
+    await findByText("the buttons are greyed out. you can't say hi to yourself.");
+  });
+});
+
+describe('buildPreviewData — the place line', () => {
+  const input = {
+    userId: 'u1',
+    firstName: 'izaac',
+    gradYear: 2027,
+    verified: true,
+    campusShort: 'CLC',
+    campusTags: [],
+    photoPaths: [],
+    photoUrls: {},
+    tier: 'on_campus' as const,
+    hereNow: false,
+  };
+  const draft = { ...BASE_DRAFT_STATE.draft, goals: [] };
+
+  it('shows a saved line only while others see it', () => {
+    const meta = { ...BASE_DRAFT_STATE.fieldsMeta, savedPlaceLine: 'library' };
+    expect(buildPreviewData({ ...input, draft: { ...draft, placeLine: 'library' }, fieldsMeta: { ...meta, placeLineShown: true } }).placeLine).toBe(
+      'library'
+    );
+    expect(buildPreviewData({ ...input, draft: { ...draft, placeLine: 'library' }, fieldsMeta: { ...meta, placeLineShown: false } }).placeLine).toBeNull();
+  });
+
+  it('shows an edited line (saving starts a fresh two hours)', () => {
+    const meta = { ...BASE_DRAFT_STATE.fieldsMeta, savedPlaceLine: 'library', placeLineShown: false };
+    expect(buildPreviewData({ ...input, draft: { ...draft, placeLine: 'gym' }, fieldsMeta: meta }).placeLine).toBe('gym');
+  });
+
+  it('never says what you two share, and drops blank answers', () => {
+    const data = buildPreviewData({
+      ...input,
+      draft: { ...draft, prompts: [{ promptId: 'a', question: 'q', gated: false, answer: '  ' }] },
+      fieldsMeta: null,
+    });
+    expect(data.sharedLines).toEqual([]);
+    expect(data.prompts).toEqual([]);
+    expect(data.joinedMonth).toBeNull();
   });
 });

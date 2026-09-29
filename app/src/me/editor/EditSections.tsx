@@ -6,6 +6,7 @@ import { ChevronRightIcon, PencilIcon, PlusIcon } from '../../ui/icons';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { ChipPicker } from '../../settings/ChipPicker';
 import { sectionWeight, type ProfileCompletionInput } from '../../profile/completion';
+import { PLACE_LINE_HOURS, PROMPTS_MAX } from '../../profile/fields';
 import { GOAL_LABELS, OFFERED_GOAL_OPTIONS } from '../../profile/goalLabels';
 import { colors, radii, spacing } from '../../theme/tokens';
 import { usePrivateCardSummary, useAboutSummary } from '../card/summary';
@@ -143,6 +144,93 @@ function StatusSection() {
   );
 }
 
+/**
+ * Migration 0015's three fields. None of them carries completion weight
+ * (the weights are a ruling) and none gets a signal dot: they are optional,
+ * and nothing here should nudge anyone into filling them in. Each row opens
+ * its own pushed editor, like `status`.
+ */
+function FieldRow({
+  testID,
+  label,
+  note,
+  text,
+  placeholder,
+  route,
+}: {
+  testID: string;
+  label: string;
+  note?: string;
+  text: string | null;
+  placeholder: string;
+  route: string;
+}) {
+  return (
+    <View style={styles.section}>
+      <SectionLabel testID={`editor-section-${testID}`} label={label} note={note} />
+      <RowCard>
+        <Pressable
+          testID={`editor-${testID}-row`}
+          accessibilityRole="button"
+          accessibilityLabel={text ? `${label}: ${text}` : placeholder}
+          style={styles.statusRow}
+          onPress={() => router.push(route as never)}
+        >
+          <Text variant="bodyMedium" color={text ? colors.ink : colors.inkSoft} numberOfLines={2} style={styles.statusText}>
+            {text ?? placeholder}
+          </Text>
+          <ChevronRightIcon size={18} color={colors.inkFaint} />
+        </Pressable>
+      </RowCard>
+    </View>
+  );
+}
+
+function PlaceSection() {
+  const { draft } = useProfileEditorDraftContext();
+  const place = draft.placeLine.trim();
+  return (
+    <FieldRow
+      testID="place"
+      label="where you are"
+      note={`shows for ${PLACE_LINE_HOURS} hours`}
+      text={place.length > 0 ? place : null}
+      placeholder="add where you are right now"
+      route="/profile-editor/place"
+    />
+  );
+}
+
+function PromptsSection() {
+  const { draft } = useProfileEditorDraftContext();
+  const count = draft.prompts.length;
+  return (
+    <FieldRow
+      testID="prompts"
+      label="prompts"
+      note={`${count} of ${PROMPTS_MAX}`}
+      text={count > 0 ? draft.prompts.map((prompt) => prompt.question).join(' · ') : null}
+      placeholder="answer a prompt or two"
+      route="/profile-editor/prompts"
+    />
+  );
+}
+
+function AroundCampusSection() {
+  const { draft } = useProfileEditorDraftContext();
+  const count = draft.usualPlaces.length;
+  return (
+    <FieldRow
+      testID="usual-places"
+      label="around campus"
+      note="after a hi is answered"
+      text={count > 0 ? draft.usualPlaces.join(', ') : null}
+      placeholder="add where you usually end up"
+      route="/profile-editor/usual-places"
+    />
+  );
+}
+
 function HereForSection() {
   const draftState = useProfileEditorDraftContext();
   const weight = sectionWeight('hereFor', completionInputFrom(draftState));
@@ -266,9 +354,11 @@ function PrivateCardSection() {
 
 /**
  * `ProfileEditor`'s Edit tab body (`docs/design/me-redesign/brief.md`,
- * "ProfileEditor — Edit tab"): the six sections, in the artboard's order.
+ * "ProfileEditor — Edit tab"): the six sections, in the artboard's order,
+ * plus the profile redesign's three (where you are, next to status because
+ * it is also "right now"; prompts and around campus after tags).
  * Reads/writes the shared draft (`ProfileEditorDraftContext`) for status,
- * "here for" and tags; photos apply immediately (not draft — see
+ * "here for", tags and the three new fields; photos apply immediately (not draft — see
  * `profile-editor/photos.tsx`); about-you/private-card are pure navigation
  * rows into the other agent's own screens, their subtitles sourced from
  * `me/card/summary.ts`'s two hooks.
@@ -278,8 +368,11 @@ export function EditSections() {
     <View style={styles.wrap}>
       <PhotosSection />
       <StatusSection />
+      <PlaceSection />
       <HereForSection />
       <TagsSection />
+      <PromptsSection />
+      <AroundCampusSection />
       <AboutSection />
       <PrivateCardSection />
     </View>

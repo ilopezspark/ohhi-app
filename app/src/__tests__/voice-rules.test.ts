@@ -422,6 +422,12 @@ const SCOPE_FILES: string[] = [
   path.join(SRC, 'app', 'profile', '[id].tsx'),
   path.join(SRC, 'card', 'CtaButton.tsx'),
   path.join(SRC, 'card', 'OverflowMenu.tsx'),
+  // Profile redesign phase 2 (migration 0015). Everything else it added sits
+  // under `profile/`, `me/`, `app/profile-editor/` or `app/quick-status*`,
+  // which the sweeps above already cover; the API module is listed on its
+  // own because `api/` is not swept (its older files still carry
+  // sentence-case error text).
+  path.join(SRC, 'api', 'profileFields.ts'),
 ].filter((file) => fs.existsSync(file));
 
 describe('voice rules — real source tree', () => {
@@ -445,6 +451,20 @@ describe('voice rules — real source tree', () => {
         path.join('app', 'profile', '[id].tsx'),
         path.join('card', 'CtaButton.tsx'),
         path.join('card', 'OverflowMenu.tsx'),
+        // profile redesign phase 2
+        path.join('api', 'profileFields.ts'),
+        path.join('profile', 'fields.ts'),
+        path.join('app', 'profile-editor', 'place.tsx'),
+        path.join('app', 'profile-editor', 'prompts.tsx'),
+        path.join('app', 'profile-editor', 'usual-places.tsx'),
+        path.join('app', 'quick-status.tsx'),
+        path.join('me', 'editor', 'FieldEditorFrame.tsx'),
+        path.join('me', 'editor', 'PlaceLineField.tsx'),
+        path.join('me', 'editor', 'listEdit.ts'),
+        path.join('me', 'editor', 'previewData.ts'),
+        path.join('me', 'editor', 'useDiscardGuard.ts'),
+        path.join('me', 'editor', 'PreviewCard.tsx'),
+        path.join('me', 'editor', 'EditSections.tsx'),
       ])
     );
   });

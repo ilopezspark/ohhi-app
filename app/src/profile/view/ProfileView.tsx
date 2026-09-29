@@ -23,6 +23,7 @@ export const PROFILE_MAX_WIDTH = 560;
 const HEADER_BAR = 56;
 /** First-frame guess for the action bar's height, before `onLayout` measures it. */
 const ACTION_BAR_ESTIMATE = 88;
+const NO_INSETS = { top: 0, right: 0, bottom: 0, left: 0 };
 
 export interface ProfileViewActionState {
   /** True once the view has scrolled off the photo: the bar sits on paper, not on the photo. */
@@ -36,7 +37,12 @@ export interface ProfileViewProps {
   onOverflow?: () => void;
   /** The sticky action bar's content (say hi + message, plus any error line). */
   renderActions?: (state: ProfileViewActionState) => ReactNode;
-  /** Preview of your own profile: the action bar at 40% and untouchable. */
+  /**
+   * Preview of your own profile (the editor's Preview tab): the action bar at
+   * 40% and untouchable, no report/block, gated content shown with its note,
+   * and laid out inside its container (no safe-area insets of its own; the
+   * hero is as tall as the container rather than the window).
+   */
   preview?: boolean;
   /** testID prefix for every part, default `profile`. */
   testIDPrefix?: string;
@@ -53,15 +59,26 @@ export interface ProfileViewProps {
  */
 export function ProfileView({ data, onBack, onOverflow, renderActions, preview = false, testIDPrefix = 'profile' }: ProfileViewProps) {
   const p = testIDPrefix;
-  const insets = useInsets();
+  const safeInsets = useInsets();
+  const insets = preview ? NO_INSETS : safeInsets;
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const contentWidth = Math.min(windowWidth, PROFILE_MAX_WIDTH);
-  const heroHeight = windowHeight;
+  // The hero fills the view. On the profile screen that is the window; in
+  // the editor's Preview it is the tab's own area, measured on layout.
+  const [measured, setMeasured] = useState<{ width: number; height: number } | null>(null);
+  const contentWidth = Math.min(measured?.width ?? windowWidth, PROFILE_MAX_WIDTH);
+  const heroHeight = measured?.height ?? windowHeight;
   const headerHeight = insets.top + HEADER_BAR;
 
   const scrollRef = useRef<ScrollView>(null);
   const [scrollY, setScrollY] = useState(0);
   const [barHeight, setBarHeight] = useState(ACTION_BAR_ESTIMATE + insets.bottom);
+
+  function onRootLayout(event: LayoutChangeEvent) {
+    const { width, height } = event.nativeEvent.layout;
+    if (width > 0 && height > 0 && (width !== measured?.width || height !== measured?.height)) {
+      setMeasured({ width, height });
+    }
+  }
 
   const collapsed = scrollY >= heroHeight - headerHeight - 1;
   const onPaper = scrollY > spacing.xxl;
@@ -88,11 +105,11 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
   }
 
   const sparse = isSparse(data);
-  const sections = detailSections(data, { prefix: p, onReportOrBlock: preview ? undefined : onOverflow });
+  const sections = detailSections(data, { prefix: p, onReportOrBlock: preview ? undefined : onOverflow, preview });
   const actions = renderActions?.({ onPaper });
 
   return (
-    <View style={styles.root} testID={`${p}-view`}>
+    <View style={styles.root} testID={`${p}-view`} onLayout={onRootLayout}>
       <View style={[styles.column, { width: contentWidth }]}>
         <ScrollView
           ref={scrollRef}
@@ -133,13 +150,14 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
                 </PhotoIconButton>
               ) : undefined
             }
-            notice={sparse ? sparseNotice(data.firstName) : null}
+            notice={sparse ? sparseNotice(data.firstName, data.joinedRecency) : null}
             onExpand={toDetail}
             testIDs={{
               root: `${p}-hero`,
               hereNow: `${p}-here-now-badge`,
               online: `${p}-online-dot`,
               tier: `${p}-tier-pill`,
+              place: `${p}-place-line`,
               meta: `${p}-meta`,
               verified: `${p}-verified`,
               name: `${p}-name`,

@@ -16,12 +16,18 @@ const MAYA: ProfileViewData = {
   goals: ['friends', 'study'],
   majorLabel: 'nursing',
   tagLabels: ['gym', 'coffee'],
-  sharedLines: ['you both tagged gym'],
+  sharedLines: ["you're both into gym"],
   pronouns: 'she/her',
   orientation: [],
   campusShort: 'CLC',
   photoPaths: ['p0', 'p1', 'p2'],
   photoUrls: { p0: 'https://example.test/0.jpg', p1: 'https://example.test/1.jpg' },
+  placeLine: null,
+  prompts: [],
+  usualPlaces: null,
+  gateOpen: false,
+  joinedMonth: null,
+  joinedRecency: null,
 };
 
 const LUIS: ProfileViewData = {
@@ -69,7 +75,9 @@ describe('ProfileView — hero (01, 02, 05)', () => {
     expect(screen.getByTestId('profile-tier-pill')).toHaveTextContent('on campus');
     expect(screen.getByTestId('profile-meta')).toHaveTextContent("on campus · nursing '27");
     expect(screen.getByTestId('profile-status-line')).toHaveTextContent(/pretend to study/);
-    expect(screen.getByTestId('profile-goals')).toHaveTextContent('here for friends · study buddies');
+    // the chip's short labels (01-profile-top.png), not the picker's "study buddies"
+    expect(screen.getByTestId('profile-goals')).toHaveTextContent('here for friends · study');
+    expect(screen.getByTestId('profile-goals')).not.toHaveTextContent(/buddies/);
     const tags = screen.getByTestId('profile-tags');
     expect(within(tags).getByText('gym')).toBeTruthy();
     expect(within(tags).getByText('coffee')).toBeTruthy();
@@ -188,7 +196,7 @@ describe('ProfileView — detail list (03, 04)', () => {
 
   it('what you two share lists the shared tags, and is hidden when nothing is shared', async () => {
     const screen = await renderView(MAYA);
-    expect(screen.getByTestId('profile-shared')).toHaveTextContent(/you both tagged gym/);
+    expect(screen.getByTestId('profile-shared')).toHaveTextContent(/you're both into gym/);
 
     const none = await renderView({ ...MAYA, sharedLines: [] });
     expect(none.queryByTestId('profile-shared')).toBeNull();
@@ -216,6 +224,7 @@ describe('ProfileView — detail list (03, 04)', () => {
     const onOverflow = jest.fn();
     const screen = await renderView(MAYA, { onOverflow });
     expect(screen.getByTestId('profile-footer-verified')).toHaveTextContent('verified student at CLC');
+    // no joined_month: no "since" claim at all
     expect(screen.getByTestId('profile-footer')).not.toHaveTextContent(/since/);
     await fireEvent.press(screen.getByTestId('profile-report-block'));
     expect(onOverflow).toHaveBeenCalledTimes(1);

@@ -5,15 +5,45 @@ import { getFirstName, getGradYear, getStatusLine, updateProfile } from '../../a
 import { getUserGoals, setUserGoals, type UserGoal } from '../../api/goals';
 import { getUserTags, setUserTags, listTagsForCampus, type Tag } from '../../api/tags';
 import { listMyPhotos } from '../../api/photos';
+import {
+  getMyProfileFields,
+  setMyPlaceLine,
+  setMyPrompts,
+  setMyUsualPlaces,
+  type JoinedRecency,
+} from '../../api/profileFields';
 import { profileCompletion, type ProfileCompletionResult } from '../../profile/completion';
+import { fieldErrorMessage } from '../../profile/fields';
 import { queryKeys } from '../queryKeys';
 
 export type { UserGoal, Tag };
+
+/** One prompt answer in the draft. `question`/`gated` travel with it so the editor and Preview can render it without another lookup. */
+export interface DraftPrompt {
+  promptId: string;
+  question: string;
+  gated: boolean;
+  answer: string;
+}
 
 export interface ProfileEditorDraft {
   statusLine: string;
   goals: UserGoal[];
   tagIds: string[];
+  /** Migration 0015. `''` = no place line. */
+  placeLine: string;
+  usualPlaces: string[];
+  prompts: DraftPrompt[];
+}
+
+/** The read-only side of `my_profile_fields()` the editor and Preview need besides the draft values. */
+export interface ProfileFieldsMeta {
+  /** The saved place line (what `placeLineShown`/`placeLineUntil` describe). */
+  savedPlaceLine: string | null;
+  placeLineUntil: string | null;
+  placeLineShown: boolean;
+  joinedMonth: string | null;
+  joinedRecency: JoinedRecency | null;
 }
 
 export interface UseProfileEditorDraftResult {
@@ -33,10 +63,21 @@ export interface UseProfileEditorDraftResult {
   /** The campus's tag options (global + the caller's campus) for the tag picker sheet. */
   campusTags: Tag[];
   draft: ProfileEditorDraft;
+  /** Null until `my_profile_fields()` has loaded. */
+  fieldsMeta: ProfileFieldsMeta | null;
   setStatusLine: (value: string) => void;
   setGoals: (value: UserGoal[]) => void;
   setTagIds: (value: string[]) => void;
-  /** True once any of `draft`'s three fields differs from the last-loaded/last-committed snapshot. */
+  setPlaceLine: (value: string) => void;
+  setUsualPlaces: (value: string[]) => void;
+  setPrompts: (value: DraftPrompt[]) => void;
+  /**
+   * Marks the place line to be sent again on `done` even though its text did
+   * not change: saving restarts its two hours (brief: "saving the line again
+   * refreshes it"), which is the only way back for a line that expired.
+   */
+  refreshPlaceLine: () => void;
+  /** True once any of `draft`'s fields differs from the last-loaded/last-committed snapshot. */
   dirty: boolean;
   saving: boolean;
   saveError: string | null;
@@ -61,6 +102,27 @@ function sameOrderedIds(a: string[], b: string[]): boolean {
   return a.every((value, i) => value === b[i]);
 }
 
+function samePrompts(a: DraftPrompt[], b: DraftPrompt[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((prompt, i) => prompt.promptId === b[i].promptId && prompt.answer === b[i].answer);
+}
+
+type DraftField = keyof ProfileEditorDraft;
+
+/** Which draft fields differ from the committed snapshot. */
+function changedFields(draft: ProfileEditorDraft, committed: ProfileEditorDraft): Set<DraftField> {
+  const changed = new Set<DraftField>();
+  if (draft.statusLine !== committed.statusLine) changed.add('statusLine');
+  if (!sameGoalSet(draft.goals, committed.goals)) changed.add('goals');
+  if (!sameOrderedIds(draft.tagIds, committed.tagIds)) changed.add('tagIds');
+  if (draft.placeLine !== committed.placeLine) changed.add('placeLine');
+  if (!sameOrderedIds(draft.usualPlaces, committed.usualPlaces)) changed.add('usualPlaces');
+  if (!samePrompts(draft.prompts, committed.prompts)) changed.add('prompts');
+  return changed;
+}
+
+const EMPTY_DRAFT: ProfileEditorDraft = { statusLine: '', goals: [], tagIds: [], placeLine: '', usualPlaces: [], prompts: [] };
+
 /**
  * The profile editor's draft model (`docs/design/me-redesign/brief.md`,
  * "ProfileEditor — Edit tab"): status, goals and tags are edited locally
@@ -73,6 +135,12 @@ function sameOrderedIds(a: string[], b: string[]): boolean {
  * draft — every photo change applies immediately, because uploads route
  * through moderation regardless of when the editor is dismissed (see
  * `profile-editor/photos.tsx`).
+ *
+ * Phase 2 of the profile redesign (migration 0015) adds the place line,
+ * usual places and prompt answers to the same draft: seeded from
+ * `my_profile_fields()`, edited on their own pushed screens, written on
+ * `done` through the three `set_my_*` RPCs. They carry no completion weight
+ * (the weights are a ruling), so `completion` below ignores them.
  */
 export function useProfileEditorDraft(): UseProfileEditorDraftResult {
   const queryClient = useQueryClient();
@@ -84,6 +152,7 @@ export function useProfileEditorDraft(): UseProfileEditorDraftResult {
   const goalsQuery = useQuery({ queryKey: queryKeys.me.goals, queryFn: getUserGoals });
   const tagsQuery = useQuery({ queryKey: queryKeys.me.tags, queryFn: getUserTags });
   const photosQuery = useQuery({ queryKey: queryKeys.me.photos, queryFn: listMyPhotos });
+  const fieldsQuery = useQuery({ queryKey: queryKeys.me.profileFields, queryFn: getMyProfileFields });
 
   const campusId = meQuery.data?.campus_id ?? null;
   const campusTagsQuery = useQuery({
@@ -100,12 +169,14 @@ export function useProfileEditorDraft(): UseProfileEditorDraftResult {
     goalsQuery.isSuccess &&
     tagsQuery.isSuccess &&
     photosQuery.isSuccess &&
+    fieldsQuery.isSuccess &&
     campusTagsQuery.isSuccess;
 
   const [committed, setCommitted] = useState<ProfileEditorDraft | null>(null);
-  const [draft, setDraft] = useState<ProfileEditorDraft>({ statusLine: '', goals: [], tagIds: [] });
+  const [draft, setDraft] = useState<ProfileEditorDraft>(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [placeRefresh, setPlaceRefresh] = useState(false);
 
   // Seed the draft exactly once, the moment every read first resolves —
   // never again on a background refetch, which would silently clobber
@@ -116,6 +187,14 @@ export function useProfileEditorDraft(): UseProfileEditorDraftResult {
       statusLine: statusQuery.data ?? '',
       goals: goalsQuery.data ?? [],
       tagIds: [...(tagsQuery.data ?? [])].sort((a, b) => a.position - b.position).map((t) => t.tag_id),
+      placeLine: fieldsQuery.data?.placeLine ?? '',
+      usualPlaces: fieldsQuery.data?.usualPlaces ?? [],
+      prompts: (fieldsQuery.data?.prompts ?? []).map(({ promptId, question, gated, answer }) => ({
+        promptId,
+        question,
+        gated,
+        answer,
+      })),
     };
     setCommitted(snapshot);
     setDraft(snapshot);
@@ -130,18 +209,15 @@ export function useProfileEditorDraft(): UseProfileEditorDraftResult {
     goalsQuery.isError ||
     tagsQuery.isError ||
     photosQuery.isError ||
+    fieldsQuery.isError ||
     campusTagsQuery.isError
       ? "that didn't load. try again."
       : null;
 
   const dirty = useMemo(() => {
     if (!committed) return false;
-    return (
-      draft.statusLine !== committed.statusLine ||
-      !sameGoalSet(draft.goals, committed.goals) ||
-      !sameOrderedIds(draft.tagIds, committed.tagIds)
-    );
-  }, [draft, committed]);
+    return placeRefresh || changedFields(draft, committed).size > 0;
+  }, [draft, committed, placeRefresh]);
 
   const completion = profileCompletion({
     photoCount: photosQuery.data?.length ?? 0,
@@ -153,28 +229,41 @@ export function useProfileEditorDraft(): UseProfileEditorDraftResult {
   async function commit(): Promise<boolean> {
     if (!committed) return false;
 
-    const statusChanged = draft.statusLine !== committed.statusLine;
-    const goalsChanged = !sameGoalSet(draft.goals, committed.goals);
-    const tagsChanged = !sameOrderedIds(draft.tagIds, committed.tagIds);
-
-    if (!statusChanged && !goalsChanged && !tagsChanged) return true;
+    const changed = changedFields(draft, committed);
+    if (placeRefresh && draft.placeLine.trim().length > 0) changed.add('placeLine');
+    if (changed.size === 0) return true;
 
     setSaving(true);
     setSaveError(null);
 
-    const jobs: { field: keyof ProfileEditorDraft; run: () => Promise<void> }[] = [];
-    if (statusChanged) {
+    const jobs: { field: DraftField; run: () => Promise<unknown> }[] = [];
+    if (changed.has('statusLine')) {
       const trimmed = draft.statusLine.trim();
       jobs.push({
         field: 'statusLine',
         run: () => updateProfile({ status_line: trimmed.length > 0 ? trimmed : null }),
       });
     }
-    if (goalsChanged) {
+    if (changed.has('goals')) {
       jobs.push({ field: 'goals', run: () => setUserGoals(draft.goals) });
     }
-    if (tagsChanged) {
+    if (changed.has('tagIds')) {
       jobs.push({ field: 'tagIds', run: () => setUserTags(draft.tagIds) });
+    }
+    // Migration 0015's fields: each write replaces the whole value. Saving
+    // the place line (re)starts its two hours, so it is only sent when it
+    // actually changed.
+    if (changed.has('placeLine')) {
+      const line = draft.placeLine.trim();
+      jobs.push({ field: 'placeLine', run: () => setMyPlaceLine(line.length > 0 ? line : null) });
+    }
+    if (changed.has('usualPlaces')) {
+      const places = draft.usualPlaces.map((place) => place.trim()).filter((place) => place.length > 0);
+      jobs.push({ field: 'usualPlaces', run: () => setMyUsualPlaces(places) });
+    }
+    if (changed.has('prompts')) {
+      const answers = draft.prompts.map(({ promptId, answer }) => ({ promptId, answer: answer.trim() }));
+      jobs.push({ field: 'prompts', run: () => setMyPrompts(answers) });
     }
 
     const results = await Promise.allSettled(jobs.map((job) => job.run()));
@@ -205,10 +294,17 @@ export function useProfileEditorDraft(): UseProfileEditorDraftResult {
       void queryClient.invalidateQueries({ queryKey: queryKeys.me.tags });
       void queryClient.invalidateQueries({ queryKey: queryKeys.me.majorLabel });
     }
+    if (saved.has('placeLine')) setPlaceRefresh(false);
+    if (saved.has('placeLine') || saved.has('usualPlaces') || saved.has('prompts')) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me.profileFields });
+    }
     if (saved.size > 0) void queryClient.invalidateQueries({ queryKey: queryKeys.me.result });
 
     if (anyFailed) {
-      setSaveError("that didn't work.");
+      // A field the server refused as bad input says why (`22023`, mapped
+      // to the app's own copy); anything else is the generic line.
+      const firstFailure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      setSaveError(fieldErrorMessage(firstFailure?.reason));
       setSaving(false);
       return false;
     }
@@ -219,10 +315,11 @@ export function useProfileEditorDraft(): UseProfileEditorDraftResult {
 
   function discard() {
     if (committed) setDraft(committed);
+    setPlaceRefresh(false);
   }
 
   function retry() {
-    const all = [meQuery, firstNameQuery, gradYearQuery, statusQuery, goalsQuery, tagsQuery, photosQuery, campusTagsQuery];
+    const all = [meQuery, firstNameQuery, gradYearQuery, statusQuery, goalsQuery, tagsQuery, photosQuery, fieldsQuery, campusTagsQuery];
     all.filter((query) => query.isError).forEach((query) => void query.refetch());
   }
 
@@ -240,9 +337,22 @@ export function useProfileEditorDraft(): UseProfileEditorDraftResult {
     photoCount: photosQuery.data?.length ?? 0,
     campusTags: campusTagsQuery.data ?? [],
     draft,
+    fieldsMeta: fieldsQuery.data
+      ? {
+          savedPlaceLine: fieldsQuery.data.placeLine,
+          placeLineUntil: fieldsQuery.data.placeLineUntil,
+          placeLineShown: fieldsQuery.data.placeLineShown,
+          joinedMonth: fieldsQuery.data.joinedMonth,
+          joinedRecency: fieldsQuery.data.joinedRecency,
+        }
+      : null,
     setStatusLine: (value) => setDraft((prev) => ({ ...prev, statusLine: value })),
     setGoals: (value) => setDraft((prev) => ({ ...prev, goals: value })),
     setTagIds: (value) => setDraft((prev) => ({ ...prev, tagIds: value })),
+    setPlaceLine: (value) => setDraft((prev) => ({ ...prev, placeLine: value })),
+    setUsualPlaces: (value) => setDraft((prev) => ({ ...prev, usualPlaces: value })),
+    setPrompts: (value) => setDraft((prev) => ({ ...prev, prompts: value })),
+    refreshPlaceLine: () => setPlaceRefresh(true),
     dirty,
     saving,
     saveError,

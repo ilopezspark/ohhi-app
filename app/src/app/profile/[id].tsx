@@ -43,7 +43,9 @@ class ConversationCreatedSendFailedError extends Error {
 }
 
 /**
- * The profile screen (`docs/design/profile-redesign/`, phase 1): a full-screen
+ * The profile screen (`docs/design/profile-redesign/`; phase 2 adds the place
+ * line, prompts, usual places and the join month, all carried by the same
+ * `profile_card_for` row through `buildProfileViewData`): a full-screen
  * photo hero, a detail list under it and a sticky say-hi/message bar, all
  * laid out by `profile/view/ProfileView.tsx`. This file keeps what it always
  * owned: the reads, the say-hi/message state machine, the message sheet and

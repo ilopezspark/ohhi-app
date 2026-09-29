@@ -62,6 +62,12 @@ export const queryKeys = {
     blockedUsers: ['me', 'blocked_users'] as const,
     /** `api/presence.ts#getMyPresence()`. Settings' "who can see you" toggles seed from this (`is_visible` -> `pause my grid`'s initial value) alongside `usePresenceStore`. */
     presence: ['me', 'presence'] as const,
+
+    // -- Profile redesign, phase 2 (migration 0015) --------------------------
+    /** `api/profileFields.ts#getMyProfileFields()` — place line, usual places, prompt answers, coarse join date. */
+    profileFields: ['me', 'profile_fields'] as const,
+    /** `api/profileFields.ts#listActivePrompts()` — the prompt picker's question list (shared, not per-user, but only the editor reads it). */
+    promptOptions: ['me', 'prompt_options'] as const,
   },
 } as const;
 

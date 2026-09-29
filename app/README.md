@@ -1016,7 +1016,7 @@ decision 49's "Message" opener now goes through instead of calling `startConvers
 | `Grid-Verify.html` | `grid/VerifySheet.tsx`, opened from the "not visible because unverified/id_failed" banner's action instead of jumping straight to `startAndOpenVerification()` |
 | `Profile.html` | `app/profile/[id].tsx` (full-bleed hero), `card/CtaButton.tsx`, `card/ChipList.tsx` |
 | `Profile-Message.html` | `card/MessageSheet.tsx`, opened by the CTA row's message icon when there's no conversation yet |
-| `Profile-Details.html` | `card/DetailsSheet.tsx`, opened from a new "more about {name}" link next to the pronouns/orientation line |
+| `Profile-Details.html` | ~~`card/DetailsSheet.tsx`~~, removed in the profile redesign: pronouns/orientation now render in the profile's "the basics" card (see "Profile redesign" at the end of this file) |
 | `Profile-Report.html` | `card/OverflowMenu.tsx`'s sheet chrome (`ui/Sheet`) only — the reason-picker form itself is `settings/report/[id].tsx`, out of this agent's ownership; see Deviations |
 | *(no mockup)* | `(tabs)/his.tsx` — styled from the grid's own header rhythm and the kit's row/avatar/empty-state vocabulary, not a specific screen |
 
@@ -1032,8 +1032,8 @@ decision 49's "Message" opener now goes through instead of calling `startConvers
   presentation; "send" calls the same `startConversation`-then-navigate flow the screen already
   had (`ProfileScreen`'s `messageMutation`) — this sheet doesn't call `sendMessage` to also post
   the draft as the thread's first message (see Deviations).
-- `card/DetailsSheet.tsx` — `Profile-Details.html` trimmed to the fields this app has a data
-  source for (see Deviations).
+- ~~`card/DetailsSheet.tsx`~~ — removed in the profile redesign (nothing imported it once the
+  basics card took over pronouns/orientation).
 - `card/OverflowMenu.tsx` — restyled onto `ui/Sheet`, same Block/Report navigation as before.
 - `card/ChipList.tsx` — gained a `tone: 'solid' | 'translucent'` prop for the design's two chip
   looks on the hero's dark overlay (goals get the opaque `paper` chip, tags the bordered
@@ -1980,3 +1980,99 @@ before this runs on a device (Expo Go already includes it).
 `null` paths skip storage, 42501 -> `RefusedError`, a storage failure after the RPC still
 resolves).
 <!-- END: Vanishing accounts (migration 0014) -->
+
+<!-- BEGIN: Profile redesign -->
+## Profile redesign
+
+`docs/design/profile-redesign/brief.md` (rulings first; they win over the artboards). Phase 1
+built the layout on data that already existed; phase 2 wires in migration 0015
+(`20260918000015_profile_fields.sql`, decision 91): the place line, prompts, usual places and
+the coarse join date.
+
+### One component for the profile and the editor's Preview
+
+`profile/view/ProfileView.tsx` is the whole profile body: the full-screen hero
+(`ProfileHero.tsx`, `PhotoPager.tsx`), the ordered detail list (`sections.tsx`), the collapsed
+header and the sticky action bar. `app/profile/[id].tsx` feeds it from `profile_card_for`
+(`profile/view/model.ts#buildProfileViewData`); the editor's Preview tab
+(`me/editor/PreviewCard.tsx`) feeds it from the draft plus `my_profile_fields()`
+(`me/editor/previewData.ts`) with `preview` on: the say-hi/message bar at 40% and untouchable,
+no report/block, gated content shown with "only shown after a hi has been answered.", and laid
+out inside the tab (no safe-area insets of its own; the hero is as tall as the container,
+measured on layout).
+
+### Section order (`sections.tsx`)
+
+Hero; what you two share; the basics; photo 2; prompt; into; photo 3; prompt(s); around campus;
+footer. A section with nothing to show is left out. Prompts go into the gaps between photo 2,
+into and photo 3 (`placePrompts`): after a photo first (the artboard), then after into, then
+before the first card, then at the end, always in the owner's order, so three answers read
+photo, prompt, into, prompt, photo, prompt and never touch while there is a card to put between
+them. Photo cards are 4:5 with cover (portrait photos; the artboard's wider card cropped them).
+
+### What each field does
+
+- **Place line** (hero): `{place_line} · {major} '{yy}` in place of the tier word
+  (`model.ts#metaParts`); the tier word alone without one; never a place when there is no tier
+  word (away), whatever the server sent. A screen reader still hears the tier word.
+- **Prompts**: question small and grey, answer large and bold. Gated ones are simply absent from
+  the card before the gate; `gated` is only known to the owner.
+- **Around campus**: only when `usual_places` is non-null and non-empty, with `where {name}
+  usually ends up` (the first name, never a pronoun). Null draws nothing at all, whatever
+  `gate_open` says: gated and unset must look the same. No classes row (ruling 1).
+- **Footer**: `verified student at {campus} · on ohhi since {month}`, the year added when it is
+  not this year (`profile/fields.ts#joinedMonthLabel`, parsed from the string, not a `Date`).
+- **Sparse notice**: `{name} joined yesterday and hasn't filled much in. not a red flag.` from
+  `joined_recency`; the phase 1 wording when it is null. A prompt answer counts as filled in.
+- **What you two share**: shared tags only, worded `you're both into {tag}` (no article needed
+  for any label) and `you're both in {major}` for the major.
+- **Here-for chip**: short labels for the hero chip only (`goalLabels.ts#hereForChipLabel`:
+  `here for friends · study`); the picker keeps `study buddies`.
+- **Grid tile**: left alone. `grid_for_me().place_line` is typed, but the tile (name and year,
+  tier word, two tag chips on half the screen width) has no room for a third line.
+
+### API (`api/profileFields.ts`)
+
+`getMyProfileFields()` (`my_profile_fields()`), `listActivePrompts()` (`public.prompts`, active,
+by `sort_order`), and the three whole-value writers `setMyPlaceLine` (blank or null clears),
+`setMyUsualPlaces`, `setMyPrompts`. A `22023` becomes `InvalidInputError` (`api/errors.ts`)
+carrying the app's own lowercase copy (`profile/fields.ts#friendlyFieldError`); `42501` stays
+the generic refusal. `api-owner-filter.test.ts` now lists `user_prompts` and
+`user_usual_places` as owner-scoped and checks that none of the new data is touched as a table
+(`profiles.place_line` included): the RPCs are the only path. `types/database.ts` was updated by
+hand for the new columns, tables and RPCs.
+
+### Editor
+
+Three draft fields join status/goals/tags in `useProfileEditorDraft` (seeded from
+`my_profile_fields()`, which is part of the editor's load; written on `done` through the RPCs,
+all-or-report like the rest; a `22023` shows its mapped reason as the `done` error). Each has
+its own pushed screen, built on `me/editor/FieldEditorFrame.tsx` and guarded by
+`me/editor/useDiscardGuard.ts` (cancel asks when edited; a swipe back is caught):
+
+- `profile-editor/place.tsx` — one line, 40 characters, counter, clear, the "2 hours, only while
+  on campus or nearby" note, and, for the saved line, whether it is showing and why not
+  (expired or away). Saving the same line again marks it to be re-sent (`refreshPlaceLine`),
+  which is what restarts its two hours.
+- `profile-editor/prompts.tsx` — up to 3 from the active list (a sheet, `sort_order`, minus the
+  ones already chosen), 140 characters each with a counter, move up/down, remove; gated ones
+  carry the note; a blank answer blocks `save` with a line under it.
+- `profile-editor/usual-places.tsx` — up to 3 entries of 30 characters with counters; blank rows
+  are dropped; a repeat (trimmed, any case, as the server compares) is refused inline; the note
+  says when they show and that nothing hints before then.
+
+`EditSections` shows the three rows with no `+N%` and no signal dot: the completion weights
+(photo 30/20/20, status 10, here for 10, tags 10) are a ruling and these fields do not count.
+QuickStatus (`app/quick-status.tsx`) also offers the place line under the status field
+(`StatusEditor`'s new `extra` slot, now scrolling); it is sent only when touched, since saving
+it restarts the two hours, and a status-only save leaves it alone.
+
+### Tests
+
+`profile-view-fields.test.tsx` (place line, prompt placement, around campus and the gate,
+footer month, recency notice, 4:5 cards), `profile-fields.test.ts`, `profile-fields-api.test.ts`,
+`editor-fields-screens.test.tsx` (the three screens and the Edit tab rows),
+`quick-status-place.test.tsx`, and additions to `profile-view*.test.*`, `editor-draft`,
+`editor-preview` (now the full `ProfileView`), `card-screen`, `profile-goal-labels`,
+`api-owner-filter` and `voice-rules`.
+<!-- END: Profile redesign -->

@@ -96,6 +96,31 @@ describe('ProfileScreen', () => {
     await findByTestId('profile-status-line');
   });
 
+  it('renders the migration 0015 fields from the card row (place line, prompts, usual places, join month)', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(
+      card({
+        place_line: 'library, 2nd floor',
+        prompts: [{ prompt_id: 'cafe_order', question: 'my order at the campus cafe', answer: 'oat latte' }],
+        usual_places: ['library', 'the gym'],
+        gate_open: true,
+        joined_month: `${new Date().getFullYear()}-01-01`,
+        joined_recency: null,
+      })
+    );
+    const { findByTestId } = await renderScreen();
+    expect(await findByTestId('profile-place-line')).toHaveTextContent('library, 2nd floor');
+    expect(await findByTestId('profile-prompt-0-answer')).toHaveTextContent('oat latte');
+    expect(await findByTestId('profile-around-campus-places')).toHaveTextContent('library, the gym');
+    expect(await findByTestId('profile-footer-verified')).toHaveTextContent('verified student at CLC · on ohhi since january');
+  });
+
+  it('draws no around-campus card for a gated (null) usual_places', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ usual_places: null, gate_open: false }));
+    const { findByTestId, queryByTestId } = await renderScreen();
+    await findByTestId('profile-footer');
+    expect(queryByTestId('profile-around-campus')).toBeNull();
+  });
+
   describe('the hero mirrors the tile (migration 0009)', () => {
     it('shows the tier pill for on_campus/nearby', async () => {
       (getProfileCard as jest.Mock).mockResolvedValue(card({ tier: 'on_campus' }));
@@ -363,7 +388,7 @@ describe('ProfileScreen — profile redesign, phase 1', () => {
     (getUserTags as jest.Mock).mockResolvedValue([{ tag_id: 't-coffee', position: 0 }]);
     (getProfileCard as jest.Mock).mockResolvedValue(card({ tag_labels: ['coffee', 'gym'] }));
     const screen = await renderScreen();
-    expect(await screen.findByTestId('profile-shared')).toHaveTextContent(/you both tagged coffee/);
+    expect(await screen.findByTestId('profile-shared')).toHaveTextContent(/you're both into coffee/);
     expect(screen.getByTestId('profile-shared')).not.toHaveTextContent(/gym/);
   });
 

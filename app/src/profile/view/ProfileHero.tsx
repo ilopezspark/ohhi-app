@@ -4,8 +4,8 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { CheckIcon, ChevronUpIcon, Dot, InfoIcon, PinIcon, Text } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
-import { hereForLabel } from '../goalLabels';
-import { HERE_FOR_FALLBACK, majorAndYear, tierWordFor, type ProfileViewData } from './model';
+import { hereForChipLabel } from '../goalLabels';
+import { HERE_FOR_FALLBACK, metaParts, type ProfileViewData } from './model';
 
 export interface ProfileHeroTestIDs {
   root?: string;
@@ -14,6 +14,8 @@ export interface ProfileHeroTestIDs {
   hereNow?: string;
   online?: string;
   tier?: string;
+  /** The place line, when it stands in for the tier word. */
+  place?: string;
   meta?: string;
   verified?: string;
   name?: string;
@@ -35,7 +37,7 @@ export interface ProfileHeroProps {
   data: Pick<
     ProfileViewData,
     'firstName' | 'verified' | 'hereNow' | 'isOnline' | 'tier' | 'majorLabel' | 'gradYear' | 'statusLine' | 'goals' | 'tagLabels'
-  >;
+  > & { placeLine?: string | null };
   /** Fallback fill behind the photo. */
   tint: string;
   /** Single-photo fallback when no `photoSlot` is given. */
@@ -75,7 +77,7 @@ function SinglePhoto({ photoUrl, tint, testIDs }: { photoUrl?: string | null; ti
 /**
  * The profile hero (`docs/design/profile-redesign/01`, `02`, `05`): photo,
  * top scrim, bottom scrim, `here now` pill, big first name with the verified
- * check, the pin line (tier word · major and year), the status line, the
+ * check, the pin line (place line or tier word · major and year), the status line, the
  * `here for …` chip and tag chips, and the round expand button. One
  * component for the profile screen (`bleed`) and `ProfileTile`'s hero size
  * (`card`, used by the editor's Preview), so the two cannot drift.
@@ -98,10 +100,11 @@ export function ProfileHero({
   height,
   testIDs = {},
 }: ProfileHeroProps) {
-  const tierWord = tierWordFor(data.tier);
-  const rest = majorAndYear(data.majorLabel, data.gradYear);
+  // The place line replaces the tier word (`library, 2nd floor · nursing
+  // '27`) and never shows without one: away has neither.
+  const { tierWord, place, lead, rest } = metaParts(data);
   const showOnlineDot = !data.hereNow && !!data.isOnline;
-  const hereFor = hereForLabel(data.goals ?? []) || HERE_FOR_FALLBACK;
+  const hereFor = hereForChipLabel(data.goals ?? []) || HERE_FOR_FALLBACK;
   const tags = data.tagLabels ?? [];
   const bleed = frame === 'bleed';
 
@@ -179,16 +182,28 @@ export function ProfileHero({
               {showOnlineDot ? <Dot testID={testIDs.online} color={colors.success} size={9} /> : null}
             </View>
 
-            {tierWord || rest ? (
+            {lead || rest ? (
               <View style={styles.metaRow} testID={testIDs.meta}>
-                {tierWord ? <PinIcon size={14} color={colors.onDark} /> : null}
-                <Text variant="bodyMedium" color={colors.onDark} style={styles.metaText} numberOfLines={1}>
-                  {tierWord ? (
+                {lead ? <PinIcon size={14} color={colors.onDark} /> : null}
+                <Text
+                  variant="bodyMedium"
+                  color={colors.onDark}
+                  style={styles.metaText}
+                  numberOfLines={1}
+                  // With a place line the tier word is not drawn; a screen
+                  // reader still hears it.
+                  accessibilityLabel={place ? [place, tierWord, rest].filter(Boolean).join(', ') : undefined}
+                >
+                  {place ? (
+                    <Text variant="bodyMedium" color={colors.onDark} testID={testIDs.place}>
+                      {place}
+                    </Text>
+                  ) : tierWord ? (
                     <Text variant="bodyMedium" color={colors.onDark} testID={testIDs.tier}>
                       {tierWord}
                     </Text>
                   ) : null}
-                  {tierWord && rest ? ' · ' : ''}
+                  {lead && rest ? ' · ' : ''}
                   {rest}
                 </Text>
               </View>

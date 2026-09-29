@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { InfoIcon, Text } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
@@ -22,6 +22,11 @@ export interface StatusEditorProps {
   onCancel: () => void;
   /** Fired with the trimmed field value on `save`. The two route wrappers (`profile-editor/status.tsx` writes into the draft and pops; `quick-status.tsx` saves immediately and dismisses) own what happens next — this component only reports the value. */
   onSave: (value: string) => void;
+  /**
+   * Extra "right now" content under the status field — QuickStatus's place
+   * line. The wrapper owns its state and saves it in its own `onSave`.
+   */
+  extra?: ReactNode;
   testID?: string;
 }
 
@@ -34,7 +39,15 @@ export interface StatusEditorProps {
  * behaviour (where `cancel`/`save` actually navigate to) and persistence
  * (draft-write-and-pop vs. save-immediately-and-dismiss).
  */
-export function StatusEditor({ initialValue, saving = false, error, onCancel, onSave, testID = 'status-editor' }: StatusEditorProps) {
+export function StatusEditor({
+  initialValue,
+  saving = false,
+  error,
+  onCancel,
+  onSave,
+  extra,
+  testID = 'status-editor',
+}: StatusEditorProps) {
   const [value, setValue] = useState(initialValue);
 
   // Re-seed if the caller hands this a new `initialValue` after mount (e.g.
@@ -72,69 +85,75 @@ export function StatusEditor({ initialValue, saving = false, error, onCancel, on
         </Pressable>
       </View>
 
-      <Text variant="bodyMedium" color={colors.inkSoft} style={styles.intro}>
-        one line about what you&apos;re doing right now. it sits on your tile and it&apos;s usually the reason someone
-        says hi.
-      </Text>
+      <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+        <Text variant="bodyMedium" color={colors.inkSoft} style={styles.intro}>
+          one line about what you&apos;re doing right now. it sits on your tile and it&apos;s usually the reason someone
+          says hi.
+        </Text>
 
-      <View style={styles.fieldCard}>
-        <TextInput
-          testID={`${testID}-input`}
-          autoFocus
-          multiline
-          maxLength={STATUS_MAX_LENGTH}
-          value={value}
-          onChangeText={setValue}
-          style={styles.input}
-          placeholderTextColor={colors.subtle}
-        />
-        <View style={styles.fieldFooter}>
-          <Pressable testID={`${testID}-clear`} accessibilityRole="button" onPress={() => setValue('')} hitSlop={8}>
-            <Text variant="labelLg" color={colors.muted}>
-              clear
+        <View style={styles.fieldCard}>
+          <TextInput
+            testID={`${testID}-input`}
+            autoFocus
+            multiline
+            maxLength={STATUS_MAX_LENGTH}
+            value={value}
+            onChangeText={setValue}
+            style={styles.input}
+            placeholderTextColor={colors.subtle}
+          />
+          <View style={styles.fieldFooter}>
+            <Pressable testID={`${testID}-clear`} accessibilityRole="button" onPress={() => setValue('')} hitSlop={8}>
+              <Text variant="labelLg" color={colors.muted}>
+                clear
+              </Text>
+            </Pressable>
+            <Text variant="micro" color={colors.inkSoft} testID={`${testID}-counter`}>
+              {`${value.length} / ${STATUS_MAX_LENGTH}`}
             </Text>
-          </Pressable>
-          <Text variant="micro" color={colors.inkSoft} testID={`${testID}-counter`}>
-            {`${value.length} / ${STATUS_MAX_LENGTH}`}
+          </View>
+        </View>
+
+        {extra ? <View style={styles.extra}>{extra}</View> : null}
+
+        <Text variant="sectionLabel" color={colors.muted} style={styles.suggestLabel}>
+          or start from one of these
+        </Text>
+        <View style={styles.suggestList}>
+          {STATUS_SUGGESTIONS.map((suggestion, i) => (
+            <Pressable
+              key={suggestion}
+              testID={`${testID}-suggestion-${i}`}
+              accessibilityRole="button"
+              style={styles.suggestRow}
+              onPress={() => setValue(suggestion)}
+            >
+              <Text variant="bodyMedium">{suggestion}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={styles.footerNote}>
+          <InfoIcon size={16} color={colors.inkSoft} />
+          <Text variant="micro" color={colors.inkSoft} style={styles.footerText}>
+            change it as often as you want. no one gets a notification when you do.
           </Text>
         </View>
-      </View>
 
-      <Text variant="sectionLabel" color={colors.muted} style={styles.suggestLabel}>
-        or start from one of these
-      </Text>
-      <View style={styles.suggestList}>
-        {STATUS_SUGGESTIONS.map((suggestion, i) => (
-          <Pressable
-            key={suggestion}
-            testID={`${testID}-suggestion-${i}`}
-            accessibilityRole="button"
-            style={styles.suggestRow}
-            onPress={() => setValue(suggestion)}
-          >
-            <Text variant="bodyMedium">{suggestion}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View style={styles.footerNote}>
-        <InfoIcon size={16} color={colors.inkSoft} />
-        <Text variant="micro" color={colors.inkSoft} style={styles.footerText}>
-          change it as often as you want. no one gets a notification when you do.
-        </Text>
-      </View>
-
-      {error ? (
-        <Text variant="helper" color={colors.danger} testID={`${testID}-error`}>
-          {error}
-        </Text>
-      ) : null}
+        {error ? (
+          <Text variant="helper" color={colors.danger} testID={`${testID}-error`}>
+            {error}
+          </Text>
+        ) : null}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper, paddingHorizontal: spacing.lgXl },
+  body: { paddingBottom: spacing.xxl },
+  extra: { marginTop: spacing.xxl, gap: spacing.smMd },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.lgXl },
   intro: { lineHeight: 19, marginBottom: spacing.lgXl },
   fieldCard: {

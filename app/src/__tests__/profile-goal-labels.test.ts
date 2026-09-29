@@ -1,4 +1,12 @@
-import { GOAL_LABELS, OFFERED_GOALS, OFFERED_GOAL_OPTIONS, goalLabel, hereForLabel } from '../profile/goalLabels';
+import {
+  GOAL_CHIP_LABELS,
+  GOAL_LABELS,
+  OFFERED_GOALS,
+  OFFERED_GOAL_OPTIONS,
+  goalLabel,
+  hereForChipLabel,
+  hereForLabel,
+} from '../profile/goalLabels';
 
 describe('goalLabels (ruling 7)', () => {
   it('maps every stored value to its chip label', () => {
@@ -50,5 +58,24 @@ describe('hereForLabel', () => {
 
   it('degrades an unrecognized value to itself rather than throwing', () => {
     expect(hereForLabel(['friends', 'made-up'])).toBe('here for friends · made-up');
+  });
+});
+
+describe('hereForChipLabel (the profile hero chip only)', () => {
+  it('reads as the artboard: here for friends · study', () => {
+    expect(hereForChipLabel(['friends', 'study'])).toBe('here for friends · study');
+  });
+
+  it('has a short form for every stored value, and leaves the picker labels alone', () => {
+    for (const goal of Object.keys(GOAL_LABELS) as (keyof typeof GOAL_LABELS)[]) {
+      expect(GOAL_CHIP_LABELS[goal].length).toBeGreaterThan(0);
+    }
+    expect(GOAL_LABELS.study).toBe('study buddies');
+    expect(OFFERED_GOAL_OPTIONS.find((o) => o.value === 'study')?.label).toBe('study buddies');
+  });
+
+  it('passes already-mapped labels through, and is empty for no goals', () => {
+    expect(hereForChipLabel(['friends', 'study buddies'])).toBe('here for friends · study buddies');
+    expect(hereForChipLabel([])).toBe('');
   });
 });

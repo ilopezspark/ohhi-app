@@ -30,6 +30,21 @@ export class GoneError extends Error {
   }
 }
 
+/**
+ * A write RPC refused its input with `22023` (invalid_parameter_value) —
+ * migration 0015's `set_my_*` field writers ("at most 3 prompts", "usual
+ * places must not repeat", …). Unlike a refusal this says nothing about
+ * another person, so the reason may be shown: `message` is already the
+ * app's own lowercase copy for it (`profile/fields.ts#friendlyFieldError`),
+ * never the raw server text.
+ */
+export class InvalidInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidInputError';
+  }
+}
+
 /** Any RPC/edge-function failure that isn't the refusal convention above. */
 export class UnknownError extends Error {
   override cause?: unknown;
@@ -57,8 +72,13 @@ const GONE_MESSAGES = new Set(['conversation not found', 'hi not found']);
  */
 export function mapSupabaseError(
   error: PostgrestError | Error | unknown
-): RefusedError | GoneError | UnknownError {
-  if (error instanceof RefusedError || error instanceof GoneError || error instanceof UnknownError) {
+): RefusedError | GoneError | UnknownError | InvalidInputError {
+  if (
+    error instanceof RefusedError ||
+    error instanceof GoneError ||
+    error instanceof UnknownError ||
+    error instanceof InvalidInputError
+  ) {
     return error;
   }
 

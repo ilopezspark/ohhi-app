@@ -18,12 +18,20 @@ jest.mock('../api/profile', () => ({
 jest.mock('../api/goals', () => ({ getUserGoals: jest.fn(), setUserGoals: jest.fn() }));
 jest.mock('../api/tags', () => ({ getUserTags: jest.fn(), setUserTags: jest.fn(), listTagsForCampus: jest.fn() }));
 jest.mock('../api/photos', () => ({ listMyPhotos: jest.fn() }));
+jest.mock('../api/profileFields', () => ({
+  getMyProfileFields: jest.fn(),
+  setMyPlaceLine: jest.fn(),
+  setMyUsualPlaces: jest.fn(),
+  setMyPrompts: jest.fn(),
+}));
 
 import { me } from '../api/me';
 import { getFirstName, getGradYear, getStatusLine, updateProfile } from '../api/profile';
 import { getUserGoals, setUserGoals } from '../api/goals';
 import { getUserTags, setUserTags, listTagsForCampus } from '../api/tags';
 import { listMyPhotos } from '../api/photos';
+import { getMyProfileFields, setMyPlaceLine, setMyPrompts, setMyUsualPlaces } from '../api/profileFields';
+import { InvalidInputError } from '../api/errors';
 import { useProfileEditorDraft } from '../me/editor/useProfileEditorDraft';
 import { profileCompletion, sectionWeight } from '../profile/completion';
 import { queryKeys } from '../me/queryKeys';
@@ -70,14 +78,38 @@ beforeEach(() => {
   (updateProfile as jest.Mock).mockResolvedValue(undefined);
   (setUserGoals as jest.Mock).mockResolvedValue(undefined);
   (setUserTags as jest.Mock).mockResolvedValue(undefined);
+  (getMyProfileFields as jest.Mock).mockResolvedValue(baseFields());
+  (setMyPlaceLine as jest.Mock).mockResolvedValue('2026-09-29T20:00:00Z');
+  (setMyUsualPlaces as jest.Mock).mockImplementation(async (places: string[]) => places);
+  (setMyPrompts as jest.Mock).mockResolvedValue([]);
 });
+
+function baseFields(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    placeLine: 'library, 2nd floor',
+    placeLineUntil: '2026-09-29T20:00:00Z',
+    placeLineShown: true,
+    usualPlaces: ['library'],
+    prompts: [{ position: 0, promptId: 'cafe_order', question: 'my order at the campus cafe', gated: false, answer: 'oat latte' }],
+    joinedMonth: '2026-09-01',
+    joinedRecency: 'yesterday',
+    ...overrides,
+  };
+}
 
 describe('useProfileEditorDraft — loading and identity fields', () => {
   it('seeds the draft from the loaded status/goals/tags exactly once everything resolves', async () => {
     const { result } = await renderHook(() => useProfileEditorDraft(), { wrapper: wrapperFor(makeClient()) });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(result.current.draft).toEqual({ statusLine: 'at the library', goals: ['friends'], tagIds: ['t1'] });
+    expect(result.current.draft).toEqual({
+      statusLine: 'at the library',
+      goals: ['friends'],
+      tagIds: ['t1'],
+      placeLine: 'library, 2nd floor',
+      usualPlaces: ['library'],
+      prompts: [{ promptId: 'cafe_order', question: 'my order at the campus cafe', gated: false, answer: 'oat latte' }],
+    });
     expect(result.current.dirty).toBe(false);
   });
 
@@ -276,6 +308,164 @@ describe('useProfileEditorDraft — commit (all-or-report)', () => {
     expect(updateProfile).toHaveBeenCalledTimes(1);
     expect(setUserGoals).toHaveBeenCalledTimes(2);
     expect(result.current.dirty).toBe(false);
+  });
+});
+
+describe('useProfileEditorDraft — migration 0015 fields', () => {
+  async function loaded(client = makeClient()) {
+    const hook = await renderHook(() => useProfileEditorDraft(), { wrapper: wrapperFor(client) });
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+    return hook;
+  }
+
+  it('exposes the read-only side of my_profile_fields', async () => {
+    const { result } = await loaded();
+    expect(result.current.fieldsMeta).toEqual({
+      savedPlaceLine: 'library, 2nd floor',
+      placeLineUntil: '2026-09-29T20:00:00Z',
+      placeLineShown: true,
+      joinedMonth: '2026-09-01',
+      joinedRecency: 'yesterday',
+    });
+  });
+
+  it('a failed my_profile_fields read is a load error, never an empty draft that would overwrite on done', async () => {
+    (getMyProfileFields as jest.Mock).mockRejectedValue(new Error('down'));
+    const { result } = await renderHook(() => useProfileEditorDraft(), { wrapper: wrapperFor(makeClient()) });
+    await waitFor(() => expect(result.current.loadError).toBeTruthy());
+    expect(result.current.ready).toBe(false);
+  });
+
+  it('writes each changed field through its RPC, trimmed, and invalidates profile_fields', async () => {
+    const client = makeClient();
+    const invalidateSpy = jest.spyOn(client, 'invalidateQueries');
+    const { result } = await loaded(client);
+
+    await act(async () => {
+      result.current.setPlaceLine('  student union  ');
+      result.current.setUsualPlaces([' library ', '', 'the gym']);
+      result.current.setPrompts([
+        { promptId: 'find_me_on_campus', question: "you'll find me on campus at", gated: true, answer: ' the second floor ' },
+        { promptId: 'cafe_order', question: 'my order at the campus cafe', gated: false, answer: 'oat latte' },
+      ]);
+    });
+    await waitFor(() => expect(result.current.dirty).toBe(true));
+
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.commit();
+    });
+
+    expect(ok).toBe(true);
+    expect(setMyPlaceLine).toHaveBeenCalledWith('student union');
+    expect(setMyUsualPlaces).toHaveBeenCalledWith(['library', 'the gym']);
+    expect(setMyPrompts).toHaveBeenCalledWith([
+      { promptId: 'find_me_on_campus', answer: 'the second floor' },
+      { promptId: 'cafe_order', answer: 'oat latte' },
+    ]);
+    expect(updateProfile).not.toHaveBeenCalled();
+    expect(result.current.dirty).toBe(false);
+    const keys = invalidateSpy.mock.calls.map((c) => (c[0] as { queryKey: readonly unknown[] }).queryKey);
+    expect(keys).toContainEqual(queryKeys.me.profileFields);
+  });
+
+  it('clearing: a blank place line is sent as null, an empty list as []', async () => {
+    const { result } = await loaded();
+    await act(async () => {
+      result.current.setPlaceLine('   ');
+      result.current.setUsualPlaces([]);
+      result.current.setPrompts([]);
+    });
+    await act(async () => {
+      await result.current.commit();
+    });
+    expect(setMyPlaceLine).toHaveBeenCalledWith(null);
+    expect(setMyUsualPlaces).toHaveBeenCalledWith([]);
+    expect(setMyPrompts).toHaveBeenCalledWith([]);
+  });
+
+  it('prompt order matters for dirty; an unchanged place line is not re-sent', async () => {
+    (getMyProfileFields as jest.Mock).mockResolvedValue(
+      baseFields({
+        prompts: [
+          { position: 0, promptId: 'a', question: 'q a', gated: false, answer: 'x' },
+          { position: 1, promptId: 'b', question: 'q b', gated: false, answer: 'y' },
+        ],
+      })
+    );
+    const { result } = await loaded();
+    const [a, b] = result.current.draft.prompts;
+    await act(async () => {
+      result.current.setPrompts([b, a]);
+    });
+    await waitFor(() => expect(result.current.dirty).toBe(true));
+    await act(async () => {
+      await result.current.commit();
+    });
+    expect(setMyPrompts).toHaveBeenCalledWith([
+      { promptId: 'b', answer: 'y' },
+      { promptId: 'a', answer: 'x' },
+    ]);
+    expect(setMyPlaceLine).not.toHaveBeenCalled();
+  });
+
+  it('refreshPlaceLine re-sends the same line (restarting its two hours), once', async () => {
+    (getMyProfileFields as jest.Mock).mockResolvedValue(baseFields({ placeLineShown: false }));
+    const { result } = await loaded();
+    await act(async () => {
+      result.current.refreshPlaceLine();
+    });
+    await waitFor(() => expect(result.current.dirty).toBe(true));
+    await act(async () => {
+      await result.current.commit();
+    });
+    expect(setMyPlaceLine).toHaveBeenCalledWith('library, 2nd floor');
+    expect(result.current.dirty).toBe(false);
+    await act(async () => {
+      await result.current.commit();
+    });
+    expect(setMyPlaceLine).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the mapped reason for bad input (22023), and keeps the field dirty', async () => {
+    (setMyUsualPlaces as jest.Mock).mockRejectedValue(new InvalidInputError('that place is already on your list.'));
+    const { result } = await loaded();
+    await act(async () => {
+      result.current.setUsualPlaces(['library', 'Library']);
+    });
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.commit();
+    });
+    expect(ok).toBe(false);
+    expect(result.current.saveError).toBe('that place is already on your list.');
+    expect(result.current.dirty).toBe(true);
+  });
+
+  it('other failures keep the generic lowercase line', async () => {
+    (setMyPrompts as jest.Mock).mockRejectedValue(new Error('network'));
+    const { result } = await loaded();
+    await act(async () => {
+      result.current.setPrompts([]);
+    });
+    await act(async () => {
+      await result.current.commit();
+    });
+    expect(result.current.saveError).toBe("that didn't work.");
+  });
+
+  it('none of the new fields changes completion (the weights are a ruling)', async () => {
+    const { result } = await loaded();
+    const before = result.current.completion.percent;
+    await act(async () => {
+      result.current.setPlaceLine('');
+      result.current.setUsualPlaces([]);
+      result.current.setPrompts([]);
+    });
+    expect(result.current.completion.percent).toBe(before);
+    expect(result.current.completion.items.map((i) => i.key)).not.toEqual(
+      expect.arrayContaining(['prompts', 'place', 'usualPlaces'])
+    );
   });
 });
 

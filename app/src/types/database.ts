@@ -567,6 +567,8 @@ export type Database = {
           here_now_until: string | null
           id: string
           last_active_at: string
+          place_line: string | null
+          place_line_until: string | null
           status: Database["public"]["Enums"]["user_status"]
           status_line: string | null
           updated_at: string
@@ -580,6 +582,8 @@ export type Database = {
           here_now_until?: string | null
           id: string
           last_active_at?: string
+          place_line?: string | null
+          place_line_until?: string | null
           status?: Database["public"]["Enums"]["user_status"]
           status_line?: string | null
           updated_at?: string
@@ -593,6 +597,8 @@ export type Database = {
           here_now_until?: string | null
           id?: string
           last_active_at?: string
+          place_line?: string | null
+          place_line_until?: string | null
           status?: Database["public"]["Enums"]["user_status"]
           status_line?: string | null
           updated_at?: string
@@ -607,6 +613,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      prompts: {
+        Row: {
+          active: boolean
+          created_at: string
+          gated: boolean
+          id: string
+          question: string
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          gated?: boolean
+          id: string
+          question: string
+          sort_order: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          gated?: boolean
+          id?: string
+          question?: string
+          sort_order?: number
+        }
+        Relationships: []
       }
       reports: {
         Row: {
@@ -948,6 +981,45 @@ export type Database = {
           },
         ]
       }
+      user_prompts: {
+        Row: {
+          answer: string
+          created_at: string
+          position: number
+          prompt_id: string
+          user_id: string
+        }
+        Insert: {
+          answer: string
+          created_at?: string
+          position: number
+          prompt_id: string
+          user_id: string
+        }
+        Update: {
+          answer?: string
+          created_at?: string
+          position?: number
+          prompt_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_prompts_prompt_id_fkey"
+            columns: ["prompt_id"]
+            isOneToOne: false
+            referencedRelation: "prompts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_prompts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_tags: {
         Row: {
           created_at: string
@@ -977,6 +1049,35 @@ export type Database = {
           },
           {
             foreignKeyName: "user_tags_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_usual_places: {
+        Row: {
+          created_at: string
+          label: string
+          position: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          label: string
+          position: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          label?: string
+          position?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_usual_places_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -1308,6 +1409,8 @@ export type Database = {
           here_now_until: string | null
           id: string
           last_active_at: string
+          place_line: string | null
+          place_line_until: string | null
           status: Database["public"]["Enums"]["user_status"]
           status_line: string | null
           updated_at: string
@@ -1469,6 +1572,7 @@ export type Database = {
           is_online: boolean
           last_active_at: string
           photo_path: string
+          place_line: string
           status_line: string
           tag_labels: string[]
           tier: Database["public"]["Enums"]["presence_tier"]
@@ -1491,6 +1595,18 @@ export type Database = {
           status: Database["public"]["Enums"]["user_status"]
           tags_count: number
           verification_status: Database["public"]["Enums"]["verification_status"]
+        }[]
+      }
+      my_profile_fields: {
+        Args: never
+        Returns: {
+          joined_month: string
+          joined_recency: string
+          place_line: string
+          place_line_shown: boolean
+          place_line_until: string
+          prompts: Json
+          usual_places: string[]
         }[]
       }
       pause_grid: { Args: { p_visible: boolean }; Returns: undefined }
@@ -1539,24 +1655,33 @@ export type Database = {
         Returns: {
           conversation_id: string
           first_name: string
+          gate_open: boolean
           goals: Database["public"]["Enums"]["user_goal"][]
           grad_year: number
           here_now: boolean
           is_online: boolean
+          joined_month: string
+          joined_recency: string
           my_hi_state: Database["public"]["Enums"]["hi_state"]
           photos: string[]
+          place_line: string
+          prompts: Json
           status_line: string
           tag_labels: string[]
           tier: Database["public"]["Enums"]["presence_tier"]
           user_id: string
+          usual_places: string[]
         }[]
       }
       request_waitlist: { Args: { p_email: string }; Returns: undefined }
       set_here_now: { Args: { p_on: boolean }; Returns: undefined }
+      set_my_place_line: { Args: { p_line: string }; Returns: string }
+      set_my_prompts: { Args: { p_prompts: Json }; Returns: Json }
       set_my_tier: {
         Args: { p_tier: Database["public"]["Enums"]["presence_tier"] }
         Returns: undefined
       }
+      set_my_usual_places: { Args: { p_places: string[] }; Returns: string[] }
       st_3dclosestpoint: {
         Args: { geom1: unknown; geom2: unknown }
         Returns: unknown

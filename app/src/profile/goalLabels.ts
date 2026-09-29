@@ -60,3 +60,31 @@ export function hereForLabel(goals: string[]): string {
   if (goals.length === 0) return '';
   return `here for ${goals.map(goalLabel).join(' · ')}`;
 }
+
+/**
+ * Short forms for the profile hero's `here for` chip only
+ * (`docs/design/profile-redesign/01-profile-top.png`: `here for friends ·
+ * study`). The chip sits on the photo next to the tag chips, where the
+ * picker's longer labels ("study buddies", "a gym partner") crowd the row.
+ * Every other place goals are shown (the editor's picker, onboarding) keeps
+ * `GOAL_LABELS`.
+ */
+export const GOAL_CHIP_LABELS: Record<UserGoal, string> = {
+  friends: 'friends',
+  study: 'study',
+  dates: 'something more',
+  gym: 'gym',
+  whatever: 'still figuring it out',
+  group: 'a group',
+};
+
+/**
+ * The hero chip's `here for …` text, from stored goal values. A value that
+ * is not a stored goal (a caller that already mapped its goals to labels)
+ * passes through unchanged, so the chip never shows less than it was given.
+ * `''` for no goals, like `hereForLabel`.
+ */
+export function hereForChipLabel(goals: string[]): string {
+  if (goals.length === 0) return '';
+  return `here for ${goals.map((goal) => GOAL_CHIP_LABELS[goal as UserGoal] ?? goal).join(' · ')}`;
+}

@@ -38,7 +38,16 @@ const OWNER_SCOPED_TABLES: Record<string, string> = {
   notification_prefs: 'user_id',
   consents: 'user_id',
   devices: 'user_id',
+  // Migration 0015: owner-only select, no client write grant. Never read
+  // directly from src/api/ today (the owner reads them through
+  // `my_profile_fields()`, everyone else through `profile_card_for`, which
+  // applies the gate), but listed so a future direct read is checked.
+  user_prompts: 'user_id',
+  user_usual_places: 'user_id',
 };
+
+/** Owner-scoped tables with no call site in src/api/ yet; see the guard that every other listed table is actually queried. */
+const NOT_YET_QUERIED = new Set(['devices', 'user_prompts', 'user_usual_places']);
 
 /**
  * Functions that deliberately read across users, and why that's fine:
@@ -146,7 +155,7 @@ describe('every "my row" query in src/api/ filters explicitly on the owner colum
     // screen exists in this build) — kept in OWNER_SCOPED_TABLES so the day a
     // call site is added it's covered automatically, but excluded here so
     // this guard doesn't permanently fail over a table nobody queries yet.
-    for (const table of Object.keys(OWNER_SCOPED_TABLES).filter((t) => t !== 'devices')) {
+    for (const table of Object.keys(OWNER_SCOPED_TABLES).filter((t) => !NOT_YET_QUERIED.has(t))) {
       expect(code).toMatch(new RegExp(`\\.from\\(\\s*['"]${table}['"]\\s*\\)`));
     }
   });
@@ -166,4 +175,48 @@ describe('every "my row" query in src/api/ filters explicitly on the owner colum
     }
   });
 
+  // Migration 0015 (docs/design/profile-redesign/brief.md): the place line,
+  // usual places and prompt answers are written only by the `set_my_*` RPCs,
+  // which are keyed on auth.uid() server-side. There is no client write
+  // grant on any of them, and `profiles.place_line` is not even readable
+  // directly (a column grant would bypass the freshness/away rule), so a
+  // table call here is a bug even before RLS refuses it.
+  describe('migration 0015 fields go through their RPCs only', () => {
+    const code = () =>
+      listApiFiles()
+        .map((f) => stripComments(fs.readFileSync(path.join(API_DIR, f), 'utf8')))
+        .join('\n');
+
+    it('never touches user_prompts or user_usual_places as tables', () => {
+      expect(code()).not.toMatch(/\.from\(\s*['"](user_prompts|user_usual_places)['"]\s*\)/);
+    });
+
+    it('never writes the shared prompts list', () => {
+      const all = code();
+      const pattern = /\.from\(\s*['"]prompts['"]\s*\)/g;
+      let match: RegExpExecArray | null;
+      let seen = 0;
+      while ((match = pattern.exec(all)) !== null) {
+        seen++;
+        expect(statementFrom(all, match.index)).not.toMatch(/\.(insert|upsert|update|delete)\(/);
+      }
+      expect(seen).toBeGreaterThan(0);
+    });
+
+    it('never reads or writes place_line on profiles directly', () => {
+      const all = code();
+      const pattern = /\.from\(\s*['"]profiles['"]\s*\)/g;
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(all)) !== null) {
+        expect(statementFrom(all, match.index)).not.toMatch(/place_line/);
+      }
+    });
+
+    it('writes each field through its own set_my_* RPC', () => {
+      const all = code();
+      for (const rpc of ['set_my_place_line', 'set_my_usual_places', 'set_my_prompts', 'my_profile_fields']) {
+        expect(all).toMatch(new RegExp(`\\.rpc\\(\\s*['"]${rpc}['"]`));
+      }
+    });
+  });
 });
