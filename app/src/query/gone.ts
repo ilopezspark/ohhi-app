@@ -4,6 +4,7 @@ import { focusManager, onlineManager, type QueryClient, type QueryKey } from '@t
 import type { ConversationListItem } from '../api/conversations';
 import type { GridRow } from '../api/grid';
 import type { ReceivedHi } from '../api/his';
+import { refreshBadges } from '../badges/badgeCounts';
 
 /**
  * "Gone" handling (migration 0014, decision 90).
@@ -156,7 +157,8 @@ function filterList<T>(queryClient: QueryClient, queryKey: QueryKey, keep: (item
  * A thread that came back unreadable: out of the chat list, and every
  * per-thread cache removed outright. Only the thread screen itself reads
  * those keys, and it has latched `gone` (its queries are disabled from that
- * render on), so nothing can re-read them.
+ * render on), so nothing can re-read them. Its unread count leaves with its
+ * row, and the tab badges are re-read (the server no longer counts it).
  */
 export function forgetConversation(queryClient: QueryClient, conversationId: string): void {
   filterList<ConversationListItem>(queryClient, ['conversations'], (item) => item.id !== conversationId);
@@ -165,9 +167,11 @@ export function forgetConversation(queryClient: QueryClient, conversationId: str
     ['conversation', conversationId],
     ['messages', conversationId],
     ['chat-share-feed', conversationId],
+    ['message-quotes', conversationId],
   ]) {
     queryClient.removeQueries({ queryKey: key });
   }
+  refreshBadges(queryClient);
 }
 
 /** Someone the grid no longer returns: their tile goes now, and the grid re-reads for the counts. */
@@ -197,6 +201,7 @@ export function forgetPerson(queryClient: QueryClient, userId: string): void {
   forgetProfile(queryClient, userId);
   filterList<ReceivedHi>(queryClient, ['his_received'], (hi) => hi.fromUserId !== userId);
   void queryClient.invalidateQueries({ queryKey: ['his_received'] });
+  refreshBadges(queryClient);
   dropQueries(queryClient, ['shared-private-card', userId]);
   for (const key of [
     ['me', 'shares'],

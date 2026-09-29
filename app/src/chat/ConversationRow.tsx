@@ -1,8 +1,9 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { ConversationListItem } from '../api/conversations';
 import { tintForPhoto } from '../photos/tint';
-import { colors, hairline, spacing } from '../theme/tokens';
-import { Avatar, Badge, Dot, Text } from '../ui';
+import { formatBadge, unreadRowLabel } from '../badges/badgeCounts';
+import { colors, fontFamilies, hairline, radii, spacing } from '../theme/tokens';
+import { Avatar, Badge, Text } from '../ui';
 import { displayName } from '../ui/displayName';
 import { conversationChip, messagePreview } from './rules';
 
@@ -29,7 +30,10 @@ function relativeTime(iso: string | null): string {
 
 /**
  * One row of the chat list — `Chat-List.html`'s `.row`: avatar, name, time,
- * preview (bold + dot while unread), state chip.
+ * preview (bold while unread), state chip, and the unread count in a signal
+ * pill (`9+` above nine). The count is the server's `unread_count`
+ * (migration 0017), so it always adds up to the Chats tab badge, and a thread
+ * that vanishes takes its count with it: the row is simply gone.
  *
  * The chip comes from `conversationChip`, which renders nothing at all for a
  * shadow-accepted `closed_block` thread — for the blocked party this row must
@@ -37,6 +41,8 @@ function relativeTime(iso: string | null): string {
  * receives the row in the first place. Same testIDs as before this pass.
  */
 export function ConversationRow({ item, meId, photoUrl, onPress }: Props) {
+  const unread = item.unreadCount > 0;
+  const badge = formatBadge(item.unreadCount);
   const chip = conversationChip(
     {
       state: item.state,
@@ -66,9 +72,9 @@ export function ConversationRow({ item, meId, photoUrl, onPress }: Props) {
         </View>
         <View style={styles.previewRow}>
           <Text
-            variant={item.unread ? 'rowLabel' : 'body'}
-            color={item.unread ? colors.ink : colors.muted}
-            style={item.unread ? undefined : { fontSize: 14 }}
+            variant={unread ? 'rowLabel' : 'body'}
+            color={unread ? colors.ink : colors.muted}
+            style={unread ? undefined : { fontSize: 14 }}
             numberOfLines={1}
             testID={`conversation-preview-${item.id}`}
           >
@@ -78,7 +84,18 @@ export function ConversationRow({ item, meId, photoUrl, onPress }: Props) {
         </View>
       </View>
 
-      {item.unread ? <Dot testID={`conversation-unread-${item.id}`} /> : null}
+      {badge ? (
+        <View
+          style={styles.count}
+          testID={`conversation-unread-${item.id}`}
+          accessible
+          accessibilityLabel={unreadRowLabel(item.unreadCount)}
+        >
+          <Text variant="micro" color={colors.onDark} style={styles.countText}>
+            {badge}
+          </Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -96,4 +113,14 @@ const styles = StyleSheet.create({
   body: { flex: 1, gap: 3, minWidth: 0 },
   titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: spacing.smMd },
   previewRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.smMd },
+  count: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 6,
+    borderRadius: radii.pill,
+    backgroundColor: colors.signal,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countText: { fontFamily: fontFamilies.outfitBold, fontSize: 12, lineHeight: 15, fontWeight: '700' },
 });

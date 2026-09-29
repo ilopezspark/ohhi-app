@@ -1,5 +1,8 @@
 import { Tabs } from 'expo-router';
-import { tabBarScreenOptions, TabBarIcon } from '../../ui/TabBar';
+import { useQueryClient } from '@tanstack/react-query';
+import { chatsTabLabel, formatBadge, hisTabLabel, refreshBadges } from '../../badges/badgeCounts';
+import { useBadgeCounts } from '../../badges/useBadgeCounts';
+import { tabBarBadgeStyle, tabBarScreenOptions, TabBarIcon } from '../../ui/TabBar';
 
 /**
  * All four tabs (`docs/app-social-plan.md`, architecture plan §2's screen
@@ -16,10 +19,21 @@ import { tabBarScreenOptions, TabBarIcon } from '../../ui/TabBar';
  * `react-native-svg`) instead of the earlier plain-`Text` emoji/glyph
  * placeholders. This is the one screen-layout file the ruling permits
  * touching — no other file under `app/src/app/` was restyled by this pass.
+ *
+ * Badges (migration 0017, decision 93): Chats shows `unread_chats` and Hi's
+ * shows `his_waiting` from `my_badge_counts()`, hidden at 0 and `9+` above
+ * nine, on the signal colour. The counts refresh on any message event, on
+ * foreground, whenever a tab gains focus, and after the app's own actions
+ * (`badges/useBadgeCounts.ts`).
  */
 export default function TabsLayout() {
+  const queryClient = useQueryClient();
+  const counts = useBadgeCounts();
+  const unreadChats = counts?.unreadChats ?? 0;
+  const hisWaiting = counts?.hisWaiting ?? 0;
+
   return (
-    <Tabs screenOptions={tabBarScreenOptions}>
+    <Tabs screenOptions={tabBarScreenOptions} screenListeners={{ focus: () => refreshBadges(queryClient) }}>
       <Tabs.Screen
         name="grid"
         options={{
@@ -33,11 +47,23 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="his"
-        options={{ title: "Hi's", tabBarIcon: ({ color }) => <TabBarIcon name="his" color={color as string} /> }}
+        options={{
+          title: "Hi's",
+          tabBarIcon: ({ color }) => <TabBarIcon name="his" color={color as string} />,
+          tabBarBadge: formatBadge(hisWaiting),
+          tabBarBadgeStyle,
+          tabBarAccessibilityLabel: hisTabLabel(hisWaiting),
+        }}
       />
       <Tabs.Screen
         name="chats"
-        options={{ title: 'Chats', tabBarIcon: ({ color }) => <TabBarIcon name="chat" color={color as string} /> }}
+        options={{
+          title: 'Chats',
+          tabBarIcon: ({ color }) => <TabBarIcon name="chat" color={color as string} />,
+          tabBarBadge: formatBadge(unreadChats),
+          tabBarBadgeStyle,
+          tabBarAccessibilityLabel: chatsTabLabel(unreadChats),
+        }}
       />
       <Tabs.Screen
         name="settings"

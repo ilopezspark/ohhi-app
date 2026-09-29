@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ScreenCapture from 'expo-screen-capture';
@@ -9,6 +9,8 @@ import { signedChatMediaUrls } from '../../../../api/chatMedia';
 import { openLimitedMedia } from '../../../../api/mediaOpen';
 import { me as fetchMe } from '../../../../api/me';
 import { useRecipientExhaustedStore } from '../../../../chat/recipientExhausted';
+import { useMediaReply } from '../../../../chat/useMediaReply';
+import { StoryReplyBar } from '../../../../albums/StoryReplyBar';
 import { colors, layout, radii, shadows, spacing } from '../../../../theme/tokens';
 import { BackIcon } from '../../../../ui/icons';
 import { Text } from '../../../../ui';
@@ -39,6 +41,15 @@ const SCREEN_CAPTURE_KEY = 'chat-media-viewer';
  * `preventScreenCaptureAsync`/`allowScreenCaptureAsync` cover the
  * mount/unmount FLAG_SECURE toggle on Android (skipped on web) — §1/CM-8's own limitation (no iOS/web equivalent) is stated in
  * the copy below, not just in the docs.
+ *
+ * Reply (migration 0017, decision 93): the album story's reply bar sits along
+ * the bottom whenever the thread's composer would let the viewer write
+ * (`chat/useMediaReply.ts`). What it sends is a message in this thread
+ * quoting the media on screen. Replying never counts a view and never keeps
+ * limited media around: the open below runs once per message (it is keyed
+ * on the message's id and path, not on re-reads of its row), sending a
+ * reply re-reads only the thread's lists, and closing the screen still
+ * discards the URL exactly as before.
  */
 export default function ChatMediaViewerScreen() {
   const params = useLocalSearchParams<{ id: string; messageId: string }>();
@@ -77,6 +88,14 @@ export default function ChatMediaViewerScreen() {
   const limited = message?.view_limit != null;
   const isSender = !!me?.id && message?.sender_id === me.id;
 
+  const { reply, conversation } = useMediaReply({
+    conversationId,
+    messageId: message?.id ?? null,
+    viewerId: me?.id ?? null,
+    enabled: !!message,
+  });
+  const replyToName = isSender ? 'yourself' : conversation?.other.firstName ?? null;
+
   useEffect(() => {
     let cancelled = false;
     if (!message || !message.media_path) {
@@ -112,8 +131,11 @@ export default function ChatMediaViewerScreen() {
     return () => {
       cancelled = true;
     };
+    // Keyed on the message's identity, not the row object: a re-read of the
+    // row (a focus refetch, a reply sent from here) must never open limited
+    // media a second time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [message, messageId, limited, isSender]);
+  }, [message?.id, message?.media_path, message?.media_kind, message === null, messageId, limited, isSender]);
 
   // On close: discard the URL (just falls out of state) and refresh the
   // message's own row — the sender's bubble reconciles `views_used` from the
@@ -138,7 +160,11 @@ export default function ChatMediaViewerScreen() {
   );
 
   return (
-    <View style={styles.container} testID="chat-media-viewer">
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      testID="chat-media-viewer"
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Back"
@@ -176,7 +202,19 @@ export default function ChatMediaViewerScreen() {
           {screenshotCopy}
         </Text>
       ) : null}
-    </View>
+
+      {reply ? (
+        <View style={styles.reply}>
+          <StoryReplyBar
+            testID="chat-media-viewer-reply"
+            onSend={reply.onSend}
+            maxLength={reply.maxLength}
+            ownerName={replyToName}
+            onFocusChange={() => {}}
+          />
+        </View>
+      ) : null}
+    </KeyboardAvoidingView>
   );
 }
 
@@ -216,4 +254,5 @@ const styles = StyleSheet.create({
   media: { width: '100%', height: '100%' },
   failedText: { textAlign: 'center', paddingHorizontal: spacing.xxl },
   footer: { textAlign: 'center', paddingHorizontal: spacing.xxl, paddingBottom: spacing.xxl },
+  reply: { paddingHorizontal: layout.gutter, paddingBottom: spacing.xxl },
 });

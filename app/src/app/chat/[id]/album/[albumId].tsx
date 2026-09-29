@@ -17,7 +17,9 @@ import { useStoryReply } from '../../../../albums/useStoryReply';
  * this route and nothing else). It opens straight into the story
  * (`albums/StoryViewer.tsx`): the photos fill the screen and move on by
  * themselves, the owner's face and first name sit on top, and a reply bar
- * at the bottom sends a plain message into this thread.
+ * at the bottom sends a message into this thread that replies to the photo
+ * on screen (migration 0017). Tapping such a reply's quote in the thread
+ * opens this story at that photo (`?photo=`).
  *
  * Nothing here is a gallery: there is no grid, no list and no way to the
  * album's management screen. Editing an album happens only in the albums
@@ -43,8 +45,10 @@ import { useStoryReply } from '../../../../albums/useStoryReply';
  * without a word. An album that is there but has no photos is not gone.
  */
 export default function ChatSharedAlbumScreen() {
-  const params = useLocalSearchParams<{ id: string; albumId: string }>();
+  const params = useLocalSearchParams<{ id: string; albumId: string; photo?: string }>();
   const albumId = Array.isArray(params.albumId) ? params.albumId[0] : params.albumId ?? '';
+  // A reply's quote opens the story at the photo it quoted.
+  const startPhotoId = (Array.isArray(params.photo) ? params.photo[0] : params.photo) || null;
   const conversationId = Array.isArray(params.id) ? params.id[0] : params.id ?? '';
   const queryClient = useQueryClient();
   const { gone, latch } = useGoneLatch();
@@ -124,6 +128,7 @@ export default function ChatSharedAlbumScreen() {
     <StoryViewer
       testID="chat-shared-album"
       photos={album ? storyPhotos : []}
+      initialPhotoId={startPhotoId}
       title={album?.name ?? null}
       owner={album ? owner : null}
       onOpenOwner={album && meId && !isOwner ? openOwner : undefined}

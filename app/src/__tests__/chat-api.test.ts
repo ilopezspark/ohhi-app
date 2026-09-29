@@ -207,51 +207,40 @@ describe('listConversations', () => {
     expect(mockRecorded.filter((entry) => entry.table === 'user_photos')).toHaveLength(1);
   });
 
-  it('marks a thread unread when they spoke last and I never read it', async () => {
+  it('selects the unread_count computed field with the row (migration 0017), in the same request', async () => {
     mockQueued = { conversations: { data: [row()], error: null } };
+    await listConversations();
+    const select = String(argsOf('conversations', 'select')?.[0] ?? '');
+    expect(select).toMatch(/\bunread_count\b/);
+    expect(mockRecorded.filter((entry) => entry.table === 'conversations')).toHaveLength(1);
+  });
+
+  it('takes the unread count from the server, not from the last message', async () => {
+    mockQueued = { conversations: { data: [row({ unread_count: 3 })], error: null } };
     const [item] = await listConversations();
-    expect(item!.unread).toBe(true);
+    expect(item!.unreadCount).toBe(3);
     expect(item!.lastReadAt).toBeNull();
     expect(item!.other.id).toBe(THEM);
   });
 
-  it('is read once my message_reads row is newer than the last message', async () => {
-    mockQueued = {
-      conversations: {
-        data: [
-          row({
-            message_reads: [{ user_id: ME, last_read_at: '2026-09-20T12:00:00.000Z' }],
-          }),
-        ],
-        error: null,
-      },
-    };
-    const [item] = await listConversations();
-    expect(item!.unread).toBe(false);
+  it('reads a missing, zero or nonsense count as nothing unread', async () => {
+    for (const unread_count of [undefined, null, 0, -2]) {
+      mockQueued = { conversations: { data: [row({ unread_count })], error: null } };
+      const [item] = await listConversations();
+      expect(item!.unreadCount).toBe(0);
+    }
   });
 
-  it('never counts my own message as unread', async () => {
+  it('has no client-side unread boolean any more (the server count replaces it)', async () => {
     mockQueued = {
       conversations: {
-        data: [
-          row({
-            messages: [
-              {
-                id: 'm1',
-                conversation_id: CONV,
-                sender_id: ME,
-                body: 'mine',
-                media_path: null,
-                created_at: '2026-09-20T11:00:00.000Z',
-              },
-            ],
-          }),
-        ],
+        data: [row({ unread_count: 0, message_reads: [{ user_id: ME, last_read_at: '2026-09-20T12:00:00.000Z' }] })],
         error: null,
       },
     };
     const [item] = await listConversations();
-    expect(item!.unread).toBe(false);
+    expect(item).not.toHaveProperty('unread');
+    expect(item!.lastReadAt).toBe('2026-09-20T12:00:00.000Z');
   });
 
   it('survives a refused profile row rather than dropping the conversation', async () => {

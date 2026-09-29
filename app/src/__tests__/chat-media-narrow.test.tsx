@@ -33,6 +33,9 @@ const base = (overrides: Partial<ThreadMessage> = {}): ThreadMessage => ({
   media_height: null,
   media_poster_path: null,
   created_at: '2026-09-28T10:00:00.000Z',
+  reply_to_message_id: null,
+  reply_to_album_photo_id: null,
+  reply_kind: null,
   ...overrides,
 });
 

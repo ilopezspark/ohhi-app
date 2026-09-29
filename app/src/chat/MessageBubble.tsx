@@ -1,11 +1,22 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type AccessibilityActionEvent,
+  type GestureResponderEvent,
+} from 'react-native';
 import type { MessageRow } from '../api/conversations';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
 import { CameraIcon } from '../ui/icons';
 import { Text } from '../ui';
 import { PlayIcon } from './mediaIcons';
 import { aspectOf, fitMedia, sizeFromLoadEvent, type MediaSize } from './mediaLayout';
+import type { MenuAnchor } from './menuPlacement';
+import { SwipeToReply } from './SwipeToReply';
 
 /**
  * A message as the thread renders it: a server row, or an optimistic one that
@@ -34,7 +45,24 @@ interface Props {
   onRetry?: (message: ThreadMessage) => void;
   /** Keep-in-chat photo or video poster tap, or a limited photo/video pill tap (either side) — navigates to the viewer route (`app/chat/media/[messageId].tsx`). */
   onOpenMedia?: (message: ThreadMessage) => void;
+  /** The quoted block for a reply (`ReplyQuote`), drawn above the message on its side. */
+  quote?: ReactNode;
+  /**
+   * Starts a reply to this message: a drag to the right, or a screen
+   * reader's `reply` action. Without it the message cannot be replied to
+   * (a locked thread). Never offered while it is still sending or failed.
+   */
+  onReply?: (message: ThreadMessage) => void;
+  /** Press and hold: opens the message menu next to the message's own frame. */
+  onLongPress?: (message: ThreadMessage, anchor: MenuAnchor) => void;
+  /** Briefly tinted after a quote tap scrolls here. */
+  highlighted?: boolean;
 }
+
+/** How long a press has to be held to open the menu. */
+export const LONG_PRESS_MS = 350;
+/** If the frame cannot be measured in this long, the menu opens at the finger. */
+const MEASURE_FALLBACK_MS = 80;
 
 /** Widest an inline keep-in-chat image gets: ~70% of the thread, never more than this. */
 const INLINE_MEDIA_MAX_WIDTH = 300;
@@ -58,41 +86,127 @@ const INLINE_MEDIA_MAX_ASPECT = 2.5;
  * the sender's side and tappable to open the full-screen viewer. Limited media
  * (view once/twice) keeps its bubble and pill, unchanged.
  */
-export function MessageBubble({ message, meId, mediaUrl, recipientExhausted, onRetry, onOpenMedia }: Props) {
+export function MessageBubble({
+  message,
+  meId,
+  mediaUrl,
+  recipientExhausted,
+  onRetry,
+  onOpenMedia,
+  quote,
+  onReply,
+  onLongPress,
+  highlighted,
+}: Props) {
   const mine = message.sender_id === meId;
   const hasMedia = !!message.media_path;
   const limited = message.view_limit != null;
   const kind: 'photo' | 'video' = message.media_kind === 'video' ? 'video' : 'photo';
   const inlineMedia = hasMedia && !limited;
+  const settled = !message.pending && !message.failed;
+  const canReply = !!onReply && settled;
+  const canHold = !!onLongPress && settled;
 
-  return (
-    <View style={[styles.wrapper, mine ? styles.wrapperMine : styles.wrapperTheirs]}>
-      {inlineMedia ? (
-        <InlineMedia message={message} kind={kind} mediaUrl={mediaUrl} onOpenMedia={onOpenMedia} />
-      ) : null}
+  const column = useRef<View>(null);
+  const latest = useRef({ message, onLongPress });
+  latest.current = { message, onLongPress };
 
-      {(hasMedia && limited) || message.body ? (
-        <View
-          style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}
-          testID={inlineMedia ? `message-body-${message.id}` : `message-${message.id}`}
-        >
-          {hasMedia && limited ? (
-            <LimitedMediaPill
-              message={message}
-              mine={mine}
-              kind={kind}
-              recipientExhausted={!!recipientExhausted}
-              onPress={() => onOpenMedia?.(message)}
-            />
-          ) : null}
+  // Opens the menu against the message's own frame. A frame that cannot be
+  // measured (web before layout, a test renderer) falls back to the finger.
+  const hold = useCallback((event?: GestureResponderEvent) => {
+    const handler = latest.current.onLongPress;
+    if (!handler) return;
+    const touch: MenuAnchor = {
+      x: event?.nativeEvent?.pageX ?? 0,
+      y: event?.nativeEvent?.pageY ?? 0,
+      width: 0,
+      height: 0,
+    };
+    let answered = false;
+    const open = (anchor: MenuAnchor) => {
+      if (answered) return;
+      answered = true;
+      handler(latest.current.message, anchor);
+    };
+    const fallback = setTimeout(() => open(touch), MEASURE_FALLBACK_MS);
+    const node = column.current as unknown as {
+      measureInWindow?: (callback: (x: number, y: number, width: number, height: number) => void) => void;
+    } | null;
+    try {
+      node?.measureInWindow?.((x, y, width, height) => {
+        clearTimeout(fallback);
+        open(width > 0 || height > 0 ? { x, y, width, height } : touch);
+      });
+    } catch {
+      // The fallback timer opens it at the finger.
+    }
+  }, []);
+  const onHold = canHold ? hold : undefined;
 
-          {message.body ? (
-            <Text variant="body" color={mine ? colors.onDark : colors.ink}>
-              {message.body}
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
+  const onAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      if (event.nativeEvent.actionName === 'reply') onReply?.(message);
+      else if (event.nativeEvent.actionName === 'longpress') hold();
+    },
+    [onReply, message, hold]
+  );
+  const accessibilityActions = [
+    ...(canReply ? [{ name: 'reply', label: 'reply' }] : []),
+    ...(canHold ? [{ name: 'longpress', label: 'more' }] : []),
+  ];
+
+  const body = (
+    <View
+      style={[styles.wrapper, mine ? styles.wrapperMine : styles.wrapperTheirs, highlighted && styles.highlighted]}
+      testID={`message-row-${message.id}`}
+      accessibilityActions={accessibilityActions.length > 0 ? accessibilityActions : undefined}
+      onAccessibilityAction={accessibilityActions.length > 0 ? onAccessibilityAction : undefined}
+    >
+      <View
+        ref={column}
+        collapsable={false}
+        style={[styles.column, mine ? styles.columnMine : styles.columnTheirs]}
+        testID={highlighted ? `message-highlighted-${message.id}` : undefined}
+      >
+        {quote}
+
+        {inlineMedia ? (
+          <InlineMedia message={message} kind={kind} mediaUrl={mediaUrl} onOpenMedia={onOpenMedia} onLongPress={onHold} />
+        ) : null}
+
+        {(hasMedia && limited) || message.body ? (
+          <Pressable
+            onLongPress={onHold}
+            delayLongPress={LONG_PRESS_MS}
+            disabled={!onHold}
+            accessible={false}
+            style={styles.bubblePress}
+            testID={`message-hold-${message.id}`}
+          >
+            <View
+              style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}
+              testID={inlineMedia ? `message-body-${message.id}` : `message-${message.id}`}
+            >
+              {hasMedia && limited ? (
+                <LimitedMediaPill
+                  message={message}
+                  mine={mine}
+                  kind={kind}
+                  recipientExhausted={!!recipientExhausted}
+                  onPress={() => onOpenMedia?.(message)}
+                  onLongPress={onHold}
+                />
+              ) : null}
+
+              {message.body ? (
+                <Text variant="body" color={mine ? colors.onDark : colors.ink}>
+                  {message.body}
+                </Text>
+              ) : null}
+            </View>
+          </Pressable>
+        ) : null}
+      </View>
 
       {message.pending ? (
         <ActivityIndicator size="small" testID={`message-sending-${message.id}`} />
@@ -114,6 +228,13 @@ export function MessageBubble({ message, meId, mediaUrl, recipientExhausted, onR
       ) : null}
     </View>
   );
+
+  if (!onReply) return body;
+  return (
+    <SwipeToReply enabled={canReply} onReply={() => onReply(message)} testID={`message-drag-${message.id}`}>
+      {body}
+    </SwipeToReply>
+  );
 }
 
 interface InlineMediaProps {
@@ -121,6 +242,7 @@ interface InlineMediaProps {
   kind: 'photo' | 'video';
   mediaUrl?: string;
   onOpenMedia?: (message: ThreadMessage) => void;
+  onLongPress?: (event?: GestureResponderEvent) => void;
 }
 
 /**
@@ -130,7 +252,7 @@ interface InlineMediaProps {
  * Extreme aspects are clamped (and the image cropped to the frame) so a
  * panorama never becomes a sliver.
  */
-function InlineMedia({ message, kind, mediaUrl, onOpenMedia }: InlineMediaProps) {
+function InlineMedia({ message, kind, mediaUrl, onOpenMedia, onLongPress }: InlineMediaProps) {
   const { width: windowWidth } = useWindowDimensions();
   const [loadedSize, setLoadedSize] = useState<MediaSize | null>(null);
   const [failed, setFailed] = useState(false);
@@ -159,6 +281,8 @@ function InlineMedia({ message, kind, mediaUrl, onOpenMedia }: InlineMediaProps)
         accessibilityLabel={kind === 'video' ? 'Play video' : 'Open photo'}
         testID={`message-media-${message.id}`}
         onPress={() => onOpenMedia?.(message)}
+        onLongPress={onLongPress}
+        delayLongPress={LONG_PRESS_MS}
         style={[styles.media, { width: frame.width, height: frame.height }]}
       >
         {showImage ? (
@@ -200,6 +324,7 @@ interface LimitedMediaPillProps {
   kind: 'photo' | 'video';
   recipientExhausted: boolean;
   onPress: () => void;
+  onLongPress?: (event?: GestureResponderEvent) => void;
 }
 
 /**
@@ -218,7 +343,7 @@ interface LimitedMediaPillProps {
  * the sender's own read unlimited and uncounted, so there is no "exhausted"
  * state to reach for them.
  */
-function LimitedMediaPill({ message, mine, kind, recipientExhausted, onPress }: LimitedMediaPillProps) {
+function LimitedMediaPill({ message, mine, kind, recipientExhausted, onPress, onLongPress }: LimitedMediaPillProps) {
   const viewLimit = message.view_limit === 2 ? 2 : 1;
   const viewsUsed = message.views_used ?? 0;
   const Icon = kind === 'video' ? PlayIcon : CameraIcon;
@@ -251,7 +376,13 @@ function LimitedMediaPill({ message, mine, kind, recipientExhausted, onPress }: 
   if (!tappable) return content;
 
   return (
-    <Pressable accessibilityRole="button" testID={`message-limited-press-${message.id}`} onPress={onPress}>
+    <Pressable
+      accessibilityRole="button"
+      testID={`message-limited-press-${message.id}`}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={LONG_PRESS_MS}
+    >
       {content}
     </Pressable>
   );
@@ -261,8 +392,15 @@ const styles = StyleSheet.create({
   wrapper: { paddingHorizontal: spacing.mdLg, paddingVertical: 3, gap: 2 },
   wrapperMine: { alignItems: 'flex-end' },
   wrapperTheirs: { alignItems: 'flex-start' },
+  highlighted: { backgroundColor: colors.tint },
+  // The message's own column: its quote, media and bubble, lined up on its
+  // side. It carries the 78% cap, so the menu anchors to its frame.
+  column: { maxWidth: '78%', gap: 4 },
+  columnMine: { alignItems: 'flex-end' },
+  columnTheirs: { alignItems: 'flex-start' },
+  bubblePress: { maxWidth: '100%' },
   bubble: {
-    maxWidth: '78%',
+    maxWidth: '100%',
     borderRadius: radii.lg,
     paddingHorizontal: spacing.lgXl,
     paddingVertical: spacing.mdLg,

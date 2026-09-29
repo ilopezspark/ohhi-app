@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { blockUser } from '../../../api/blocks';
+import { refreshBadges } from '../../../badges/badgeCounts';
 import { mapSupabaseError } from '../../../api/errors';
 import { supabase } from '../../../api/client';
 import { ConfirmButton } from '../../../settings/ConfirmButton';
@@ -52,12 +53,18 @@ export default function BlockScreen() {
     };
   }, [targetId]);
 
+  const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: () => blockUser(targetId),
     // Navigate away rather than back to the profile/thread that was just
     // blocked (plan §4: "don't leave the blocker on a thread that just
     // silently stopped updating").
-    onSuccess: () => router.replace('/(tabs)/settings' as never),
+    onSuccess: () => {
+      // A block changes what counts (the blocker's thread and any hi between
+      // the pair stop counting), so the tab badges are re-read.
+      refreshBadges(queryClient);
+      router.replace('/(tabs)/settings' as never);
+    },
   });
 
   const displayName = targetName ?? 'this person';

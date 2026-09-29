@@ -301,7 +301,7 @@ describe('RealtimeManager — list-level subscription', () => {
     expect(client.channel).toHaveBeenCalledTimes(1);
   });
 
-  it('delivers to the newest handler after a re-subscribe', () => {
+  it('delivers to every subscriber on the one channel (the chat list and the tab badges)', () => {
     const { client, emit } = makeClient();
     const manager = new RealtimeManager(client as never);
     const first = jest.fn();
@@ -311,8 +311,28 @@ describe('RealtimeManager — list-level subscription', () => {
     manager.subscribeMessageList({ onMessage: second });
     emit(0, insert());
 
+    expect(client.channel).toHaveBeenCalledTimes(1);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the channel for the others when one subscriber leaves, and drops it with the last', () => {
+    const { client, emit } = makeClient();
+    const manager = new RealtimeManager(client as never);
+    const first = jest.fn();
+    const second = jest.fn();
+
+    const stopFirst = manager.subscribeMessageList({ onMessage: first });
+    const stopSecond = manager.subscribeMessageList({ onMessage: second });
+    stopFirst();
+    emit(0, insert());
+
+    expect(client.removeChannel).not.toHaveBeenCalled();
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
+
+    stopSecond();
+    expect(client.removeChannel).toHaveBeenCalledTimes(1);
   });
 
   it('stops delivering after unsubscribe', () => {

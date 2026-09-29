@@ -418,6 +418,9 @@ export type Database = {
           media_path: string | null
           media_poster_path: string | null
           media_width: number | null
+          reply_kind: string | null
+          reply_to_album_photo_id: string | null
+          reply_to_message_id: string | null
           sender_id: string
           view_limit: number | null
           views_used: number
@@ -434,6 +437,8 @@ export type Database = {
           media_path?: string | null
           media_poster_path?: string | null
           media_width?: number | null
+          reply_to_album_photo_id?: string | null
+          reply_to_message_id?: string | null
           sender_id: string
           view_limit?: number | null
           views_used?: number
@@ -450,6 +455,9 @@ export type Database = {
           media_path?: string | null
           media_poster_path?: string | null
           media_width?: number | null
+          reply_kind?: string | null
+          reply_to_album_photo_id?: string | null
+          reply_to_message_id?: string | null
           sender_id?: string
           view_limit?: number | null
           views_used?: number
@@ -460,6 +468,20 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_reply_to_album_photo_id_fkey"
+            columns: ["reply_to_album_photo_id"]
+            isOneToOne: false
+            referencedRelation: "album_photos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_reply_to_message_id_fkey"
+            columns: ["reply_to_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
             referencedColumns: ["id"]
           },
           {
@@ -1582,6 +1604,33 @@ export type Database = {
       }
       hi_back: { Args: { p_hi_id: string }; Returns: string }
       longtransactionsenabled: { Args: never; Returns: boolean }
+      message_quotes: {
+        Args: { p_message_ids: string[] }
+        Returns: {
+          album_id: string | null
+          available: boolean
+          excerpt: string | null
+          is_limited: boolean | null
+          media_kind: Database["public"]["Enums"]["media_kind"] | null
+          media_path: string | null
+          media_poster_path: string | null
+          message_id: string
+          quoted_album_photo_id: string | null
+          quoted_created_at: string | null
+          quoted_message_id: string | null
+          quoted_sender_id: string | null
+          reply_kind: string
+        }[]
+      }
+      my_badge_counts: {
+        Args: never
+        Returns: {
+          his_waiting: number
+          total: number
+          unread_chats: number
+          unread_messages: number
+        }[]
+      }
       me: {
         Args: never
         Returns: {
@@ -2266,6 +2315,10 @@ export type Database = {
       start_conversation: { Args: { p_recipient: string }; Returns: string }
       touch_activity: { Args: never; Returns: undefined }
       unlockrows: { Args: { "": string }; Returns: number }
+      unread_count: {
+        Args: { p_conversation: Database["public"]["Tables"]["conversations"]["Row"] }
+        Returns: number
+      }
       updategeometrysrid: {
         Args: {
           catalogn_name: string

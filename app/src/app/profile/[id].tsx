@@ -22,6 +22,7 @@ import { buildProfileViewData } from '../../profile/view/model';
 import { ProfileView } from '../../profile/view/ProfileView';
 import { useInsets } from '../../profile/view/useInsets';
 import { forgetGridRow, forgetProfile, leaveScreen, useGoneLatch, useLeaveWhenGone } from '../../query/gone';
+import { refreshBadges } from '../../badges/badgeCounts';
 import { BackIcon, Text } from '../../ui';
 import { colors, radii, spacing } from '../../theme/tokens';
 
@@ -142,6 +143,7 @@ export default function ProfileScreen() {
     onSuccess: () => {
       void cardQuery.refetch();
       void queryClient.invalidateQueries({ queryKey: ['his_received'] });
+      refreshBadges(queryClient);
     },
     // A hi to someone hidden or gone is refused like any other (decision
     // 90). Re-read the card: if it comes back empty the screen leaves; if

@@ -405,7 +405,8 @@ describe('reply bar', () => {
     await act(async () => {
       fireEvent.press(screen.getByTestId('album-viewer-reply-send'));
     });
-    expect(onSend).toHaveBeenCalledWith('love this one');
+    // The reply goes to the photo on screen.
+    expect(onSend).toHaveBeenCalledWith('love this one', 'p1');
     expect(screen.getByTestId('album-viewer-reply-sent')).toHaveTextContent('sent');
     expect(screen.getByTestId('album-viewer-reply-input').props.value).toBe('');
     await fireEvent(screen.getByTestId('album-viewer-reply-input'), 'blur');

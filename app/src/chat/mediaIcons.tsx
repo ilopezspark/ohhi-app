@@ -29,3 +29,21 @@ export function PlayIcon({ size = 20, color = colors.ink, testID }: MediaIconPro
     </Svg>
   );
 }
+
+/**
+ * The reply arrow (a curved arrow back to the left), for the drag-to-reply
+ * reveal and the press-and-hold menu. Same hand-line style as `PlayIcon`.
+ */
+export function ReplyIcon({ size = 20, color = colors.ink, testID }: MediaIconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-reply'} width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M9.5 6.5L4 12l5.5 5.5M4.5 12H13a7 7 0 017 7v.5"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}

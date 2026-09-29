@@ -97,7 +97,7 @@ describe('useStoryReply', () => {
     (getConversation as jest.Mock).mockResolvedValue(conversation());
   });
 
-  it('from a thread: uses that conversation, and sends plain text into it', async () => {
+  it('from a thread: uses that conversation, and sends a reply to the photo on screen (migration 0017)', async () => {
     const props = { conversationId: CONV, ownerId: OWNER, viewerId: ME, enabled: true };
     const { wrapper, invalidate } = setup();
     (sendMessage as jest.Mock).mockResolvedValue({ id: 'm1' });
@@ -108,11 +108,15 @@ describe('useStoryReply', () => {
     expect(getConversation).toHaveBeenCalledWith(CONV);
 
     await act(async () => {
-      await result.current!.onSend('love this one');
+      await result.current!.onSend('love this one', 'p1');
     });
-    expect(sendMessage).toHaveBeenCalledWith({ conversationId: CONV, body: 'love this one' });
-    // Only these two keys: no media, no invented reference to the album or a photo.
-    expect(Object.keys((sendMessage as jest.Mock).mock.calls[0][0]).sort()).toEqual(['body', 'conversationId']);
+    expect(sendMessage).toHaveBeenCalledWith({
+      conversationId: CONV,
+      body: 'love this one',
+      replyTo: { albumPhotoId: 'p1' },
+    });
+    // No media, and never a message reference: only the photo on screen.
+    expect(Object.keys((sendMessage as jest.Mock).mock.calls[0][0]).sort()).toEqual(['body', 'conversationId', 'replyTo']);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['messages', CONV] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['conversations'] });
     await act(async () => {});

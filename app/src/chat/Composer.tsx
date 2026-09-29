@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
 import { PlusIcon, SendIcon } from '../ui/icons';
@@ -19,6 +19,16 @@ interface Props {
    * no effect (this isn't a controlled value).
    */
   initialText?: string;
+  /**
+   * Shown above the field, e.g. the reply bar (`ReplyPreviewBar`) while a
+   * reply is being written. Only while the composer is live.
+   */
+  accessory?: ReactNode;
+  /**
+   * Bump it to put the cursor in the field (starting a reply does). The
+   * first value, and 0, do nothing.
+   */
+  focusKey?: number;
 }
 
 /**
@@ -35,8 +45,17 @@ interface Props {
  * picker — `Chat-Share.html`'s "a photo" row inside that sheet is what
  * triggers the picker.
  */
-export function Composer({ state, sending, onSend, onOpenShare, initialText }: Props) {
+export function Composer({ state, sending, onSend, onOpenShare, initialText, accessory, focusKey = 0 }: Props) {
   const [text, setText] = useState(initialText ?? '');
+  const input = useRef<TextInput>(null);
+
+  // A beat later than the render: starting a reply from the hold menu
+  // closes a modal first, and iOS will not focus a field under a closing one.
+  useEffect(() => {
+    if (focusKey <= 0) return;
+    const timer = setTimeout(() => input.current?.focus(), 120);
+    return () => clearTimeout(timer);
+  }, [focusKey]);
 
   if (!state.canSend) {
     return (
@@ -61,6 +80,7 @@ export function Composer({ state, sending, onSend, onOpenShare, initialText }: P
           One message to start — make it count.
         </Text>
       ) : null}
+      {accessory}
       <View style={styles.bar} testID="composer">
         {state.canAttachMedia ? (
           <Pressable
@@ -75,6 +95,7 @@ export function Composer({ state, sending, onSend, onOpenShare, initialText }: P
         ) : null}
 
         <TextInput
+          ref={input}
           testID="composer-input"
           style={styles.input}
           value={text}

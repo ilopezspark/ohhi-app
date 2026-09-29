@@ -18,6 +18,7 @@ import {
   markRead,
   sendMessage,
   type RecentlySharedItem,
+  type ReplyTarget,
 } from '../../api/messages';
 import {
   CHAT_MEDIA_BUCKET,
@@ -28,7 +29,7 @@ import {
   uploadChatMediaPoster,
 } from '../../api/chatMedia';
 import { me as fetchMe } from '../../api/me';
-import { getAlbum, listMyAlbums, type AlbumRow } from '../../api/albums';
+import { getAlbum, listMyAlbums, signedAlbumPhotoUrls, type AlbumRow } from '../../api/albums';
 import { shareAlbum, sharePrivateCard } from '../../api/shares';
 import { GoneError, isUnavailableError, mapSupabaseError } from '../../api/errors';
 import { signedPhotoUrls } from '../../api/photos';
@@ -43,6 +44,15 @@ import { ShareSheet } from '../../chat/ShareSheet';
 import { composerState } from '../../chat/rules';
 import { listShareFeed, type ShareFeedItem } from '../../chat/shareFeed';
 import { forgetConversation, forgetPerson, useGoneLatch, useLeaveWhenGone } from '../../query/gone';
+import { markThreadReadOptimistically, refreshBadges } from '../../badges/badgeCounts';
+import { copyText } from '../../chat/clipboard';
+import { lightTap } from '../../chat/haptics';
+import { MessageMenu, type MessageMenuAction } from '../../chat/MessageMenu';
+import type { MenuAnchor } from '../../chat/menuPlacement';
+import { ReplyPreviewBar } from '../../chat/ReplyPreviewBar';
+import { ReplyQuote } from '../../chat/ReplyQuote';
+import { quoteName, replyDraftFor, resolveQuote, type QuoteView, type ReplyDraft } from '../../chat/replies';
+import { quotesKey, useThreadQuotes } from '../../chat/useThreadQuotes';
 import { useConversationRealtime } from '../../chat/useChatRealtime';
 import { messageId as newMessageId } from '../../chat/uuid';
 import { checkVideo, generateVideoPoster, VIDEO_REJECTION_COPY } from '../../chat/video';
@@ -86,7 +96,27 @@ import { displayName } from '../../ui/displayName';
  * (view once / view twice / keep in chat, default keep in chat) before
  * sending. A message's own full-screen media (limited or a keep-in-chat
  * video's poster tap) opens `chat/[id]/media/[messageId].tsx`.
+ *
+ * Replies (migration 0017, decision 93, `docs/chat-replies-and-badges.md`):
+ * press and hold a message for a small menu (`reply`, and `copy` for text),
+ * or drag it to the right. Either puts a reply bar above the composer
+ * (`replying to maya`, one line of the message, a thumbnail for kept media,
+ * an x) and focuses the field; the next send, text or media, carries the
+ * reference and clears the bar. A reply shows its quote above it, resolved
+ * live (`chat/useThreadQuotes.ts`); tapping a message quote scrolls to the
+ * original (loading older pages, up to `MAX_JUMP_PAGES`) and tints it for a
+ * moment, and tapping an album photo quote opens that album at that photo.
+ * Only a thread the composer can write in offers any of this.
+ *
+ * Badges: opening the thread marks it read and drops its unread count and
+ * the tab badge at once (`badges/badgeCounts.ts`); the counts are re-read
+ * once the read lands, and after every send.
  */
+/** How many older pages a quote tap may load looking for the original (30 messages each). */
+const MAX_JUMP_PAGES = 10;
+/** How long a message stays tinted after a quote tap lands on it. */
+const HIGHLIGHT_MS = 1600;
+
 type FeedItem =
   | { kind: 'message'; key: string; createdAt: string; message: ThreadMessage }
   | { kind: 'share'; key: string; createdAt: string; share: ShareFeedItem };
@@ -117,6 +147,15 @@ export default function ChatThreadScreen() {
   const [sharingAlbumId, setSharingAlbumId] = useState<string | null>(null);
   const [sharingCard, setSharingCard] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+
+  // Replies: the draft above the composer, the press-and-hold menu, and a
+  // quote tap's scroll target.
+  const [replyDraft, setReplyDraft] = useState<ReplyDraft | null>(null);
+  const [focusKey, setFocusKey] = useState(0);
+  const [menu, setMenu] = useState<{ message: ThreadMessage; anchor: MenuAnchor } | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [jump, setJump] = useState<{ id: string; createdAt: string | null; pagesLoaded: number; waitingFor: number } | null>(null);
+  const listRef = useRef<FlatList<FeedItem>>(null);
 
   // -----------------------------------------------------------------------
   // Chat media: pick -> preview (three-way selector) -> send.
@@ -226,6 +265,18 @@ export default function ChatThreadScreen() {
   }, [serverIds]);
 
   const messages = useMemo(() => [...pending, ...serverMessages], [pending, serverMessages]);
+  const loadedById = useMemo(() => new Map(messages.map((row) => [row.id, row])), [messages]);
+
+  // Live quotes for the replies on the loaded pages (decision 93).
+  const quotes = useThreadQuotes(conversationId, pages?.pages, !gone);
+  const quoteViews = useMemo(() => {
+    const views: Record<string, QuoteView> = {};
+    for (const row of messages) {
+      const view = resolveQuote(row, quotes[row.id], loadedById);
+      if (view) views[row.id] = view;
+    }
+    return views;
+  }, [messages, quotes, loadedById]);
   const newest = serverMessages[0] ?? null;
   const otherId = conversation?.other.id ?? null;
 
@@ -285,11 +336,14 @@ export default function ChatThreadScreen() {
   // bubble picks the new counter up off the refetch, no separate patch path.
   // ---------------------------------------------------------------------
   useConversationRealtime(conversationId, {
-    onMessage: () => {
+    onMessage: (event) => {
       void queryClient.invalidateQueries({
         queryKey: ['messages', conversationId],
         refetchType: 'active',
       });
+      // An `UPDATE` can be a reply whose album photo was just deleted (its
+      // reference nulled): its quote has to be asked again.
+      if (event.eventType === 'UPDATE') void queryClient.invalidateQueries({ queryKey: quotesKey(conversationId) });
       // The thread's own state can change with a message (`advance_conversation`
       // flips `awaiting_reply` -> `open` on the reply), so the composer gate
       // has to be re-read too.
@@ -299,6 +353,7 @@ export default function ChatThreadScreen() {
     onInvalidate: () => {
       void queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
       void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+      void queryClient.invalidateQueries({ queryKey: quotesKey(conversationId) });
     },
   });
 
@@ -312,11 +367,18 @@ export default function ChatThreadScreen() {
     if (!conversationId || !newest) return;
     if (markedRef.current === newest.id) return;
     markedRef.current = newest.id;
+    // The row's count and the tab badge drop now, not when the read lands.
+    markThreadReadOptimistically(queryClient, conversationId);
     markRead(conversationId, newest)
-      .then(() => queryClient.invalidateQueries({ queryKey: ['conversations'] }))
+      .then(() => {
+        void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        refreshBadges(queryClient);
+      })
       .catch(() => {
-        // A failed read-mark is cosmetic: the badge stays until next open.
+        // A failed read-mark is cosmetic: the badge comes back until next open.
         markedRef.current = null;
+        void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        refreshBadges(queryClient);
       });
   }, [conversationId, newest, queryClient]);
 
@@ -325,19 +387,39 @@ export default function ChatThreadScreen() {
   // viewer route, on an actual tap). Limited media is deliberately excluded —
   // `chat-media-limited` has no select policy (§2), so signing it would just
   // fail; the bubble renders a pill for it, not a thumbnail.
+  // Kept-media quotes' thumbnails are the same kind of `chat-media` path.
   const mediaPaths = useMemo(
     () =>
-      messages
-        .filter((row) => row.view_limit == null)
-        .map((row) => (row.media_kind === 'video' ? row.media_poster_path : row.media_path))
-        .filter((path): path is string => !!path),
-    [messages]
+      [
+        ...messages
+          .filter((row) => row.view_limit == null)
+          .map((row) => (row.media_kind === 'video' ? row.media_poster_path : row.media_path)),
+        ...Object.values(quoteViews).map((view) => (view.state === 'message' ? view.thumbPath : null)),
+      ].filter((path): path is string => !!path),
+    [messages, quoteViews]
   );
   const mediaPathsKey = useMemo(() => [...mediaPaths].sort().join('|'), [mediaPaths]);
   const { data: mediaUrls } = useQuery({
     queryKey: ['chat_media_urls', mediaPathsKey],
     queryFn: () => signedChatMediaUrls(mediaPaths),
     enabled: mediaPaths.length > 0,
+    staleTime: 45_000,
+  });
+
+  // Album photo quotes sign from `album-photos`, like the story viewer.
+  // `available` means the caller may read the object right now.
+  const albumQuotePaths = useMemo(
+    () =>
+      Object.values(quoteViews)
+        .map((view) => (view.state === 'album_photo' ? view.thumbPath : null))
+        .filter((path): path is string => !!path),
+    [quoteViews]
+  );
+  const albumQuoteKey = useMemo(() => [...albumQuotePaths].sort().join('|'), [albumQuotePaths]);
+  const { data: albumQuoteUrls } = useQuery({
+    queryKey: ['chat_quote_album_urls', albumQuoteKey],
+    queryFn: () => signedAlbumPhotoUrls(albumQuotePaths),
+    enabled: albumQuotePaths.length > 0,
     staleTime: 45_000,
   });
 
@@ -392,9 +474,11 @@ export default function ChatThreadScreen() {
       mediaWidth?: number | null;
       mediaHeight?: number | null;
       mediaPosterPath?: string | null;
+      replyTo?: ReplyTarget | null;
     }) => {
       if (!conversationId || !meId) return;
       setSending(true);
+      const replyTo = input.replyTo ?? null;
 
       const optimistic: ThreadMessage = {
         id: input.id,
@@ -411,6 +495,9 @@ export default function ChatThreadScreen() {
         media_height: input.mediaHeight ?? null,
         media_poster_path: input.mediaPosterPath ?? null,
         created_at: new Date().toISOString(),
+        reply_to_message_id: replyTo && 'messageId' in replyTo ? replyTo.messageId : null,
+        reply_to_album_photo_id: replyTo && 'albumPhotoId' in replyTo ? replyTo.albumPhotoId : null,
+        reply_kind: replyTo ? ('messageId' in replyTo ? 'message' : 'album_photo') : null,
         pending: true,
       };
       setPending((current) => [
@@ -431,11 +518,14 @@ export default function ChatThreadScreen() {
           mediaWidth: input.mediaWidth,
           mediaHeight: input.mediaHeight,
           mediaPosterPath: input.mediaPosterPath,
+          replyTo,
         });
         setPending((current) => current.filter((row) => row.id !== input.id));
         await queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
         void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
         void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        // Writing in a thread counts as reading it (the effective read marker).
+        refreshBadges(queryClient);
       } catch (error) {
         if (error instanceof GoneError) {
           // `conversation not found`: the thread vanished (decision 90). There
@@ -461,9 +551,11 @@ export default function ChatThreadScreen() {
 
   const onSend = useCallback(
     (body: string) => {
-      void send({ id: newMessageId(), body, mediaPath: null });
+      const replyTo = replyDraft?.target ?? null;
+      setReplyDraft(null);
+      void send({ id: newMessageId(), body, mediaPath: null, replyTo });
     },
-    [send]
+    [send, replyDraft]
   );
 
   const onRetry = useCallback(
@@ -480,6 +572,11 @@ export default function ChatThreadScreen() {
         mediaWidth: message.media_width,
         mediaHeight: message.media_height,
         mediaPosterPath: message.media_poster_path,
+        replyTo: message.reply_to_message_id
+          ? { messageId: message.reply_to_message_id }
+          : message.reply_to_album_photo_id
+            ? { albumPhotoId: message.reply_to_album_photo_id }
+            : null,
       });
     },
     [send]
@@ -618,6 +715,8 @@ export default function ChatThreadScreen() {
       setMediaSending(true);
       setMediaError(null);
       const id = newMessageId();
+      // A reply can carry media too (0017: text, media or both).
+      const replyTo = replyDraft?.target ?? null;
       const bucket = viewLimit == null ? CHAT_MEDIA_BUCKET : CHAT_MEDIA_LIMITED_BUCKET;
 
       // Which step was running when it failed, for the dev-only log below.
@@ -681,7 +780,9 @@ export default function ChatThreadScreen() {
           mediaWidth: pendingMedia.width || null,
           mediaHeight: pendingMedia.height || null,
           mediaPosterPath: posterPath,
+          replyTo,
         });
+        if (replyTo) setReplyDraft(null);
         closeMediaFlow();
         void queryClient.invalidateQueries({ queryKey: ['recently-shared-media', meId] });
       } catch (error) {
@@ -705,7 +806,7 @@ export default function ChatThreadScreen() {
         setMediaSending(false);
       }
     },
-    [conversationId, meId, pendingMedia, send, closeMediaFlow, queryClient]
+    [conversationId, meId, pendingMedia, send, closeMediaFlow, queryClient, replyDraft]
   );
 
   // ---------------------------------------------------------------------
@@ -806,6 +907,107 @@ export default function ChatThreadScreen() {
     if (otherId) router.push(`/settings/report/${otherId}?context=chat` as never);
   }, [otherId]);
 
+  // ---------------------------------------------------------------------
+  // Replies: start one (hold menu, drag), and follow a quote back.
+  // ---------------------------------------------------------------------
+  const canReply = composer.canSend;
+  const otherFirstName = conversation?.other.firstName ?? null;
+
+  const startReply = useCallback(
+    (message: ThreadMessage) => {
+      if (!canReply || !meId || message.pending || message.failed) return;
+      setReplyDraft(replyDraftFor(message, meId, otherFirstName));
+      setFocusKey((key) => key + 1);
+    },
+    [canReply, meId, otherFirstName]
+  );
+
+  // Nothing to offer (a locked thread and no text to copy): no menu at all.
+  const openMessageMenu = useCallback(
+    (message: ThreadMessage, anchor: MenuAnchor) => {
+      if (!canReply && !message.body?.trim()) return;
+      lightTap();
+      setMenu({ message, anchor });
+    },
+    [canReply]
+  );
+
+  const menuActions = useMemo<MessageMenuAction[]>(() => {
+    if (!menu) return [];
+    const actions: MessageMenuAction[] = [];
+    if (canReply) actions.push({ key: 'reply', label: 'reply', onPress: () => startReply(menu.message) });
+    const body = menu.message.body?.trim();
+    if (body) actions.push({ key: 'copy', label: 'copy', onPress: () => void copyText(body) });
+    return actions;
+  }, [menu, canReply, startReply]);
+
+  const openQuote = useCallback(
+    (view: QuoteView) => {
+      if (view.state === 'message') {
+        setJump({ id: view.quotedMessageId, createdAt: view.quotedCreatedAt, pagesLoaded: 0, waitingFor: 0 });
+      } else if (view.state === 'album_photo' && view.albumId && conversationId) {
+        router.push(`/chat/${conversationId}/album/${view.albumId}?photo=${view.photoId}` as never);
+      }
+    },
+    [conversationId]
+  );
+
+  // A quote tap: scroll to the original once it is in the list, loading
+  // older pages (within reason) until it is, or until the list is past it.
+  // If it cannot be found, nothing happens.
+  const pageCount = pages?.pages.length ?? 0;
+  useEffect(() => {
+    if (!jump) return;
+    const index = feed.findIndex((item) => item.kind === 'message' && item.message.id === jump.id);
+    if (index >= 0) {
+      setJump(null);
+      setHighlightedId(jump.id);
+      try {
+        listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+      } catch {
+        // Not laid out yet: `onScrollToIndexFailed` below gets close instead.
+      }
+      return;
+    }
+    const oldest = serverMessages[serverMessages.length - 1];
+    const pastIt = !!jump.createdAt && !!oldest && oldest.created_at < jump.createdAt;
+    if (pastIt || !hasNextPage || jump.pagesLoaded >= MAX_JUMP_PAGES) {
+      setJump(null);
+      return;
+    }
+    if (isFetchingNextPage || pageCount < jump.waitingFor) return;
+    setJump({ ...jump, pagesLoaded: jump.pagesLoaded + 1, waitingFor: pageCount + 1 });
+    void fetchNextPage();
+  }, [jump, feed, serverMessages, hasNextPage, isFetchingNextPage, pageCount, fetchNextPage]);
+
+  useEffect(() => {
+    if (!highlightedId) return;
+    const timer = setTimeout(() => setHighlightedId(null), HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [highlightedId]);
+
+  const renderQuote = (message: ThreadMessage) => {
+    const view = quoteViews[message.id];
+    if (!view) return undefined;
+    const senderId = view.state === 'message' || view.state === 'album_photo' ? view.senderId : null;
+    const thumbPath = view.state === 'message' || view.state === 'album_photo' ? view.thumbPath : null;
+    const thumbUrl = thumbPath
+      ? view.state === 'album_photo'
+        ? albumQuoteUrls?.[thumbPath]
+        : mediaUrls?.[thumbPath]
+      : undefined;
+    return (
+      <ReplyQuote
+        view={view}
+        name={quoteName(senderId, meId ?? '', otherFirstName)}
+        thumbUrl={thumbUrl}
+        mine={message.sender_id === meId}
+        onPress={() => openQuote(view)}
+        testID={`message-quote-${message.id}`}
+      />
+    );
+  };
+
   // Leaving (see `useLeaveWhenGone` above): nothing to show on the way out.
   if (gone) {
     return <View style={styles.center} testID="thread-gone" />;
@@ -884,6 +1086,7 @@ export default function ChatThreadScreen() {
       ) : null}
 
       <FlatList
+        ref={listRef}
         testID="thread-list"
         inverted
         data={feed}
@@ -891,6 +1094,18 @@ export default function ChatThreadScreen() {
         style={styles.list}
         contentContainerStyle={styles.listContent}
         onEndReachedThreshold={0.4}
+        onScrollToIndexFailed={(info) => {
+          // Rows have their own heights: get close, then try again once they
+          // have been laid out.
+          listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: true });
+          setTimeout(() => {
+            try {
+              listRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.5 });
+            } catch {
+              // Still not there: leave it where it got to.
+            }
+          }, 250);
+        }}
         onEndReached={() => {
           if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
         }}
@@ -921,6 +1136,10 @@ export default function ChatThreadScreen() {
               recipientExhausted={!!recipientExhausted[item.message.id]}
               onRetry={onRetry}
               onOpenMedia={openMediaViewer}
+              quote={renderQuote(item.message)}
+              onReply={canReply ? startReply : undefined}
+              onLongPress={openMessageMenu}
+              highlighted={highlightedId === item.message.id}
             />
           ) : (
             <View
@@ -953,6 +1172,23 @@ export default function ChatThreadScreen() {
         onSend={onSend}
         onOpenShare={openShareSheet}
         initialText={initialDraft}
+        focusKey={focusKey}
+        accessory={
+          replyDraft ? (
+            <ReplyPreviewBar
+              draft={replyDraft}
+              thumbUrl={replyDraft.thumbPath ? mediaUrls?.[replyDraft.thumbPath] : undefined}
+              onCancel={() => setReplyDraft(null)}
+            />
+          ) : null
+        }
+      />
+
+      <MessageMenu
+        anchor={menu?.anchor ?? null}
+        mine={!!menu && menu.message.sender_id === meId}
+        actions={menuActions}
+        onDismiss={() => setMenu(null)}
       />
 
       {openCardOwnerId ? (

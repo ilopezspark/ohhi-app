@@ -40,7 +40,7 @@ export interface MessagePage {
  * falling back to an untyped `GenericStringError` result.
  */
 const MESSAGE_SELECT =
-  'id, conversation_id, sender_id, body, media_path, media_kind, view_limit, views_used, media_duration_ms, media_bytes, media_width, media_height, media_poster_path, created_at' as const;
+  'id, conversation_id, sender_id, body, media_path, media_kind, view_limit, views_used, media_duration_ms, media_bytes, media_width, media_height, media_poster_path, created_at, reply_to_message_id, reply_to_album_photo_id, reply_kind' as const;
 
 export async function listMessages(
   conversationId: string,
@@ -91,6 +91,25 @@ export interface SendMessageInput {
    * optimistic bubble needs a stable key either way.
    */
   id?: string;
+  /**
+   * What this message replies to (migration 0017, decision 93): a message in
+   * the same thread, or an album photo from the story viewer. Exactly one
+   * reference is sent, and only when there is one. `reply_kind` is never
+   * sent: the insert trigger writes it, and it is not insertable.
+   */
+  replyTo?: ReplyTarget | null;
+}
+
+/** One reference per reply, never both (a send with both is refused). */
+export type ReplyTarget = { messageId: string } | { albumPhotoId: string };
+
+/** The insert columns for a reply target: none, or exactly one of the two references. */
+export function replyColumns(
+  replyTo: ReplyTarget | null | undefined
+): { reply_to_message_id: string } | { reply_to_album_photo_id: string } | Record<string, never> {
+  if (!replyTo) return {};
+  if ('messageId' in replyTo) return { reply_to_message_id: replyTo.messageId };
+  return { reply_to_album_photo_id: replyTo.albumPhotoId };
 }
 
 /**
@@ -136,6 +155,7 @@ export async function sendMessage({
   mediaHeight,
   mediaPosterPath,
   id,
+  replyTo,
 }: SendMessageInput): Promise<MessageRow> {
   const senderId = await currentUserId();
 
@@ -154,6 +174,7 @@ export async function sendMessage({
       media_width: mediaWidth ?? null,
       media_height: mediaHeight ?? null,
       media_poster_path: mediaPosterPath ?? null,
+      ...replyColumns(replyTo),
     })
     .select(MESSAGE_SELECT)
     .single();

@@ -148,3 +148,40 @@ describe('HisScreen — vanishing (migration 0014, decision 90)', () => {
     expect(await findByTestId('his-row-hi-1')).toBeTruthy();
   });
 });
+
+describe('HisScreen — the Hi’s badge (migration 0017, decision 93)', () => {
+  function renderWithCounts() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(['badge-counts'], { unreadChats: 1, unreadMessages: 1, hisWaiting: 2, total: 3 });
+    const invalidate = jest.spyOn(client, 'invalidateQueries');
+    const screen = render(
+      <QueryClientProvider client={client}>
+        <HisScreen />
+      </QueryClientProvider>
+    );
+    return { screen, client, invalidate };
+  }
+
+  it('dismissing a hi lowers the badge at once, then re-reads the counts', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
+    (dismissHi as jest.Mock).mockResolvedValue(undefined);
+    const { screen, client, invalidate } = renderWithCounts();
+    const view = await screen;
+    await fireEvent.press(await view.findByTestId('his-row-dismiss-hi-1'));
+    await waitFor(() =>
+      expect(client.getQueryData(['badge-counts'])).toMatchObject({ hisWaiting: 1, total: 2 })
+    );
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['badge-counts'] }));
+  });
+
+  it('a hi back lowers the badge too, then re-reads the counts', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
+    (hiBack as jest.Mock).mockResolvedValue('conv-9');
+    const { screen, client, invalidate } = renderWithCounts();
+    const view = await screen;
+    await fireEvent.press(await view.findByTestId('his-row-hiback-hi-1'));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/chat/conv-9'));
+    expect(client.getQueryData(['badge-counts'])).toMatchObject({ hisWaiting: 1, total: 2 });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['badge-counts'] }));
+  });
+});

@@ -436,6 +436,25 @@ const SCOPE_FILES: string[] = [
   // Story v2 (2026-09-29): the edit grid, now its own route. The story's
   // header, reply bar, timer and copy all sit under `albums/`, swept above.
   path.join(SRC, 'app', 'settings', 'albums', '[id]', 'edit.tsx'),
+  // Replies and badges (migration 0017, decision 93). The thread screen
+  // itself still carries older sentence-case copy, so the reply pieces live
+  // in their own files and are listed one by one; `badges/` is swept whole.
+  path.join(SRC, 'chat', 'replies.ts'),
+  path.join(SRC, 'chat', 'replyDrag.ts'),
+  path.join(SRC, 'chat', 'menuPlacement.ts'),
+  path.join(SRC, 'chat', 'MessageMenu.tsx'),
+  path.join(SRC, 'chat', 'ReplyQuote.tsx'),
+  path.join(SRC, 'chat', 'ReplyPreviewBar.tsx'),
+  path.join(SRC, 'chat', 'SwipeToReply.tsx'),
+  path.join(SRC, 'chat', 'haptics.ts'),
+  path.join(SRC, 'chat', 'clipboard.ts'),
+  path.join(SRC, 'chat', 'useThreadQuotes.ts'),
+  path.join(SRC, 'chat', 'useMediaReply.ts'),
+  path.join(SRC, 'chat', 'ConversationRow.tsx'),
+  path.join(SRC, 'api', 'replies.ts'),
+  path.join(SRC, 'api', 'badges.ts'),
+  path.join(SRC, 'app', '(tabs)', '_layout.tsx'),
+  ...listTsFiles(path.join(SRC, 'badges')),
 ].filter((file) => fs.existsSync(file));
 
 describe('voice rules — real source tree', () => {
@@ -487,6 +506,25 @@ describe('voice rules — real source tree', () => {
         path.join('albums', 'useStoryReply.ts'),
         path.join('api', 'albumOwner.ts'),
         path.join('app', 'settings', 'albums', '[id]', 'edit.tsx'),
+        // replies and badges
+        path.join('chat', 'replies.ts'),
+        path.join('chat', 'replyDrag.ts'),
+        path.join('chat', 'menuPlacement.ts'),
+        path.join('chat', 'MessageMenu.tsx'),
+        path.join('chat', 'ReplyQuote.tsx'),
+        path.join('chat', 'ReplyPreviewBar.tsx'),
+        path.join('chat', 'SwipeToReply.tsx'),
+        path.join('chat', 'haptics.ts'),
+        path.join('chat', 'clipboard.ts'),
+        path.join('chat', 'useThreadQuotes.ts'),
+        path.join('chat', 'useMediaReply.ts'),
+        path.join('chat', 'ConversationRow.tsx'),
+        path.join('api', 'replies.ts'),
+        path.join('api', 'badges.ts'),
+        path.join('app', '(tabs)', '_layout.tsx'),
+        path.join('badges', 'badgeCounts.ts'),
+        path.join('badges', 'useBadgeCounts.ts'),
+        path.join('badges', 'appBadge.ts'),
       ])
     );
   });

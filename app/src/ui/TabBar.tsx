@@ -48,6 +48,25 @@ export const tabBarScreenOptions: TabsScreenOptions = {
   },
 };
 
+/**
+ * The Chats and Hi's count badges (decision 93): the brand's signal colour
+ * with paper-coloured bold figures, a pill that grows for `9+`, and a
+ * paper ring so it stays distinct over the icon.
+ */
+export const tabBarBadgeStyle = {
+  backgroundColor: colors.signal,
+  color: colors.onDark,
+  fontFamily: 'Outfit_700Bold',
+  fontSize: 11,
+  fontWeight: '700' as const,
+  lineHeight: 16,
+  minWidth: 18,
+  height: 18,
+  borderRadius: 9,
+  borderWidth: 1.5,
+  borderColor: colors.surfaceTabBar,
+};
+
 export type TabIconName = 'grid' | 'his' | 'chat' | 'me';
 
 export interface TabBarIconProps {

@@ -117,7 +117,7 @@ describe('shared album viewer — story', () => {
     expect(screen.queryByTestId('album-detail-screen')).toBeNull();
   });
 
-  it('shows the reply bar in an open thread, and a reply goes into this thread as plain text', async () => {
+  it('shows the reply bar in an open thread, and a reply goes into this thread quoting the photo', async () => {
     (getAlbum as jest.Mock).mockResolvedValue(album);
     (listAlbumPhotos as jest.Mock).mockResolvedValue([photo]);
     (sendMessage as jest.Mock).mockResolvedValue({ id: 'm1' });
@@ -128,7 +128,7 @@ describe('shared album viewer — story', () => {
     await act(async () => {
       fireEvent.press(screen.getByTestId('chat-shared-album-reply-send'));
     });
-    expect(sendMessage).toHaveBeenCalledWith({ conversationId: CONV, body: 'this one' });
+    expect(sendMessage).toHaveBeenCalledWith({ conversationId: CONV, body: 'this one', replyTo: { albumPhotoId: photo.id } });
     expect(await screen.findByTestId('chat-shared-album-reply-sent')).toHaveTextContent('sent');
   });
 
@@ -275,6 +275,11 @@ describe('every way into an album from chat is the story', () => {
   it('the thread opens a shared album on the story route and nowhere else', () => {
     const thread = fs.readFileSync(path.join(SRC, 'app', 'chat', '[id].tsx'), 'utf8');
     const albumPushes = thread.match(/router\.push\(`[^`]*album[^`]*`/g) ?? [];
-    expect(albumPushes).toEqual(['router.push(`/chat/${conversationId}/album/${albumId}`']);
+    // The share bubble, and a reply's album photo quote (which starts the
+    // story at the quoted photo): both the story route, nothing else.
+    expect(albumPushes).toEqual([
+      'router.push(`/chat/${conversationId}/album/${albumId}`',
+      'router.push(`/chat/${conversationId}/album/${view.albumId}?photo=${view.photoId}`',
+    ]);
   });
 });

@@ -572,13 +572,10 @@ A refused `profiles`/`user_photos` row is not an error — it is the ordinary
 indistinguishable-refusal convention, and the row still renders with a neutral fallback name.
 No N+1 fallback was needed: the embed is not refused.
 
-**Unread is a boolean, not a count.** `message_reads` stores one `last_read_at` per
-(user, conversation) and nothing else, so "has unread" is derivable client-side from
-`last_message_at`, my `last_read_at` and the last sender — exactly what plan §3 specifies. An
-exact *number* is not: it needs a per-conversation `count(*) where created_at > last_read_at`,
-which PostgREST cannot express per parent row. That would need a view/RPC
-(e.g. `conversation_list_for_me()` returning the count) or one extra request per unread
-thread. Neither exists, so the badge is a dot.
+**Unread is a count from the server** (since migration 0017; see "Replies and badges" below).
+The list select includes the `unread_count` computed field, which PostgREST resolves per row in
+the same request, so each row shows a number (`9+` above nine) and the old client-side
+`isUnread` boolean is no longer used for the list.
 
 `message_reads` is owner-only in every direction, so **no "seen by" indicator is buildable**
 on this schema.
@@ -2156,3 +2153,91 @@ footer month, recency notice, 4:5 cards), `profile-fields.test.ts`, `profile-fie
 `editor-preview` (now the full `ProfileView`), `card-screen`, `profile-goal-labels`,
 `api-owner-filter` and `voice-rules`.
 <!-- END: Profile redesign -->
+
+<!-- BEGIN: Replies and badges (migration 0017) -->
+## Replies and badges (migration 0017)
+
+Owner's request, 29 September 2026: native replies (press and hold, and a sideways drag), replies
+from the album story and the photo viewer, and notification badges. Contract:
+`docs/chat-replies-and-badges.md`, decision 93.
+
+### Replying in a thread
+
+- **Press and hold** a message (text bubble, bare image, or a limited-media pill; 350 ms) for a
+  small menu next to it (`chat/MessageMenu.tsx`, placed by `chat/menuPlacement.ts`): `reply`,
+  and `copy` for a message with text (`expo-clipboard`). Nothing else. A light haptic
+  (`expo-haptics`) as it opens. A locked thread offers only `copy`, and nothing opens when
+  there is nothing to offer.
+- **Drag a message to the right** (WhatsApp/iMessage convention, both sides). A reply arrow
+  fades in behind it; letting go past 64 pt starts a reply with a light haptic
+  (`chat/SwipeToReply.tsx`). It uses React Native's own `PanResponder`/`Animated`, like the
+  album story's drag, so it needs nothing Expo Go lacks and runs on web. It only claims the
+  touch after at least 12 pt to the right that is at least twice as sideways as vertical, and
+  on iOS never from the left 28 pt (the system back gesture). The thresholds are pure functions
+  in `chat/replyDrag.ts`. Screen readers get a `reply` action on each message instead.
+- **The reply bar** (`chat/ReplyPreviewBar.tsx`) sits above the composer: `replying to maya`
+  (or `yourself`), one line of the message (or `photo`, `video`, `view once photo`...), a
+  thumbnail for kept media, and an x. Starting a reply focuses the field. The next send, text
+  or media (0017 allows a reference on either), carries `reply_to_message_id` and clears the
+  bar. A failed send keeps its reference for retry.
+- **Quotes** (`chat/ReplyQuote.tsx`) sit above a reply on its side: the name (`you` or theirs),
+  one line, and a thumbnail for kept media (signed from `chat-media`, a video's poster only) or
+  an album photo (signed from `album-photos`). Limited media gets a neutral square and never a
+  path. An unavailable quote says `unavailable` and nothing else. They come from
+  `message_quotes` (`api/replies.ts`, `chat/useThreadQuotes.ts`): one call per loaded page
+  with replies, re-asked on a reply row's realtime `UPDATE`, on reconnect, and on focus; a
+  message quote is drawn from the loaded original while that call is in flight
+  (`chat/replies.ts#resolveQuote`). Tapping a message quote scrolls to the original and tints
+  it for 1.6 s, loading up to 10 older pages; if it can't be found nothing happens. Tapping an
+  album photo quote opens the story at that photo (`/chat/{id}/album/{albumId}?photo={id}`,
+  `StoryViewer`'s new `initialPhotoId`).
+
+### Replying from full-screen media
+
+- **Album story**: the existing reply bar now sends `reply_to_album_photo_id` for the photo on
+  screen (`albums/useStoryReply.ts`). Its visibility rules and neutral errors are unchanged.
+- **Chat media viewer** (`app/chat/[id]/media/[messageId].tsx`): the same bar
+  (`albums/StoryReplyBar.tsx`, now with an optional placeholder) replies to the message on
+  screen whenever the thread's composer would let the viewer write (`chat/useMediaReply.ts`).
+  Replying never counts a view: the limited-media open is now keyed on the message's id and
+  path rather than on re-reads of its row, and a reply refreshes only the thread's lists, never
+  that row. Closing still discards the URL as before.
+
+### Badges
+
+- `api/badges.ts` wraps `my_badge_counts()`; `badges/useBadgeCounts.ts` holds it under
+  `['badge-counts']`, mounted once by `app/(tabs)/_layout.tsx`. Chats shows `unread_chats`, Hi's
+  shows `his_waiting` (hidden at 0, `9+` above nine, signal colour, labels like
+  `chats, 3 unread`).
+- Refresh: any message event (the app-wide list channel, which `realtime/index.ts` now shares
+  between every subscriber instead of swapping handlers), foreground and reconnect (React
+  Query focus), any tab gaining focus (`screenListeners`), and after the app's own read, send,
+  hi, hi back, dismiss and block (`badges/badgeCounts.ts#refreshBadges`). A vanished thread
+  (`query/gone.ts#forgetConversation`) re-reads them too, and its row, count included, leaves.
+- Opening an unread thread drops its row count to 0 and the tab badge at once, before
+  `markRead` lands (in-flight count requests are cancelled so they can't flicker it back), then
+  re-reads. Answering or dismissing a hi lowers the Hi's badge the same way.
+- Rows show the server's `unread_count` in a signal pill (`chat/ConversationRow.tsx`); the
+  realtime patch adds one for a new message from them and clears it for one of mine.
+- **App icon badge: a seam, not wired.** `badges/appBadge.ts#setAppBadge(count)` is called with
+  `total` and with 0 on sign-out, but does nothing yet: `expo-notifications` is not installed.
+  In Expo Go it would badge Expo Go's own icon, and on Android it logs that remote notifications
+  were removed from Expo Go; it belongs with the push work (decision 41) in a development
+  build. When added, only that function changes (no permission prompt just for a badge).
+
+Packages added (`npx expo install`, both part of Expo Go for SDK 57): `expo-haptics` (~57.0.3),
+`expo-clipboard` (~57.0.2). The clipboard is loaded on first use (`chat/clipboard.ts`), so a
+build without it only loses `copy`.
+
+### Tests
+
+`chat-replies-api.test.ts` (the reference on send, text and media, never `reply_kind`; the reply
+columns on read; `messageQuotes` batching, unavailable and limited handling; `myBadgeCounts`),
+`chat-replies-rules.test.ts` (every quote state, the bar's words, the drag thresholds, menu
+placement, badge formatting and optimistic updates), `chat-thread-replies.test.tsx` (the hold
+menu, the bar's lifecycle, media replies, retry, quotes in each state, following a quote and
+loading older pages, re-asking on `UPDATE`, the optimistic read), `chat-reply-bubble.test.tsx`
+(drag wrapper, screen reader action, hold, bare images, the story opening at a photo),
+`badges-tabs.test.tsx`, `signout-badge.test.ts`, and additions to the chat list, chat api,
+realtime, media viewer, album story and Hi's tests. The new files are voice-linted.
+<!-- END: Replies and badges (migration 0017) -->

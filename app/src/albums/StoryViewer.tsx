@@ -74,6 +74,12 @@ export interface StoryViewerProps {
   photos: StoryPhoto[];
   /** Where to open. Clamped into the album; out of range opens the nearest end. */
   initialIndex?: number;
+  /**
+   * Open at this photo instead, once it is among `photos` (a reply's quote
+   * in the thread opens the story at the photo it quoted). Ignored if the
+   * photo is not in the album any more.
+   */
+  initialPhotoId?: string | null;
   /** The album's name, shown smaller beside the owner's. */
   title?: string | null;
   /** Whose album it is: round photo and first name at the top. */
@@ -91,7 +97,7 @@ export interface StoryViewerProps {
   actions?: StoryAction[];
   /** A short line along the bottom, e.g. a failed removal. */
   notice?: string | null;
-  /** The reply bar (recipient only, and only where they may write to the owner). None without it. */
+  /** The reply bar (recipient only, and only where they may write to the owner). It replies to the photo on screen. None without it. */
   reply?: StoryReply | null;
   /** Holds the timer from outside, e.g. while another screen is on top. */
   paused?: boolean;
@@ -126,8 +132,9 @@ export interface StoryViewerProps {
  *   also counts as a tap. Hardware back and Escape close (a sheet first).
  * - **Header** (`StoryHeader`): bars, then the owner's round photo, first
  *   name and the album's name, `…` for the owner, close.
- * - **Reply bar** (`StoryReplyBar`), when `reply` is given: a plain text
- *   message to the owner, lifted by the keyboard.
+ * - **Reply bar** (`StoryReplyBar`), when `reply` is given: a message to
+ *   the owner that replies to the photo on screen (migration 0017), lifted
+ *   by the keyboard.
  * - The next photo is prefetched. A photo shows a quiet spinner until it has
  *   loaded and a neutral failure with `try again` if it cannot. Signed URLs
  *   last 60 seconds, so the first failure of a photo re-signs once on its own,
@@ -142,6 +149,7 @@ export interface StoryViewerProps {
 export function StoryViewer({
   photos,
   initialIndex = 0,
+  initialPhotoId,
   title,
   owner,
   onOpenOwner,
@@ -188,6 +196,17 @@ export function StoryViewer({
   const [rawIndex, setIndex] = useState(initialIndex);
   const index = clampIndex(rawIndex, count);
   const photo: StoryPhoto | undefined = photos[index];
+
+  // Land on `initialPhotoId` once, as soon as it is in the album.
+  const landedOn = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialPhotoId || landedOn.current === initialPhotoId) return;
+    const at = photos.findIndex((candidate) => candidate.id === initialPhotoId);
+    if (at < 0) return;
+    landedOn.current = initialPhotoId;
+    setIndex(at);
+  }, [photos, initialPhotoId]);
+
   /** Bumped by a tap back on the first photo: same photo, timer from zero. */
   const [restarts, setRestarts] = useState(0);
 
@@ -640,7 +659,7 @@ export function StoryViewer({
               {reply ? (
                 <StoryReplyBar
                   testID={`${p}-reply`}
-                  onSend={reply.onSend}
+                  onSend={(text) => reply.onSend(text, photo?.id ?? null)}
                   maxLength={reply.maxLength}
                   ownerName={owner?.name ?? null}
                   onFocusChange={setReplyFocused}

@@ -182,7 +182,7 @@ describe('an album shared with me', () => {
     await act(async () => {});
   });
 
-  it('looks up our conversation for the reply bar, and a reply goes there as plain text', async () => {
+  it('looks up our conversation for the reply bar, and a reply goes there quoting the photo on screen', async () => {
     (sendMessage as jest.Mock).mockResolvedValue({ id: 'm1' });
     const screen = await renderScreen();
     const input = await screen.findByTestId('album-viewer-reply-input');
@@ -191,7 +191,7 @@ describe('an album shared with me', () => {
     await act(async () => {
       fireEvent.press(screen.getByTestId('album-viewer-reply-send'));
     });
-    expect(sendMessage).toHaveBeenCalledWith({ conversationId: CONV, body: 'good one' });
+    expect(sendMessage).toHaveBeenCalledWith({ conversationId: CONV, body: 'good one', replyTo: { albumPhotoId: 'p1' } });
   });
 
   it('no conversation with the owner, no reply bar', async () => {

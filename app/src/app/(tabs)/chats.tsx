@@ -57,9 +57,12 @@ export default function ChatsScreen() {
   // Plan §3 asks for the affected row to be patched in place rather than a
   // refetch. Only the fields the event actually carries are patched —
   // `last_message_at` server-side is `now()` at insert, which the event's
-  // `created_at` is; `unread` is recomputed from the same rule the api layer
-  // uses. A *new* conversation (no row held) can't be patched from a message
-  // event alone, so that one case invalidates.
+  // `created_at` is. The unread count goes up by one for a new message from
+  // them and to 0 for one of mine (writing counts as reading, the same
+  // effective marker `unread_count` uses); the next refetch has the server's
+  // number either way. A *new* conversation (no row held) can't be patched
+  // from a message event alone, so that one case invalidates. The tab badges
+  // listen on the same channel (`badges/useBadgeCounts.ts`).
   // ---------------------------------------------------------------------
   useMessageListRealtime({
     onMessage: (message) => {
@@ -95,10 +98,16 @@ export default function ChatsScreen() {
             media_width: null,
             media_height: null,
             media_poster_path: null,
+            reply_to_message_id: null,
+            reply_to_album_photo_id: null,
+            reply_kind: null,
           },
-          unread:
-            message.sender_id !== meId &&
-            (!item.lastReadAt || message.created_at > item.lastReadAt),
+          unreadCount:
+            message.eventType === 'UPDATE'
+              ? item.unreadCount
+              : message.sender_id === meId
+                ? 0
+                : item.unreadCount + 1,
         };
 
         // Re-sort rather than splice in place: the order is

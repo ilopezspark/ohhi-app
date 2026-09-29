@@ -54,7 +54,7 @@ const item = (overrides: Record<string, unknown> = {}) => ({
     created_at: '2026-09-20T11:00:00.000Z',
   },
   lastReadAt: null,
-  unread: true,
+  unreadCount: 2,
   ...overrides,
 });
 
@@ -103,7 +103,7 @@ describe('chat list', () => {
   });
 
   it('shows no unread badge when I sent the last message', async () => {
-    (listConversations as jest.Mock).mockResolvedValue([item({ unread: false })]);
+    (listConversations as jest.Mock).mockResolvedValue([item({ unreadCount: 0 })]);
     const screen = await renderScreen();
     await screen.findByTestId('conversation-row-conv-1');
     expect(screen.queryByTestId('conversation-unread-conv-1')).toBeNull();
@@ -194,7 +194,7 @@ describe('chat list', () => {
   });
 
   it('does not mark my own realtime echo as unread', async () => {
-    (listConversations as jest.Mock).mockResolvedValue([item({ unread: false })]);
+    (listConversations as jest.Mock).mockResolvedValue([item({ unreadCount: 0 })]);
     const screen = await renderScreen();
     await screen.findByTestId('conversation-row-conv-1');
 
@@ -211,6 +211,64 @@ describe('chat list', () => {
       expect(screen.getByTestId('conversation-preview-conv-1')).toHaveTextContent('mine')
     );
     expect(screen.queryByTestId('conversation-unread-conv-1')).toBeNull();
+  });
+});
+
+describe('chat list — unread counts (migration 0017, decision 93)', () => {
+  it('shows the server count on the row, with a screen reader label', async () => {
+    const screen = await renderScreen();
+    const badge = await screen.findByTestId('conversation-unread-conv-1');
+    expect(badge).toHaveTextContent('2');
+    expect(badge.props.accessibilityLabel).toBe('2 unread');
+  });
+
+  it('caps the row count at 9+', async () => {
+    (listConversations as jest.Mock).mockResolvedValue([item({ unreadCount: 14 })]);
+    const screen = await renderScreen();
+    expect(await screen.findByTestId('conversation-unread-conv-1')).toHaveTextContent('9+');
+  });
+
+  it('adds one for a new message from them, and clears for one of mine', async () => {
+    const screen = await renderScreen();
+    await screen.findByTestId('conversation-unread-conv-1');
+
+    listHandlers?.onMessage({
+      id: 'm4',
+      conversation_id: 'conv-1',
+      sender_id: THEM,
+      body: 'another',
+      media_path: null,
+      created_at: '2026-09-20T12:00:00.000Z',
+      eventType: 'INSERT',
+    });
+    await waitFor(() => expect(screen.getByTestId('conversation-unread-conv-1')).toHaveTextContent('3'));
+
+    listHandlers?.onMessage({
+      id: 'm5',
+      conversation_id: 'conv-1',
+      sender_id: ME,
+      body: 'mine',
+      media_path: null,
+      created_at: '2026-09-20T12:01:00.000Z',
+      eventType: 'INSERT',
+    });
+    await waitFor(() => expect(screen.queryByTestId('conversation-unread-conv-1')).toBeNull());
+  });
+
+  it('does not count an update (a views_used flip) as a new message', async () => {
+    const screen = await renderScreen();
+    await screen.findByTestId('conversation-unread-conv-1');
+
+    listHandlers?.onMessage({
+      id: 'm1',
+      conversation_id: 'conv-1',
+      sender_id: THEM,
+      body: 'hey there',
+      media_path: null,
+      created_at: '2026-09-20T11:00:00.000Z',
+      eventType: 'UPDATE',
+    });
+    await waitFor(() => expect(screen.getByTestId('conversation-unread-conv-1')).toHaveTextContent('2'));
   });
 });
 

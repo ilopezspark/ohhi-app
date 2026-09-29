@@ -184,7 +184,12 @@ export class RealtimeManager {
     { channel: RealtimeChannel; handlers: ConversationMessageHandlers }
   >();
 
-  private listChannel: { channel: RealtimeChannel; handlers: MessageListHandlers } | null = null;
+  /**
+   * The one list channel and everyone listening on it: the chat list and the
+   * tab bar badges (`badges/useBadgeCounts.ts`) both need every readable
+   * message event, and one socket channel serves both.
+   */
+  private listChannel: { channel: RealtimeChannel; subscribers: Set<MessageListHandlers> } | null = null;
 
   constructor(client: SupabaseClient<any, any, any> = supabase as SupabaseClient<any, any, any>) {
     this.client = client;
@@ -310,13 +315,16 @@ export class RealtimeManager {
    * plan §3). The chat list patches the affected row in place rather than
    * refetching the whole list.
    *
-   * Only one exists at a time; re-subscribing swaps the handlers. Two
-   * `event:` registrations for the same reason as `subscribeConversation`.
+   * Only one channel exists at a time, shared by every subscriber: each
+   * subscribe adds its handlers, and each returned unsubscribe removes only
+   * its own. The channel goes when the last subscriber does. Two `event:`
+   * registrations for the same reason as `subscribeConversation`.
    */
   subscribeMessageList(handlers: MessageListHandlers): () => void {
+    const unsubscribe = () => this.removeListSubscriber(handlers);
     if (this.listChannel) {
-      this.listChannel.handlers = handlers;
-      return () => this.unsubscribeMessageList();
+      this.listChannel.subscribers.add(handlers);
+      return unsubscribe;
     }
 
     void this.setAuth();
@@ -324,29 +332,37 @@ export class RealtimeManager {
     const channel = this.client.channel(MESSAGE_LIST_TOPIC);
     const forward = (message: unknown) => {
       const event = parseMessagePayload(message);
-      if (event) this.listChannel?.handlers.onMessage(event);
+      if (!event || !this.listChannel) return;
+      for (const subscriber of Array.from(this.listChannel.subscribers)) subscriber.onMessage(event);
     };
     channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, forward);
     channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, forward);
 
     channel.subscribe((status: string) => {
-      const entry = this.listChannel;
-      if (status === 'SUBSCRIBED') {
-        entry?.handlers.onStatusChange?.('subscribed');
-        entry?.handlers.onInvalidate?.('subscribed');
-        return;
+      const subscribers = Array.from(this.listChannel?.subscribers ?? []);
+      for (const entry of subscribers) {
+        if (status === 'SUBSCRIBED') {
+          entry.onStatusChange?.('subscribed');
+          entry.onInvalidate?.('subscribed');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          entry.onStatusChange?.('error');
+        } else if (status === 'CLOSED') {
+          entry.onStatusChange?.('closed');
+        }
       }
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        entry?.handlers.onStatusChange?.('error');
-        return;
-      }
-      if (status === 'CLOSED') entry?.handlers.onStatusChange?.('closed');
     });
 
-    this.listChannel = { channel, handlers };
-    return () => this.unsubscribeMessageList();
+    this.listChannel = { channel, subscribers: new Set([handlers]) };
+    return unsubscribe;
   }
 
+  private removeListSubscriber(handlers: MessageListHandlers): void {
+    if (!this.listChannel) return;
+    this.listChannel.subscribers.delete(handlers);
+    if (this.listChannel.subscribers.size === 0) this.unsubscribeMessageList();
+  }
+
+  /** Tears the list channel down for every subscriber (sign-out, `unsubscribeAll`). */
   unsubscribeMessageList(): void {
     if (!this.listChannel) return;
     const { channel } = this.listChannel;
@@ -367,7 +383,9 @@ export class RealtimeManager {
     for (const entry of this.conversationChannels.values()) {
       entry.handlers.onInvalidate?.('foreground');
     }
-    this.listChannel?.handlers.onInvalidate?.('foreground');
+    for (const entry of Array.from(this.listChannel?.subscribers ?? [])) {
+      entry.onInvalidate?.('foreground');
+    }
   }
 
   unsubscribe(): void {

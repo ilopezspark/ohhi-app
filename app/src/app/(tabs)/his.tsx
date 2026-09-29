@@ -4,6 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { dismissHi, hiBack, listReceivedHis, type ReceivedHi } from '../../api/his';
 import { isUnavailableError } from '../../api/errors';
+import { markHiHandledOptimistically, refreshBadges } from '../../badges/badgeCounts';
 import { signedPhotoUrls } from '../../api/photos';
 import { tintForPhoto } from '../../photos/tint';
 import { Avatar, EmptyState, HisIcon, Text } from '../../ui';
@@ -18,6 +19,8 @@ const QUERY_KEY = ['his_received'];
  * focus, app foreground, reconnect (`query/lifecycle.ts`) and
  * pull-to-refresh only. A hi from someone who was suspended, banned or
  * deleted their account is simply not returned any more (decision 90).
+ * Answering or dismissing a hi lowers the tab badge at once, then re-reads
+ * the counts (`badges/badgeCounts.ts`).
  *
  * `docs/design/system.md` has no dedicated mockup for this screen — styled
  * here to match the grid's own header rhythm (56px top inset, `headline`
@@ -58,6 +61,7 @@ export default function HisScreen() {
       await queryClient.cancelQueries({ queryKey: QUERY_KEY });
       const previous = queryClient.getQueryData<ReceivedHi[]>(QUERY_KEY);
       queryClient.setQueryData<ReceivedHi[]>(QUERY_KEY, (current) => (current ?? []).filter((h) => h.id !== id));
+      markHiHandledOptimistically(queryClient);
       return { previous };
     },
     onError: (_err, _id, context) => {
@@ -65,6 +69,7 @@ export default function HisScreen() {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      refreshBadges(queryClient);
     },
   });
 
@@ -72,6 +77,7 @@ export default function HisScreen() {
     mutationFn: (id: string) => hiBack(id),
     onSuccess: (conversationId, id) => {
       queryClient.setQueryData<ReceivedHi[]>(QUERY_KEY, (current) => (current ?? []).filter((h) => h.id !== id));
+      markHiHandledOptimistically(queryClient);
       router.push(`/chat/${conversationId}` as never);
     },
     // A hi whose sender has since vanished answers `hi not found` (decision
@@ -83,6 +89,7 @@ export default function HisScreen() {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      refreshBadges(queryClient);
     },
   });
 

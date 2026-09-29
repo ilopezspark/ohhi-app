@@ -6,6 +6,7 @@ import { isUnavailableError, mapSupabaseError } from '../api/errors';
 import { sendMessage } from '../api/messages';
 import type { StoryReply } from './StoryReplyBar';
 import { replyRules } from './storyReply';
+import { refreshBadges } from '../badges/badgeCounts';
 
 export interface UseStoryReplyOptions {
   /** Known when the album was opened from a thread. Otherwise it is looked up from the owner. */
@@ -26,10 +27,12 @@ export interface UseStoryReplyOptions {
  * normally cached already. From the albums list there is no id, so it is
  * looked up first (`findConversationIdWith`); no conversation, no bar.
  *
- * Sending is the ordinary `sendMessage` with a plain `body`: the schema
- * has no way for a message to point at an album or one of its photos, so
- * the reply goes as text on its own. Afterwards the thread's caches are
- * refreshed so the message is there when the story closes. A refusal is
+ * Sending is the ordinary `sendMessage` with the text and, since migration
+ * 0017 (decision 93), `reply_to_album_photo_id` for the photo on screen, so
+ * the thread shows the message with that photo quoted above it (live: a
+ * revoke or a delete makes the quote `unavailable`). Afterwards the thread's
+ * caches and the badges are refreshed so the message is there when the story
+ * closes. A refusal (a photo that stopped being quotable included) is
  * rethrown as the app's neutral error (`mapSupabaseError`) for the bar's
  * one-line failure; when it is one of the "not there any more" outcomes
  * (decision 90) the conversation is re-read too, and if it has gone the bar
@@ -57,10 +60,10 @@ export function useStoryReply({ conversationId, ownerId, viewerId, enabled }: Us
   const rules = replyRules(active ? conversation : null, viewerId, ownerId);
 
   const onSend = useCallback(
-    async (text: string) => {
+    async (text: string, photoId?: string | null) => {
       if (!id) throw mapSupabaseError(new Error('no conversation'));
       try {
-        await sendMessage({ conversationId: id, body: text });
+        await sendMessage({ conversationId: id, body: text, replyTo: photoId ? { albumPhotoId: photoId } : null });
       } catch (error) {
         const mapped = mapSupabaseError(error);
         if (isUnavailableError(mapped)) {
@@ -73,6 +76,7 @@ export function useStoryReply({ conversationId, ownerId, viewerId, enabled }: Us
       void queryClient.invalidateQueries({ queryKey: ['messages', id] });
       void queryClient.invalidateQueries({ queryKey: ['conversation', id] });
       void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      refreshBadges(queryClient);
     },
     [id, ownerId, queryClient]
   );

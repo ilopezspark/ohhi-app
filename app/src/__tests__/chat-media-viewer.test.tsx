@@ -5,7 +5,7 @@
  * handling, the recipient-exhausted signal, and that closing the screen
  * refreshes the thread's cache rather than leaving a stale `views_used`.
  */
-import { render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const CONV = 'cccccccc-0000-4000-8000-000000000003';
@@ -39,12 +39,15 @@ jest.mock('expo-video', () => {
   };
 });
 
-jest.mock('../api/messages', () => ({ getMessageMedia: jest.fn() }));
+jest.mock('../api/client', () => ({ supabase: {}, SUPABASE_URL: 'https://example.test' }));
+jest.mock('../api/messages', () => ({ getMessageMedia: jest.fn(), sendMessage: jest.fn() }));
+jest.mock('../api/conversations', () => ({ getConversation: jest.fn() }));
 jest.mock('../api/chatMedia', () => ({ signedChatMediaUrls: jest.fn() }));
 jest.mock('../api/mediaOpen', () => ({ openLimitedMedia: jest.fn() }));
 jest.mock('../api/me', () => ({ me: jest.fn() }));
 
-import { getMessageMedia } from '../api/messages';
+import { getMessageMedia, sendMessage } from '../api/messages';
+import { getConversation } from '../api/conversations';
 import { signedChatMediaUrls } from '../api/chatMedia';
 import { openLimitedMedia } from '../api/mediaOpen';
 import { me } from '../api/me';
@@ -81,10 +84,27 @@ async function renderScreen(messageId = 'm1') {
   return { screen, client, invalidateSpy };
 }
 
+const conversation = (overrides: Record<string, unknown> = {}) => ({
+  id: CONV,
+  state: 'open',
+  openedById: ME,
+  blockedBy: null,
+  userAId: ME,
+  userBId: THEM,
+  lastMessageAt: '2026-09-28T10:00:00.000Z',
+  createdAt: '2026-09-28T09:00:00.000Z',
+  other: { id: THEM, firstName: 'Ada', photoPath: null },
+  lastMessage: null,
+  lastReadAt: null,
+  ...overrides,
+});
+
 beforeEach(() => {
   jest.clearAllMocks();
   useRecipientExhaustedStore.setState({ exhausted: {} });
   (me as jest.Mock).mockResolvedValue({ id: ME });
+  (getConversation as jest.Mock).mockResolvedValue(conversation());
+  (sendMessage as jest.Mock).mockResolvedValue({ id: 'r1' });
 });
 
 describe('viewer — keep-in-chat media', () => {
@@ -210,5 +230,84 @@ describe('viewer — screen capture and cleanup', () => {
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['messages', CONV] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['message-media', 'm1'] });
+  });
+});
+
+describe('viewer — reply (migration 0017, decision 93)', () => {
+  it('replies to the message on screen, in its thread', async () => {
+    (getMessageMedia as jest.Mock).mockResolvedValue(message());
+    (signedChatMediaUrls as jest.Mock).mockResolvedValue({ [`${CONV}/m1.jpg`]: 'https://signed/m1.jpg' });
+
+    const { screen, invalidateSpy } = await renderScreen();
+    const input = await screen.findByTestId('chat-media-viewer-reply-input');
+    expect(input.props.accessibilityLabel).toBe('reply to ada');
+
+    await fireEvent.changeText(input, ' nice ');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('chat-media-viewer-reply-send'));
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith({ conversationId: CONV, body: 'nice', replyTo: { messageId: 'm1' } });
+    expect(await screen.findByTestId('chat-media-viewer-reply-sent')).toHaveTextContent('sent');
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['messages', CONV] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['badge-counts'] });
+  });
+
+  it('says yourself on my own media', async () => {
+    (getMessageMedia as jest.Mock).mockResolvedValue(message({ sender_id: ME }));
+    (signedChatMediaUrls as jest.Mock).mockResolvedValue({ [`${CONV}/m1.jpg`]: 'https://signed/m1.jpg' });
+
+    const { screen } = await renderScreen();
+    const input = await screen.findByTestId('chat-media-viewer-reply-input');
+    expect(input.props.accessibilityLabel).toBe('reply to yourself');
+  });
+
+  it('replying to limited media never opens it again (no view used) and never re-reads its row', async () => {
+    (getMessageMedia as jest.Mock).mockResolvedValue(message({ view_limit: 2, views_used: 0, sender_id: THEM }));
+    (openLimitedMedia as jest.Mock).mockResolvedValue({
+      url: 'https://signed/limited.jpg',
+      kind: 'photo',
+      expiresIn: 60,
+      viewsRemaining: 1,
+    });
+
+    const { screen, invalidateSpy } = await renderScreen();
+    await waitFor(() => expect(screen.getByTestId('chat-media-viewer-image')).toBeTruthy());
+    expect(openLimitedMedia).toHaveBeenCalledTimes(1);
+
+    const input = await screen.findByTestId('chat-media-viewer-reply-input');
+    await fireEvent.changeText(input, 'ha');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('chat-media-viewer-reply-send'));
+    });
+    expect(sendMessage).toHaveBeenCalledWith({ conversationId: CONV, body: 'ha', replyTo: { messageId: 'm1' } });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['message-media', 'm1'] });
+    expect(openLimitedMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it('no reply bar where the thread does not let them write', async () => {
+    (getConversation as jest.Mock).mockResolvedValue(conversation({ state: 'expired' }));
+    (getMessageMedia as jest.Mock).mockResolvedValue(message());
+    (signedChatMediaUrls as jest.Mock).mockResolvedValue({ [`${CONV}/m1.jpg`]: 'https://signed/m1.jpg' });
+
+    const { screen } = await renderScreen();
+    await waitFor(() => expect(screen.getByTestId('chat-media-viewer-image')).toBeTruthy());
+    await waitFor(() => expect(getConversation).toHaveBeenCalled());
+    expect(screen.queryByTestId('chat-media-viewer-reply')).toBeNull();
+  });
+
+  it('a refused reply says only that it did not send', async () => {
+    const { RefusedError } = jest.requireActual('../api/errors');
+    (sendMessage as jest.Mock).mockRejectedValue(new RefusedError());
+    (getMessageMedia as jest.Mock).mockResolvedValue(message());
+    (signedChatMediaUrls as jest.Mock).mockResolvedValue({ [`${CONV}/m1.jpg`]: 'https://signed/m1.jpg' });
+
+    const { screen } = await renderScreen();
+    const input = await screen.findByTestId('chat-media-viewer-reply-input');
+    await fireEvent.changeText(input, 'hm');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('chat-media-viewer-reply-send'));
+    });
+    expect(await screen.findByTestId('chat-media-viewer-reply-failed')).toHaveTextContent("that didn't send. try again.");
   });
 });

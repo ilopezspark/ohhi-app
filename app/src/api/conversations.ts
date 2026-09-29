@@ -2,7 +2,6 @@ import { supabase } from './client';
 import { mapSupabaseError } from './errors';
 import type { Database } from '../types/database';
 import type { ConversationState } from '../chat/rules';
-import { isUnread } from '../chat/rules';
 
 export type ConversationRow = Database['public']['Tables']['conversations']['Row'];
 export type MessageRow = Database['public']['Tables']['messages']['Row'];
@@ -34,10 +33,15 @@ export interface ConversationListItem {
   other: Participant;
   lastMessage: MessageRow | null;
   lastReadAt: string | null;
-  unread: boolean;
+  /**
+   * Messages from the other person newer than my effective read marker (the
+   * later of my `last_read_at` and my own latest message), from the
+   * `unread_count` computed field (migration 0017). 0 for an expired thread.
+   */
+  unreadCount: number;
 }
 
-export type ConversationDetail = Omit<ConversationListItem, 'unread'>;
+export type ConversationDetail = Omit<ConversationListItem, 'unreadCount'>;
 
 /**
  * The caller's id. `conversations` has no "me" column — every row is a pair —
@@ -78,6 +82,7 @@ export function otherParticipantId(
  */
 const LIST_SELECT = `
   id, user_a_id, user_b_id, opened_by_id, opened_via, state, blocked_by, last_message_at, created_at,
+  unread_count,
   messages ( id, conversation_id, sender_id, body, media_path, created_at ),
   message_reads ( user_id, last_read_at )
 `;
@@ -85,6 +90,8 @@ const LIST_SELECT = `
 interface EmbeddedRow extends ConversationRow {
   messages?: MessageRow[] | null;
   message_reads?: { user_id: string; last_read_at: string }[] | null;
+  /** The `public.unread_count(conversations)` computed field (migration 0017). */
+  unread_count?: number | null;
 }
 
 /**
@@ -144,17 +151,13 @@ async function participantsFor(ids: string[]): Promise<Map<string, Participant>>
  * lifted). Nothing here has to filter for that, and nothing here may ever add
  * copy explaining an absence.
  *
- * **Unread is a boolean, not a count.** `message_reads` stores one
- * `last_read_at` timestamp per (user, conversation) and nothing else, so
- * "unread since last_read_at" is derivable client-side from the row I already
- * have (`last_message_at`, my `last_read_at`, the last sender) — that is
- * exactly what plan §3 specifies. An exact *number* of unread messages is not
- * derivable from this select: it needs a per-conversation
- * `count(*) where created_at > last_read_at`, which PostgREST cannot express
- * per parent row. That would need either a database view / RPC
- * (`conversation_list_for_me()` returning the count) or one extra request per
- * unread conversation. Neither is in the schema, so the badge is a dot, not a
- * number.
+ * **Unread is a count from the server.** Each row carries `unread_count`,
+ * the `public.unread_count(conversations)` computed field (migration 0017,
+ * decision 93) resolved by PostgREST in this same request: the other
+ * person's messages newer than the later of my `last_read_at` and my own
+ * latest message, and 0 for an expired thread. `my_badge_counts()` uses the
+ * same definition, so the Chats tab badge always equals the rows added up.
+ * It replaces the old client-side `isUnread` boolean.
  */
 export async function listConversations(): Promise<ConversationListItem[]> {
   const meId = await currentUserId();
@@ -191,12 +194,7 @@ export async function listConversations(): Promise<ConversationListItem[]> {
       other: participants.get(otherId) ?? { id: otherId, firstName: null, photoPath: null },
       lastMessage,
       lastReadAt,
-      unread: isUnread({
-        lastMessageAt: row.last_message_at,
-        lastReadAt,
-        lastSenderId: lastMessage?.sender_id ?? null,
-        meId,
-      }),
+      unreadCount: typeof row.unread_count === 'number' && row.unread_count > 0 ? row.unread_count : 0,
     };
   });
 }
