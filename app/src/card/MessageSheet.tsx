@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
-import { Avatar, Button, Sheet, Text } from '../ui';
+import { StyleSheet, View } from 'react-native';
+import { Avatar, Button, Input, Sheet, Text } from '../ui';
 import { colors, spacing } from '../theme/tokens';
 import { MAX_OPENER_LENGTH } from '../chat/rules';
 
@@ -30,6 +30,11 @@ export interface MessageSheetProps {
  * `enforce_message_rules` enforces server-side for the opener's first
  * message (trigger step 3) — not a locally-invented number, so this sheet
  * can never predict a cap the server would then refuse.
+ *
+ * An in-tree `Sheet`, not a `SheetModal`: it has a text field, and inside an
+ * edge-to-edge Android `Modal` the keyboard would cover it (see
+ * `ui/Sheet.tsx`). The profile screen mounts it as its root's last child,
+ * so its dim still covers the whole screen, status bar to bottom edge.
  */
 export function MessageSheet({
   visible,
@@ -61,19 +66,15 @@ export function MessageSheet({
         </View>
       </View>
 
-      <View style={styles.field}>
-        <TextInput
-          testID="profile-message-sheet-input"
-          accessibilityLabel="Message"
-          value={draft}
-          onChangeText={(next: string) => setDraft(next.slice(0, MAX_OPENER_LENGTH))}
-          multiline
-          numberOfLines={4}
-          placeholder="say something…"
-          placeholderTextColor={colors.subtle}
-          style={styles.textarea}
-        />
-      </View>
+      <Input
+        inputTestID="profile-message-sheet-input"
+        accessibilityLabel="Message"
+        value={draft}
+        onChangeText={(next: string) => setDraft(next.slice(0, MAX_OPENER_LENGTH))}
+        multiline
+        rows={4}
+        placeholder="say something…"
+      />
 
       <View style={styles.metaRow}>
         <Text variant="helper">{`${draft.length} / ${MAX_OPENER_LENGTH}`}</Text>
@@ -100,18 +101,6 @@ export function MessageSheet({
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.mdLg },
-  field: { minHeight: 90 },
-  textarea: {
-    minHeight: 90,
-    fontFamily: 'Outfit_400Regular',
-    fontSize: 16,
-    color: colors.ink,
-    backgroundColor: colors.surface,
-    borderRadius: 22,
-    paddingHorizontal: spacing.lgXl,
-    paddingVertical: spacing.lgXl,
-    textAlignVertical: 'top',
-  },
   metaRow: { flexDirection: 'row', justifyContent: 'space-between' },
   footer: { textAlign: 'center' },
 });

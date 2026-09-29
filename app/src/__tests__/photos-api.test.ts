@@ -59,6 +59,10 @@ jest.mock('../api/client', () => ({
 }));
 
 jest.mock('../photos/resize', () => ({ resizeForUpload: jest.fn() }));
+const mockReadUploadBody = jest.fn((_uri: string) => Promise.resolve('blob-data'));
+jest.mock('../storage/readUpload', () => ({
+  readUploadBody: (uri: string) => mockReadUploadBody(uri),
+}));
 jest.mock('../photos/tint', () => ({ tintForPhoto: jest.fn() }));
 jest.mock('../photos/path', () => {
   const actual = jest.requireActual('../photos/path');
@@ -98,9 +102,6 @@ beforeEach(() => {
   (tintForPhoto as jest.Mock).mockReturnValue('#abcdef');
   (newPhotoId as jest.Mock).mockReturnValue(FRESH_PHOTO_ID);
   mockUpload.mockResolvedValue({ error: null });
-  (globalThis as unknown as { fetch: jest.Mock }).fetch = jest
-    .fn()
-    .mockResolvedValue({ blob: () => Promise.resolve('blob-data') });
 });
 
 describe('addProfilePhoto', () => {
@@ -110,6 +111,8 @@ describe('addProfilePhoto', () => {
     const result = await addProfilePhoto({ position: 0, uri: 'file://original.jpg', width: 4000, height: 3000 });
 
     expect(mockStorageFrom).toHaveBeenCalledWith('profile-photos');
+    // The resized re-encode is read, never the original (EXIF-carrying) pick.
+    expect(mockReadUploadBody).toHaveBeenCalledWith(RESIZED.uri);
     expect(mockUpload).toHaveBeenCalledWith(`${USER_ID}/${FRESH_PHOTO_ID}.jpg`, 'blob-data', {
       contentType: 'image/jpeg',
       upsert: false,

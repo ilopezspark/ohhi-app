@@ -30,6 +30,11 @@ jest.mock('../photos/resize', () => ({
   resizeForUpload: jest.fn(),
 }));
 
+const mockReadUploadBody = jest.fn((_uri: string) => Promise.resolve('blob-data'));
+jest.mock('../storage/readUpload', () => ({
+  readUploadBody: (uri: string) => mockReadUploadBody(uri),
+}));
+
 import { addAlbumPhoto, albumPhotoPath, createAlbum, randomPathId, renameAlbum } from '../api/albums';
 import { resizeForUpload } from '../photos/resize';
 
@@ -88,9 +93,6 @@ describe('addAlbumPhoto', () => {
       error: null,
     });
     (resizeForUpload as jest.Mock).mockResolvedValue({ uri: 'file://resized.jpg', width: 1600, height: 1200 });
-    (globalThis as unknown as { fetch: jest.Mock }).fetch = jest
-      .fn()
-      .mockResolvedValue({ blob: () => Promise.resolve('blob-data') });
   });
 
   it('uploads to the album-photos bucket under {userId}/{albumId}/', async () => {
@@ -99,6 +101,7 @@ describe('addAlbumPhoto', () => {
     expect(mockStorageFrom).toHaveBeenCalledWith('album-photos');
     const [path, blob, opts] = mockUpload.mock.calls[0];
     expect(path).toMatch(new RegExp(`^${USER_ID}/${ALBUM_ID}/[0-9a-f-]+\\.jpg$`));
+    expect(mockReadUploadBody).toHaveBeenCalledWith('file://resized.jpg');
     expect(blob).toBe('blob-data');
     expect(opts).toEqual({ contentType: 'image/jpeg', upsert: false });
   });

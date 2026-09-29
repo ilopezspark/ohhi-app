@@ -1,6 +1,6 @@
-import { Modal, Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import { Sheet, Text } from '../ui';
+import { SheetModal, Text } from '../ui';
 import { colors, spacing } from '../theme/tokens';
 
 export interface OverflowSheetProps {
@@ -22,6 +22,10 @@ export interface OverflowSheetProps {
  * `settings/report/[id].tsx`. What this sheet owns is only the "block or
  * report" choice on the way there.
  *
+ * A `SheetModal`, so its dim covers the whole window (status bar, the
+ * collapsed header, the sticky action bar and the navigation bar) whichever
+ * of the three places opened it.
+ *
  * Controlled, so the profile redesign can open it from the hero's `…`, the
  * collapsed header's `…` and the footer's `report or block` link alike.
  */
@@ -32,30 +36,18 @@ export function OverflowSheet({ visible, targetId, onDismiss }: OverflowSheetPro
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
-      <Sheet testID="profile-overflow-sheet" onDismiss={onDismiss}>
-        <Pressable
-          testID="profile-overflow-report"
-          accessibilityRole="button"
-          style={styles.item}
-          onPress={() => goTo('report')}
-        >
-          <Text variant="rowLabel" color={colors.danger}>
-            report
-          </Text>
-        </Pressable>
-        <Pressable
-          testID="profile-overflow-block"
-          accessibilityRole="button"
-          style={styles.item}
-          onPress={() => goTo('block')}
-        >
-          <Text variant="rowLabel" color={colors.danger}>
-            block
-          </Text>
-        </Pressable>
-      </Sheet>
-    </Modal>
+    <SheetModal visible={visible} testID="profile-overflow-sheet" onDismiss={onDismiss}>
+      <Pressable testID="profile-overflow-report" accessibilityRole="button" style={styles.item} onPress={() => goTo('report')}>
+        <Text variant="rowLabel" color={colors.danger}>
+          report
+        </Text>
+      </Pressable>
+      <Pressable testID="profile-overflow-block" accessibilityRole="button" style={styles.item} onPress={() => goTo('block')}>
+        <Text variant="rowLabel" color={colors.danger}>
+          block
+        </Text>
+      </Pressable>
+    </SheetModal>
   );
 }
 

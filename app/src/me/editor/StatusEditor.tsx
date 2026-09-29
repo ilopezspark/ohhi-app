@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { InfoIcon, Text } from '../../ui';
+import { CardTextInput, FieldCard, FieldFooter, InfoIcon, KeyboardScrollView, Text } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 
 export const STATUS_MAX_LENGTH = 140;
@@ -85,14 +85,14 @@ export function StatusEditor({
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+      <KeyboardScrollView contentContainerStyle={styles.body}>
         <Text variant="bodyMedium" color={colors.inkSoft} style={styles.intro}>
           one line about what you&apos;re doing right now. it sits on your tile and it&apos;s usually the reason someone
           says hi.
         </Text>
 
-        <View style={styles.fieldCard}>
-          <TextInput
+        <FieldCard style={styles.fieldCard}>
+          <CardTextInput
             testID={`${testID}-input`}
             autoFocus
             multiline
@@ -100,19 +100,18 @@ export function StatusEditor({
             value={value}
             onChangeText={setValue}
             style={styles.input}
-            placeholderTextColor={colors.subtle}
           />
-          <View style={styles.fieldFooter}>
-            <Pressable testID={`${testID}-clear`} accessibilityRole="button" onPress={() => setValue('')} hitSlop={8}>
-              <Text variant="labelLg" color={colors.muted}>
-                clear
-              </Text>
-            </Pressable>
-            <Text variant="micro" color={colors.inkSoft} testID={`${testID}-counter`}>
-              {`${value.length} / ${STATUS_MAX_LENGTH}`}
-            </Text>
-          </View>
-        </View>
+          <FieldFooter
+            left={
+              <Pressable testID={`${testID}-clear`} accessibilityRole="button" onPress={() => setValue('')} hitSlop={8}>
+                <Text variant="labelLg" color={colors.muted}>
+                  clear
+                </Text>
+              </Pressable>
+            }
+            counter={{ length: value.length, max: STATUS_MAX_LENGTH, testID: `${testID}-counter` }}
+          />
+        </FieldCard>
 
         {extra ? <View style={styles.extra}>{extra}</View> : null}
 
@@ -145,7 +144,7 @@ export function StatusEditor({
             {error}
           </Text>
         ) : null}
-      </ScrollView>
+      </KeyboardScrollView>
     </SafeAreaView>
   );
 }
@@ -156,15 +155,9 @@ const styles = StyleSheet.create({
   extra: { marginTop: spacing.xxl, gap: spacing.smMd },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.lgXl },
   intro: { lineHeight: 19, marginBottom: spacing.lgXl },
-  fieldCard: {
-    backgroundColor: colors.paperRaised,
-    borderRadius: radii.card,
-    padding: spacing.lgXl,
-    minHeight: 140,
-    ...shadows.sm,
-  },
-  input: { flex: 1, fontFamily: 'Outfit_400Regular', fontSize: 17, color: colors.ink, textAlignVertical: 'top' },
-  fieldFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.mdLg },
+  fieldCard: { minHeight: 140 },
+  // Fills the card's minimum height, so the footer sits at its bottom (07-edit-status.png).
+  input: { flexGrow: 1 },
   suggestLabel: { marginTop: spacing.xxl, marginBottom: spacing.smMd },
   suggestList: { gap: spacing.smMd },
   suggestRow: {

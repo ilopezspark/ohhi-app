@@ -1,6 +1,6 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -16,18 +16,28 @@ import {
   type AlbumPhotoRow,
   type AlbumRow,
 } from '../../../api/albums';
+import { getAlbumOwnerFirstName } from '../../../api/albumOwner';
 import { listSharesForSubject, listShareCandidates, revokeShare, shareAlbum, type ShareCandidate, type ShareRow } from '../../../api/shares';
 import { isUnavailableError, mapSupabaseError } from '../../../api/errors';
-import { useGoneLatch, useLeaveWhenGone, useOnAppActive } from '../../../query/gone';
+import { leaveScreen, useGoneLatch, useLeaveWhenGone, useOnAppActive } from '../../../query/gone';
+import { StoryViewer, type StoryPhoto } from '../../../albums/StoryViewer';
 import { ConfirmButton } from '../../../settings/ConfirmButton';
 import { colors, fontFamilies, radii, spacing } from '../../../theme/tokens';
 
 const NAME_MAX_LENGTH = 60;
 
 /**
- * `/settings/albums/[id]` — album detail (plan §5). Owner view: rename,
- * add/remove photos, delete album, share/revoke. Viewer view (reached from
- * "shared with me"): read-only photos, no owner controls.
+ * `/settings/albums/[id]` — album detail (plan §5).
+ *
+ * Owner: this is the management view. Rename, add/remove photos, delete the
+ * album, share and stop sharing, over a grid of thumbnails. Tapping a
+ * thumbnail opens the story viewer (`albums/StoryViewer.tsx`) at that photo,
+ * full screen over this one, with a `…` offering `remove this photo`
+ * (the same `removeAlbumPhoto` the grid's own `remove` uses).
+ *
+ * Anyone else (reached from "shared with me" on the albums list): straight
+ * into the story viewer, read-only, with the owner's first name under the
+ * album's. Closing it goes back to the list.
  *
  * No dedicated mockup covers this screen (the 24 screens have a list view,
  * `Me-Albums.html`, but no detail view) — restyled onto the shared colour/
@@ -55,6 +65,9 @@ export default function AlbumDetailScreen() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [ownerName, setOwnerName] = useState<string | null>(null);
+  /** The owner's story viewer: the photo it opened at, or `null` when closed. */
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const queryClient = useQueryClient();
   const { gone, latch } = useGoneLatch();
   const hadAlbum = useRef(false);
@@ -86,6 +99,8 @@ export default function AlbumDetailScreen() {
         ]);
         setCandidates(candidateRows);
         setShares(shareRows);
+      } else if (albumRow) {
+        setOwnerName(await getAlbumOwnerFirstName(albumRow.owner_id));
       }
       setLoadError(null);
     } catch (error) {
@@ -94,6 +109,19 @@ export default function AlbumDetailScreen() {
       setLoaded(true);
     }
   }, [albumId, latch]);
+
+  /** Signed URLs last 60 seconds: the viewer calls this when a photo fails to load. */
+  const refreshUrls = useCallback(async () => {
+    const paths = photos.map((p) => p.storage_path);
+    if (paths.length === 0) return;
+    const urls = await signedAlbumPhotoUrls(paths);
+    setPhotoUrls((prev) => ({ ...prev, ...urls }));
+  }, [photos]);
+
+  const storyPhotos = useMemo<StoryPhoto[]>(
+    () => photos.map((p) => ({ id: p.id, uri: photoUrls[p.storage_path] ?? null })),
+    [photos, photoUrls]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -165,7 +193,7 @@ export default function AlbumDetailScreen() {
     setActionError(null);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setActionError('Allow photo library access to add a photo.');
+      setActionError('allow photo library access to add a photo.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
@@ -189,8 +217,21 @@ export default function AlbumDetailScreen() {
   if (!album) {
     return (
       <View style={styles.center} testID="album-unavailable">
-        <Text style={styles.unavailable}>{loadError ?? 'This album isn’t available.'}</Text>
+        <Text style={styles.unavailable}>{loadError ?? 'this album isn’t available.'}</Text>
       </View>
+    );
+  }
+
+  if (!isOwner) {
+    return (
+      <StoryViewer
+        testID="album-viewer"
+        photos={storyPhotos}
+        title={album.name}
+        ownerName={ownerName}
+        onRetry={refreshUrls}
+        onClose={() => leaveScreen('/settings/albums')}
+      />
     );
   }
 
@@ -238,24 +279,35 @@ export default function AlbumDetailScreen() {
               {addPhotoMutation.isPending ? (
                 <ActivityIndicator color="#208AEF" />
               ) : (
-                <Text style={styles.secondaryButtonText}>Add photo</Text>
+                <Text style={styles.secondaryButtonText}>add photo</Text>
               )}
             </Pressable>
           ) : null}
         </View>
       }
-      renderItem={({ item }) => {
+      renderItem={({ item, index }) => {
         const url = photoUrls[item.storage_path];
         return (
           <View style={styles.photoCell} testID={`album-photo-${item.id}`}>
-            {url ? <Image source={{ uri: url }} style={styles.photoImage} /> : <View style={styles.photoPlaceholder} />}
+            <Pressable
+              testID={`album-photo-open-${item.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`open photo ${index + 1} of ${photos.length}`}
+              style={styles.photoOpen}
+              onPress={() => {
+                setActionError(null);
+                setViewerIndex(index);
+              }}
+            >
+              {url ? <Image source={{ uri: url }} style={styles.photoImage} /> : <View style={styles.photoPlaceholder} />}
+            </Pressable>
             {isOwner ? (
               <Pressable
                 testID={`album-photo-remove-${item.id}`}
                 style={styles.removeButton}
                 onPress={() => removePhotoMutation.mutate(item)}
               >
-                <Text style={styles.removeButtonText}>Remove</Text>
+                <Text style={styles.removeButtonText}>remove</Text>
               </Pressable>
             ) : null}
           </View>
@@ -264,22 +316,22 @@ export default function AlbumDetailScreen() {
       ListFooterComponent={
         isOwner ? (
           <View style={styles.footer}>
-            <Text style={styles.sectionTitle}>Shared with</Text>
-            {activeShares.length === 0 ? <Text style={styles.empty}>Not shared with anyone yet.</Text> : null}
+            <Text style={styles.sectionTitle}>shared with</Text>
+            {activeShares.length === 0 ? <Text style={styles.empty}>not shared with anyone yet.</Text> : null}
             {activeShares.map((share) => (
               <View key={share.id} style={styles.shareRow} testID={`album-share-${share.viewer_id}`}>
                 <Text style={styles.shareText}>
                   {candidates.find((c) => c.userId === share.viewer_id)?.firstName ?? share.viewer_id}
                 </Text>
                 <Pressable testID={`album-revoke-${share.viewer_id}`} onPress={() => revokeMutation.mutate(share.id)}>
-                  <Text style={styles.revokeText}>Revoke</Text>
+                  <Text style={styles.revokeText}>stop sharing</Text>
                 </Pressable>
               </View>
             ))}
 
-            <Text style={styles.sectionTitle}>Share with</Text>
+            <Text style={styles.sectionTitle}>share with</Text>
             {shareableCandidates.length === 0 ? (
-              <Text style={styles.empty}>Only people you have an open conversation with can be offered here.</Text>
+              <Text style={styles.empty}>only people you have an open conversation with can be offered here.</Text>
             ) : null}
             {shareableCandidates.map((candidate) => (
               <Pressable
@@ -289,21 +341,56 @@ export default function AlbumDetailScreen() {
                 onPress={() => shareMutation.mutate(candidate.userId)}
               >
                 <Text style={styles.shareText}>{candidate.firstName ?? candidate.userId}</Text>
-                <Text style={styles.shareAction}>Share</Text>
+                <Text style={styles.shareAction}>share</Text>
               </Pressable>
             ))}
 
             <ConfirmButton
               testID="album-delete"
-              label="Delete album"
+              label="delete album"
               busy={deleteMutation.isPending}
               onPress={() => deleteMutation.mutate()}
             />
           </View>
         ) : null
       }
-      ListEmptyComponent={<Text style={styles.empty}>No photos yet.</Text>}
+      ListEmptyComponent={<Text style={styles.empty}>no photos yet.</Text>}
     />
+
+    <Modal
+      visible={viewerIndex !== null}
+      animationType="fade"
+      presentationStyle="overFullScreen"
+      transparent={false}
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={() => setViewerIndex(null)}
+    >
+      {viewerIndex !== null ? (
+        <StoryViewer
+          testID="album-owner-viewer"
+          photos={storyPhotos}
+          initialIndex={viewerIndex}
+          title={album.name}
+          onRetry={refreshUrls}
+          onClose={() => setViewerIndex(null)}
+          notice={actionError}
+          actions={[
+            {
+              key: 'remove',
+              label: 'remove this photo',
+              destructive: true,
+              onPress: (photo) => {
+                const row = photos.find((p) => p.id === photo.id);
+                if (!row) return;
+                setActionError(null);
+                removePhotoMutation.mutate(row);
+              },
+            },
+          ]}
+        />
+      ) : null}
+    </Modal>
     </SafeAreaView>
   );
 }
@@ -336,6 +423,7 @@ const styles = StyleSheet.create({
   secondaryButtonText: { color: colors.signal, fontFamily: fontFamilies.outfitSemiBold },
   photoRow: { gap: spacing.xs, paddingHorizontal: spacing.lgXl },
   photoCell: { flex: 1 / 3, aspectRatio: 1, margin: 2, position: 'relative' },
+  photoOpen: { width: '100%', height: '100%' },
   photoImage: { width: '100%', height: '100%', borderRadius: radii.sm / 2 },
   photoPlaceholder: { width: '100%', height: '100%', borderRadius: radii.sm / 2, backgroundColor: colors.tint },
   removeButton: { position: 'absolute', top: 2, right: 2, backgroundColor: colors.overlay, borderRadius: 4, paddingHorizontal: 4 },

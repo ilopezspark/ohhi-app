@@ -344,4 +344,18 @@ describe('EditSections — the three new rows', () => {
     expect(screen.getByTestId('editor-prompts-row')).toHaveTextContent('answer a prompt or two');
     expect(screen.getByTestId('editor-usual-places-row')).toHaveTextContent('add where you usually end up');
   });
+
+  it("the tags picker opens in a Modal, so its dim covers the whole editor, not just the tags section it's declared in", async () => {
+    (useProfileEditorDraftContext as jest.Mock).mockReturnValue({
+      ...draftState(),
+      completion: { percent: 50, items: [], nextBest: null },
+    });
+    const screen = await render(<EditSections />);
+    await fireEvent.press(screen.getByTestId('editor-tags-change'));
+    let host = screen.getByTestId('editor-tags-sheet').parent;
+    while (host && host.props.transparent === undefined) host = host.parent;
+    expect(host?.props).toMatchObject({ visible: true, transparent: true, statusBarTranslucent: true, navigationBarTranslucent: true });
+    await fireEvent.press(screen.getByTestId('editor-tags-sheet-backdrop'));
+    expect(screen.queryByTestId('editor-tags-sheet')).toBeNull();
+  });
 });

@@ -1,6 +1,8 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
 import { resizeForUpload } from '../photos/resize';
+import { readUploadBody } from '../storage/readUpload';
+import { MAX_VIDEO_BYTES } from '../chat/video';
 
 export const CHAT_MEDIA_BUCKET = 'chat-media';
 /**
@@ -100,10 +102,12 @@ export async function uploadChatMedia({
     contentType = 'image/jpeg';
   }
 
-  const response = await fetch(uploadUri);
-  const blob = await response.blob();
+  // Video is uploaded as-is, so it is also where the 50 MB cap matters: a
+  // picker that didn't report `fileSize` is still stopped here, before the
+  // file is read into memory.
+  const body = await readUploadBody(uploadUri, kind === 'video' ? { maxBytes: MAX_VIDEO_BYTES } : {});
 
-  const { error } = await supabase.storage.from(bucket).upload(path, blob, {
+  const { error } = await supabase.storage.from(bucket).upload(path, body, {
     contentType,
     // No upsert: one object per message id, and a message row is never edited.
     upsert: false,
@@ -130,10 +134,9 @@ export async function uploadChatMediaPoster({
 }: UploadChatMediaPosterInput): Promise<string> {
   const path = chatMediaPosterPath(conversationId, messageId);
 
-  const response = await fetch(uri);
-  const blob = await response.blob();
+  const body = await readUploadBody(uri);
 
-  const { error } = await supabase.storage.from(bucket).upload(path, blob, {
+  const { error } = await supabase.storage.from(bucket).upload(path, body, {
     contentType: 'image/jpeg',
     upsert: false,
   });
@@ -223,9 +226,9 @@ export async function resendChatMedia({
   const mediaUrl = urlByPath[sourcePath];
   if (!mediaUrl) throw mapSupabaseError(new Error('source media no longer readable'));
 
-  const mediaBlob = await (await fetch(mediaUrl)).blob();
+  const mediaBody = await readUploadBody(mediaUrl, kind === 'video' ? { maxBytes: MAX_VIDEO_BYTES } : {});
   const targetMediaPath = chatMediaPath(targetConversationId, targetMessageId, kind);
-  const { error: uploadError } = await supabase.storage.from(targetBucket).upload(targetMediaPath, mediaBlob, {
+  const { error: uploadError } = await supabase.storage.from(targetBucket).upload(targetMediaPath, mediaBody, {
     contentType: kind === 'video' ? 'video/mp4' : 'image/jpeg',
     upsert: false,
   });
@@ -234,9 +237,9 @@ export async function resendChatMedia({
   let targetPosterPath: string | null = null;
   const posterUrl = sourcePosterPath ? urlByPath[sourcePosterPath] : undefined;
   if (posterUrl) {
-    const posterBlob = await (await fetch(posterUrl)).blob();
+    const posterBody = await readUploadBody(posterUrl);
     targetPosterPath = chatMediaPosterPath(targetConversationId, targetMessageId);
-    const { error: posterError } = await supabase.storage.from(targetBucket).upload(targetPosterPath, posterBlob, {
+    const { error: posterError } = await supabase.storage.from(targetBucket).upload(targetPosterPath, posterBody, {
       contentType: 'image/jpeg',
       upsert: false,
     });

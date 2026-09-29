@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { FieldEditorFrame, FieldNote } from '../../me/editor/FieldEditorFrame';
 import { REPEATED_PLACE_ERROR, USUAL_PLACES_GATE_NOTE } from '../../me/editor/listEdit';
 import { useProfileEditorDraftContext } from '../../me/editor/ProfileEditorDraftContext';
 import { useDiscardGuard } from '../../me/editor/useDiscardGuard';
 import { firstRepeatedPlace, USUAL_PLACE_MAX_LENGTH, USUAL_PLACES_MAX } from '../../profile/fields';
-import { Chip, Text, XIcon } from '../../ui';
-import { colors, radii, shadows, spacing } from '../../theme/tokens';
+import { CardTextInput, Chip, FieldCard, Text, XIcon } from '../../ui';
+import { colors, spacing } from '../../theme/tokens';
 
 /**
  * `/profile-editor/usual-places` (`docs/design/profile-redesign/brief.md`,
@@ -61,15 +61,15 @@ export default function EditUsualPlacesScreen() {
     >
       {places.map((place, index) => (
         <View key={index} style={styles.row} testID={`editor-usual-places-item-${index}`}>
-          <View style={styles.fieldCard}>
-            <TextInput
+          <FieldCard variant="row">
+            <CardTextInput
               testID={`editor-usual-places-item-${index}-input`}
               accessibilityLabel={`place ${index + 1}`}
+              size="body"
               maxLength={USUAL_PLACE_MAX_LENGTH}
               value={place}
               onChangeText={(text) => update(index, text)}
               placeholder={index === 0 ? 'library, 2nd floor' : 'another spot'}
-              placeholderTextColor={colors.subtle}
               style={styles.input}
             />
             <Text variant="micro" color={colors.inkSoft} testID={`editor-usual-places-item-${index}-counter`}>
@@ -85,7 +85,7 @@ export default function EditUsualPlacesScreen() {
             >
               <XIcon size={16} color={colors.muted} />
             </Pressable>
-          </View>
+          </FieldCard>
           {repeatAt === index ? (
             <Text variant="helper" color={colors.danger} testID={`editor-usual-places-item-${index}-error`}>
               {REPEATED_PLACE_ERROR}
@@ -112,18 +112,7 @@ export default function EditUsualPlacesScreen() {
 
 const styles = StyleSheet.create({
   row: { gap: spacing.xs },
-  fieldCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.smMd,
-    backgroundColor: colors.paperRaised,
-    borderRadius: radii.card,
-    paddingLeft: spacing.lgXl,
-    paddingRight: spacing.smMd,
-    paddingVertical: spacing.sm,
-    ...shadows.sm,
-  },
-  input: { flex: 1, fontFamily: 'Outfit_400Regular', fontSize: 16, color: colors.ink, paddingVertical: spacing.smMd },
+  input: { flex: 1 },
   remove: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   addRow: { flexDirection: 'row' },
 });

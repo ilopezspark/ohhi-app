@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { InfoIcon, Text } from '../../ui';
+import { InfoIcon, KeyboardScrollView, Text } from '../../ui';
 import { colors, radii, spacing } from '../../theme/tokens';
 
 export interface FieldEditorFrameProps {
@@ -59,21 +59,19 @@ export function FieldEditorFrame({
           </Text>
         </Pressable>
       </View>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-          {intro ? (
-            <Text variant="bodyMedium" color={colors.inkSoft} style={styles.intro}>
-              {intro}
-            </Text>
-          ) : null}
-          {children}
-          {error ? (
-            <Text variant="helper" color={colors.danger} testID={`${testID}-error`}>
-              {error}
-            </Text>
-          ) : null}
-        </ScrollView>
-      </KeyboardAvoidingView>
+      <KeyboardScrollView contentContainerStyle={styles.body}>
+        {intro ? (
+          <Text variant="bodyMedium" color={colors.inkSoft} style={styles.intro}>
+            {intro}
+          </Text>
+        ) : null}
+        {children}
+        {error ? (
+          <Text variant="helper" color={colors.danger} testID={`${testID}-error`}>
+            {error}
+          </Text>
+        ) : null}
+      </KeyboardScrollView>
       {overlay}
     </SafeAreaView>
   );
@@ -93,7 +91,6 @@ export function FieldNote({ text, testID }: { text: string; testID?: string }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  flex: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

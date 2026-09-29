@@ -63,6 +63,10 @@ jest.mock('../photos/resize', () => ({
   resizeForUpload: jest.fn(() => Promise.resolve({ uri: 'file://resized.jpg', width: 1, height: 1 })),
 }));
 
+jest.mock('../storage/readUpload', () => ({
+  readUploadBody: jest.fn(() => Promise.resolve('blob')),
+}));
+
 import {
   addAlbumPhoto,
   deleteAlbum,
@@ -86,9 +90,6 @@ beforeEach(() => {
   mockUpload.mockReset().mockResolvedValue({ error: null });
   mockRemove.mockReset().mockResolvedValue({ error: null });
   mockRpc.mockReset().mockResolvedValue({ data: [], error: null });
-  (globalThis as unknown as { fetch: jest.Mock }).fetch = jest
-    .fn()
-    .mockResolvedValue({ blob: () => Promise.resolve('blob') });
 });
 
 describe('addAlbumPhoto', () => {

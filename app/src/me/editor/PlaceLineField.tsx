@@ -1,6 +1,6 @@
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { Text } from '../../ui';
-import { colors, radii, shadows, spacing } from '../../theme/tokens';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { CardTextInput, FieldCard, FieldFooter, Text } from '../../ui';
+import { colors, spacing } from '../../theme/tokens';
 import { PLACE_LINE_HOURS, PLACE_LINE_MAX_LENGTH } from '../../profile/fields';
 import { FieldNote } from './FieldEditorFrame';
 
@@ -68,8 +68,8 @@ export function PlaceLineField({ value, onChange, status = null, autoFocus = fal
   const statusCopy = placeLineStatusCopy(status);
   return (
     <View style={styles.wrap}>
-      <View style={styles.fieldCard}>
-        <TextInput
+      <FieldCard>
+        <CardTextInput
           testID={`${testID}-input`}
           accessibilityLabel="where you are"
           autoFocus={autoFocus}
@@ -77,27 +77,25 @@ export function PlaceLineField({ value, onChange, status = null, autoFocus = fal
           value={value}
           onChangeText={onChange}
           placeholder="library, 2nd floor"
-          placeholderTextColor={colors.subtle}
           returnKeyType="done"
-          style={styles.input}
         />
-        <View style={styles.fieldFooter}>
-          <Pressable
-            testID={`${testID}-clear`}
-            accessibilityRole="button"
-            accessibilityLabel="clear where you are"
-            onPress={() => onChange('')}
-            hitSlop={8}
-          >
-            <Text variant="labelLg" color={colors.muted}>
-              clear
-            </Text>
-          </Pressable>
-          <Text variant="micro" color={colors.inkSoft} testID={`${testID}-counter`}>
-            {`${value.length} / ${PLACE_LINE_MAX_LENGTH}`}
-          </Text>
-        </View>
-      </View>
+        <FieldFooter
+          left={
+            <Pressable
+              testID={`${testID}-clear`}
+              accessibilityRole="button"
+              accessibilityLabel="clear where you are"
+              onPress={() => onChange('')}
+              hitSlop={8}
+            >
+              <Text variant="labelLg" color={colors.muted}>
+                clear
+              </Text>
+            </Pressable>
+          }
+          counter={{ length: value.length, max: PLACE_LINE_MAX_LENGTH, testID: `${testID}-counter` }}
+        />
+      </FieldCard>
       <FieldNote text={PLACE_LINE_NOTE} testID={`${testID}-note`} />
       {statusCopy ? (
         <Text variant="micro" color={colors.inkSoft} testID={`${testID}-status`}>
@@ -110,12 +108,4 @@ export function PlaceLineField({ value, onChange, status = null, autoFocus = fal
 
 const styles = StyleSheet.create({
   wrap: { gap: spacing.mdLg },
-  fieldCard: {
-    backgroundColor: colors.paperRaised,
-    borderRadius: radii.card,
-    padding: spacing.lgXl,
-    ...shadows.sm,
-  },
-  input: { fontFamily: 'Outfit_400Regular', fontSize: 17, color: colors.ink, paddingVertical: spacing.xs },
-  fieldFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.mdLg },
 });

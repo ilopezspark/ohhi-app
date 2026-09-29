@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { Button, Chip, ChipGroup, RowCard, SectionLabel, Sheet, SettingsRow, Text } from '../../ui';
+import { Button, Chip, ChipGroup, RowCard, SectionLabel, SheetModal, SettingsRow, Text } from '../../ui';
 import { ChevronRightIcon, PencilIcon, PlusIcon } from '../../ui/icons';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { ChipPicker } from '../../settings/ChipPicker';
@@ -292,8 +292,11 @@ function TagsSection() {
         </View>
       </RowCard>
 
+      {/* A `SheetModal`, not an in-tree `Sheet`: this section sits inside
+          the editor's ScrollView, so an in-tree sheet's dim would only cover
+          the tags section itself. */}
       {pickerOpen ? (
-        <Sheet testID="editor-tags-sheet" onDismiss={() => setPickerOpen(false)}>
+        <SheetModal testID="editor-tags-sheet" onDismiss={() => setPickerOpen(false)}>
           <Text variant="titleLg">tags</Text>
           <ChipPicker
             testID="editor-tags-picker"
@@ -304,7 +307,7 @@ function TagsSection() {
             onChange={draftState.setTagIds}
           />
           <Button testID="editor-tags-sheet-done" label="done" onPress={() => setPickerOpen(false)} />
-        </Sheet>
+        </SheetModal>
       ) : null}
     </View>
   );

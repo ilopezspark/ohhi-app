@@ -53,7 +53,15 @@ export function RecentlySharedTray({ items, loading, thumbnailUrls, onSelect }: 
             style={styles.tile}
           >
             {uri ? (
-              <Image source={{ uri }} style={StyleSheet.absoluteFill} accessibilityIgnoresInvertColors />
+              // A square thumbnail is a crop by design; the preview it opens
+              // shows the whole image.
+              <Image
+                source={{ uri }}
+                style={StyleSheet.absoluteFill}
+                resizeMode="cover"
+                accessibilityIgnoresInvertColors
+                testID={`recently-shared-image-${item.messageId}`}
+              />
             ) : (
               <View style={[StyleSheet.absoluteFill, styles.placeholder]} testID={`recently-shared-placeholder-${item.messageId}`} />
             )}

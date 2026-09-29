@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { listActivePrompts, type PromptRow } from '../../api/profileFields';
 import { FieldEditorFrame, FieldNote } from '../../me/editor/FieldEditorFrame';
@@ -9,8 +9,8 @@ import { useDiscardGuard } from '../../me/editor/useDiscardGuard';
 import type { DraftPrompt } from '../../me/editor/useProfileEditorDraft';
 import { queryKeys } from '../../me/queryKeys';
 import { GATED_NOTE, PROMPT_ANSWER_MAX_LENGTH, PROMPTS_MAX } from '../../profile/fields';
-import { Button, Chip, ChevronDownIcon, ChevronUpIcon, LockIcon, Sheet, Text, XIcon } from '../../ui';
-import { colors, radii, shadows, spacing } from '../../theme/tokens';
+import { Button, CardTextInput, Chip, ChevronDownIcon, ChevronUpIcon, FieldCard, LockIcon, Sheet, Text, XIcon } from '../../ui';
+import { colors, radii, spacing } from '../../theme/tokens';
 
 function sameAnswers(a: DraftPrompt[], b: DraftPrompt[]): boolean {
   return a.length === b.length && a.every((p, i) => p.promptId === b[i].promptId && p.answer === b[i].answer);
@@ -102,20 +102,20 @@ export default function EditPromptsScreen() {
       {answers.map((prompt, index) => {
         const blank = triedSave && prompt.answer.trim().length === 0;
         return (
-          <View key={prompt.promptId} style={styles.card} testID={`editor-prompts-item-${index}`}>
+          <FieldCard key={prompt.promptId} style={styles.card} testID={`editor-prompts-item-${index}`}>
             <Text variant="labelLg" color={colors.muted}>
               {prompt.question}
             </Text>
             {prompt.gated ? <GatedLine testID={`editor-prompts-item-${index}-gated`} /> : null}
-            <TextInput
+            <CardTextInput
               testID={`editor-prompts-item-${index}-input`}
               accessibilityLabel={`your answer to ${prompt.question}`}
+              size="prompt"
               multiline
               maxLength={PROMPT_ANSWER_MAX_LENGTH}
               value={prompt.answer}
               onChangeText={(text) => update(index, text)}
               placeholder="your answer"
-              placeholderTextColor={colors.subtle}
               style={styles.input}
             />
             <View style={styles.itemFooter}>
@@ -153,7 +153,7 @@ export default function EditPromptsScreen() {
                 {BLANK_ANSWER_ERROR}
               </Text>
             ) : null}
-          </View>
+          </FieldCard>
         );
       })}
 
@@ -212,21 +212,9 @@ function IconAction({
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.paperRaised,
-    borderRadius: radii.card,
-    padding: spacing.lgXl,
-    gap: spacing.smMd,
-    ...shadows.sm,
-  },
-  input: {
-    fontFamily: 'Outfit_600SemiBold',
-    fontSize: 18,
-    lineHeight: 24,
-    color: colors.ink,
-    minHeight: 56,
-    textAlignVertical: 'top',
-  },
+  card: { gap: spacing.smMd },
+  // Room for two lines of answer before it grows.
+  input: { minHeight: 48 },
   itemFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   itemActions: { flexDirection: 'row', gap: spacing.xs },
   iconAction: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },

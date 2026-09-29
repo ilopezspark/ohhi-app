@@ -4,7 +4,9 @@
  * affordance, and every limited-media pill state on both sides.
  */
 import { fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { MessageBubble, type ThreadMessage } from '../chat/MessageBubble';
+import { radii } from '../theme/tokens';
 
 const ME = 'aaaaaaaa-0000-4000-8000-000000000001';
 const THEM = 'bbbbbbbb-0000-4000-8000-000000000002';
@@ -27,14 +29,48 @@ const base = (overrides: Partial<ThreadMessage> = {}): ThreadMessage => ({
   ...overrides,
 });
 
+function flat(style: unknown): Record<string, unknown> {
+  return StyleSheet.flatten(style as never) ?? {};
+}
+
 describe('MessageBubble — keep-in-chat media', () => {
-  it('renders a plain inline image for a keep-in-chat photo, no tap handler', async () => {
+  it('renders the image itself: no bubble fill, border or padding around it', async () => {
+    const message = base({ media_path: 'conv-1/m1.jpg', media_kind: 'photo', media_width: 1600, media_height: 1200 });
+    const screen = await render(<MessageBubble message={message} meId={ME} mediaUrl="https://signed/m1.jpg" />);
+
+    const frame = flat(screen.getByTestId('message-media-m1').props.style);
+    expect(frame.backgroundColor).toBeUndefined();
+    expect(frame.borderWidth).toBeUndefined();
+    expect(frame.padding).toBeUndefined();
+    expect(frame.paddingHorizontal).toBeUndefined();
+    expect(frame.borderRadius).toBe(radii.lg);
+    // No text bubble is drawn for a media-only message.
+    expect(screen.queryByTestId('message-body-m1')).toBeNull();
+    expect(screen.getByTestId('message-media-image-m1')).toBeTruthy();
+  });
+
+  it('sizes the frame to the photo’s own aspect ratio, capped', async () => {
+    const landscape = base({ media_path: 'conv-1/m1.jpg', media_kind: 'photo', media_width: 1600, media_height: 1200 });
+    const screen = await render(<MessageBubble message={landscape} meId={ME} mediaUrl="https://signed/m1.jpg" />);
+    const frame = flat(screen.getByTestId('message-media-m1').props.style);
+    expect((frame.width as number) / (frame.height as number)).toBeCloseTo(4 / 3, 1);
+    expect(frame.width as number).toBeLessThanOrEqual(300);
+
+    const portrait = base({ id: 'm2', media_path: 'conv-1/m2.jpg', media_kind: 'photo', media_width: 1200, media_height: 1600 });
+    const screen2 = await render(<MessageBubble message={portrait} meId={ME} mediaUrl="https://signed/m2.jpg" />);
+    const frame2 = flat(screen2.getByTestId('message-media-m2').props.style);
+    expect(frame2.height as number).toBeLessThanOrEqual(360);
+    expect((frame2.width as number) / (frame2.height as number)).toBeCloseTo(3 / 4, 1);
+  });
+
+  it('opens the full-screen viewer when the photo is tapped', async () => {
     const onOpenMedia = jest.fn();
     const message = base({ media_path: 'conv-1/m1.jpg', media_kind: 'photo' });
     const screen = await render(
       <MessageBubble message={message} meId={ME} mediaUrl="https://signed/m1.jpg" onOpenMedia={onOpenMedia} />
     );
-    expect(screen.getByTestId('message-media-m1')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('message-media-m1'));
+    expect(onOpenMedia).toHaveBeenCalledWith(message);
   });
 
   it('falls back to a placeholder when the photo URL failed to sign', async () => {
@@ -43,14 +79,22 @@ describe('MessageBubble — keep-in-chat media', () => {
     expect(screen.getByTestId('message-media-placeholder-m1')).toBeTruthy();
   });
 
-  it('renders a video poster with a tap affordance that opens the viewer', async () => {
+  it('renders a video poster with a tap affordance that opens the viewer, same frameless treatment', async () => {
     const onOpenMedia = jest.fn();
     const message = base({ media_path: 'conv-1/m1.mp4', media_kind: 'video', media_poster_path: 'conv-1/m1-poster.jpg' });
     const screen = await render(
       <MessageBubble message={message} meId={ME} mediaUrl="https://signed/poster.jpg" onOpenMedia={onOpenMedia} />
     );
+    expect(flat(screen.getByTestId('message-media-m1').props.style).backgroundColor).toBeUndefined();
     fireEvent.press(screen.getByTestId('message-media-m1'));
     expect(onOpenMedia).toHaveBeenCalledWith(message);
+  });
+
+  it('keeps limited media as a bubble with its pill (unchanged)', async () => {
+    const message = base({ media_path: 'x', media_kind: 'photo', view_limit: 1, views_used: 0, sender_id: THEM });
+    const screen = await render(<MessageBubble message={message} meId={ME} />);
+    expect(flat(screen.getByTestId('message-m1').props.style).backgroundColor).toBeDefined();
+    expect(screen.queryByTestId('message-media-m1')).toBeNull();
   });
 });
 

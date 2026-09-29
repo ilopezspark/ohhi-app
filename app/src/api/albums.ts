@@ -3,6 +3,7 @@ import { mapSupabaseError } from './errors';
 import { currentUserId } from './session';
 import { resizeForUpload } from '../photos/resize';
 import { newPhotoId } from '../photos/path';
+import { readUploadBody } from '../storage/readUpload';
 import type { Database } from '../types/database';
 
 export type AlbumRow = Database['public']['Tables']['albums']['Row'];
@@ -176,10 +177,9 @@ export async function addAlbumPhoto({ albumId, uri, width, height }: AddAlbumPho
   const resized = await resizeForUpload({ uri, width, height });
   const path = albumPhotoPath(user.id, albumId, randomPathId());
 
-  const response = await fetch(resized.uri);
-  const blob = await response.blob();
+  const body = await readUploadBody(resized.uri);
 
-  const { error: uploadError } = await supabase.storage.from('album-photos').upload(path, blob, {
+  const { error: uploadError } = await supabase.storage.from('album-photos').upload(path, body, {
     contentType: 'image/jpeg',
     upsert: false,
   });

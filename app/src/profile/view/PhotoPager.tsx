@@ -15,6 +15,8 @@ export interface PhotoPagerProps {
   urls: Record<string, string>;
   /** Distance from the top of the hero to the progress bars (the safe-area inset plus air). */
   barsTop: number;
+  /** Extra space either side of the bars and chevrons, keeping them in the centred content column on a wide screen. 0 on a phone. */
+  sideInset?: number;
   /** testID prefix, e.g. `profile` -> `profile-photo-progress`. */
   testIDPrefix?: string;
 }
@@ -30,7 +32,7 @@ export interface PhotoPagerProps {
  * progress bars are hidden from the screen reader — the adjustable value
  * already says where you are.
  */
-export function PhotoPager({ userId, firstName, paths, urls, barsTop, testIDPrefix = 'profile' }: PhotoPagerProps) {
+export function PhotoPager({ userId, firstName, paths, urls, barsTop, sideInset = 0, testIDPrefix = 'profile' }: PhotoPagerProps) {
   const [index, setIndex] = useState(0);
   const [failed, setFailed] = useState<Record<string, boolean>>({});
   const count = paths.length;
@@ -100,7 +102,7 @@ export function PhotoPager({ userId, firstName, paths, urls, barsTop, testIDPref
 
       {count > 0 ? (
         <View
-          style={[styles.bars, { top: barsTop }]}
+          style={[styles.bars, { top: barsTop, left: spacing.lgXl + sideInset, right: spacing.lgXl + sideInset }]}
           pointerEvents="none"
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
@@ -125,7 +127,7 @@ export function PhotoPager({ userId, firstName, paths, urls, barsTop, testIDPref
             accessibilityState={{ disabled: atStart }}
             disabled={atStart}
             onPress={() => go(-1)}
-            style={[styles.chevron, styles.chevronLeft, atStart && styles.chevronDisabled]}
+            style={[styles.chevron, { left: spacing.md + sideInset }, atStart && styles.chevronDisabled]}
             hitSlop={6}
           >
             <BackIcon size={18} color={colors.onDark} />
@@ -137,7 +139,7 @@ export function PhotoPager({ userId, firstName, paths, urls, barsTop, testIDPref
             accessibilityState={{ disabled: atEnd }}
             disabled={atEnd}
             onPress={() => go(1)}
-            style={[styles.chevron, styles.chevronRight, atEnd && styles.chevronDisabled]}
+            style={[styles.chevron, { right: spacing.md + sideInset }, atEnd && styles.chevronDisabled]}
             hitSlop={6}
           >
             <ChevronRightIcon size={18} color={colors.onDark} />
@@ -159,8 +161,6 @@ const styles = StyleSheet.create({
   zoneNext: { flex: 65 },
   bars: {
     position: 'absolute',
-    left: spacing.lgXl,
-    right: spacing.lgXl,
     flexDirection: 'row',
     gap: spacing.sm,
   },
@@ -178,7 +178,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chevronLeft: { left: spacing.md },
-  chevronRight: { right: spacing.md },
   chevronDisabled: { opacity: 0.4 },
 });

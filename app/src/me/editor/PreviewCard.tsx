@@ -48,8 +48,14 @@ export function PreviewCard() {
           data={data}
           preview
           testIDPrefix="profile-editor-preview"
-          renderActions={() => (
-            <CtaButton cta={{ kind: 'hi_and_message' }} onHi={() => {}} onMessage={() => {}} testID="profile-editor-preview-cta" />
+          renderActions={({ onPaper }) => (
+            <CtaButton
+              cta={{ kind: 'hi_and_message' }}
+              appearance={onPaper ? 'paper' : 'photo'}
+              onHi={() => {}}
+              onMessage={() => {}}
+              testID="profile-editor-preview-cta"
+            />
           )}
         />
       </View>

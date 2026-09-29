@@ -428,6 +428,11 @@ const SCOPE_FILES: string[] = [
   // own because `api/` is not swept (its older files still carry
   // sentence-case error text).
   path.join(SRC, 'api', 'profileFields.ts'),
+  // The story-style album viewer and the two screens that open it.
+  ...listTsFiles(path.join(SRC, 'albums')),
+  path.join(SRC, 'app', 'chat', '[id]', 'album', '[albumId].tsx'),
+  path.join(SRC, 'app', 'settings', 'albums', '[id].tsx'),
+  path.join(SRC, 'api', 'albumOwner.ts'),
 ].filter((file) => fs.existsSync(file));
 
 describe('voice rules — real source tree', () => {
@@ -465,6 +470,11 @@ describe('voice rules — real source tree', () => {
         path.join('me', 'editor', 'useDiscardGuard.ts'),
         path.join('me', 'editor', 'PreviewCard.tsx'),
         path.join('me', 'editor', 'EditSections.tsx'),
+        // album viewer
+        path.join('albums', 'StoryViewer.tsx'),
+        path.join('albums', 'storyNav.ts'),
+        path.join('app', 'chat', '[id]', 'album', '[albumId].tsx'),
+        path.join('app', 'settings', 'albums', '[id].tsx'),
       ])
     );
   });

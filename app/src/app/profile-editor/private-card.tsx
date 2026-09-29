@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -16,7 +16,7 @@ import {
   SAFER_SEX_TESTED_PATTERN,
   type CardField,
 } from '../../settings/vocab';
-import { Button, Chip, Input, Sheet, Text } from '../../ui';
+import { Button, Chip, Input, KeyboardScrollView, Sheet, Text } from '../../ui';
 import { LockIcon } from '../../ui/icons';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 
@@ -174,7 +174,7 @@ export default function EditPrivateCardScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.container} testID="private-card-editor-screen">
+      <KeyboardScrollView contentContainerStyle={styles.container} testID="private-card-editor-screen">
         <View style={styles.headerRow} testID="private-card-editor-header">
           <Text testID="private-card-editor-cancel" variant="rowLabel" color={colors.muted} onPress={handleCancel}>
             cancel
@@ -263,6 +263,7 @@ export default function EditPrivateCardScreen() {
               <View style={styles.addRow} testID="private-card-editor-hard-nos-add-row">
                 <Input
                   testID="private-card-editor-hard-nos-input"
+                  surface="card"
                   value={hardNoDraft}
                   onChangeText={(text) => {
                     setHardNoDraft(text);
@@ -297,7 +298,7 @@ export default function EditPrivateCardScreen() {
             {errorMessage}
           </Text>
         ) : null}
-      </ScrollView>
+      </KeyboardScrollView>
 
       {testedSheetOpen ? (
         <Sheet testID="private-card-editor-tested-sheet" onDismiss={() => setTestedSheetOpen(false)}>

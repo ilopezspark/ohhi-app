@@ -38,9 +38,12 @@ export async function touchActivity(): Promise<void> {
  * in the future (never turns it on), which is outside the owner's column
  * grant. A direct table update would set the tier and silently skip that.
  *
- * `tier_computed_at` is trigger-stamped server-side on every call, which is
- * what the 20-minute heartbeat in `src/presence/controller.ts` exists to keep
- * inside `is_grid_visible`'s 24-hour staleness cutoff (decision 11).
+ * Every successful call also stamps `tier_computed_at = now()`, in the RPC
+ * itself, even when the tier is unchanged (migration 0016, decision 92; the
+ * 0002 trigger only stamps on a tier *change*). That is what the 20-minute
+ * heartbeat in `src/presence/controller.ts` relies on: a tier older than 1
+ * hour reads as away (`private.effective_tier`, migration 0009), and the
+ * place line goes with it.
  */
 export async function setMyTier(tier: PresenceTier): Promise<void> {
   const { error } = await supabase.rpc('set_my_tier', { p_tier: tier });

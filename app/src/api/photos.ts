@@ -3,6 +3,7 @@ import { supabase } from './client';
 import { mapSupabaseError } from './errors';
 import { currentUserId } from './session';
 import { resizeForUpload } from '../photos/resize';
+import { readUploadBody } from '../storage/readUpload';
 import { tintForPhoto } from '../photos/tint';
 import { newPhotoId, profilePhotoPath, profilePhotoPathForId, type ProfilePhotoPosition } from '../photos/path';
 import type { Database } from '../types/database';
@@ -54,11 +55,6 @@ export type UserPhotoRow = Database['public']['Tables']['user_photos']['Row'];
  * sequences above: replace when a row already exists at `position`, insert
  * otherwise.
  */
-
-async function blobFromUri(uri: string): Promise<Blob> {
-  const response = await fetch(uri);
-  return response.blob();
-}
 
 async function getPhotoAtPosition(userId: string, position: ProfilePhotoPosition): Promise<UserPhotoRow | null> {
   const { data, error } = await supabase
@@ -125,8 +121,8 @@ export async function addProfilePhoto({ position, uri, width, height }: AddProfi
   const path = profilePhotoPathForId(userId, photoId);
   const tint = tintForPhoto(userId, position);
 
-  const blob = await blobFromUri(resized.uri);
-  const { error: uploadError } = await supabase.storage.from('profile-photos').upload(path, blob, {
+  const body = await readUploadBody(resized.uri);
+  const { error: uploadError } = await supabase.storage.from('profile-photos').upload(path, body, {
     contentType: 'image/jpeg',
     upsert: false,
   });
@@ -175,8 +171,8 @@ export async function replaceProfilePhoto({
   const path = profilePhotoPathForId(userId, freshId);
   const tint = tintForPhoto(userId, position);
 
-  const blob = await blobFromUri(resized.uri);
-  const { error: uploadError } = await supabase.storage.from('profile-photos').upload(path, blob, {
+  const body = await readUploadBody(resized.uri);
+  const { error: uploadError } = await supabase.storage.from('profile-photos').upload(path, body, {
     contentType: 'image/jpeg',
     upsert: false,
   });

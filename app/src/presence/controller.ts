@@ -18,11 +18,12 @@ export const SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 /**
  * `set_my_tier` is written when the computed tier **changes**, or when this
  * long has passed since the last write, whichever comes first (decision 45).
- * The floor exists so `user_presence.tier_computed_at` never drifts past
- * `is_grid_visible`'s 24-hour staleness cutoff (decision 11) for a user who
- * simply hasn't moved — 20 minutes leaves an enormous margin, which is the
- * point: the user should fall out of the grid because they left, not because
- * a heartbeat was missed.
+ * The floor exists so `user_presence.tier_computed_at` (stamped by every
+ * `set_my_tier` call, migration 0016) never drifts past the 1-hour freshness
+ * window (`private.effective_tier`, migration 0009: an older tier reads as
+ * away) for a user who simply hasn't moved — 20 minutes leaves a wide margin,
+ * which is the point: the user should read as away because they left, not
+ * because a heartbeat was missed.
  */
 export const TIER_HEARTBEAT_MS = 20 * 60 * 1000;
 

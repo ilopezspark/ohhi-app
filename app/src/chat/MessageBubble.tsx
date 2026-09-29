@@ -1,9 +1,11 @@
-import { ActivityIndicator, Image, Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Image, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import type { MessageRow } from '../api/conversations';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
 import { CameraIcon } from '../ui/icons';
 import { Text } from '../ui';
 import { PlayIcon } from './mediaIcons';
+import { aspectOf, fitMedia, sizeFromLoadEvent, type MediaSize } from './mediaLayout';
 
 /**
  * A message as the thread renders it: a server row, or an optimistic one that
@@ -30,80 +32,60 @@ interface Props {
    */
   recipientExhausted?: boolean;
   onRetry?: (message: ThreadMessage) => void;
-  /** Keep-in-chat video poster tap, or a limited photo/video pill tap (either side) — navigates to the viewer route (`app/chat/media/[messageId].tsx`). */
+  /** Keep-in-chat photo or video poster tap, or a limited photo/video pill tap (either side) — navigates to the viewer route (`app/chat/media/[messageId].tsx`). */
   onOpenMedia?: (message: ThreadMessage) => void;
 }
 
-/** `.bubble`/`.me`/`.them` (`Chat-Thread.html`). Same testIDs as before this pass — only the visual language changed. */
+/** Widest an inline keep-in-chat image gets: ~70% of the thread, never more than this. */
+const INLINE_MEDIA_MAX_WIDTH = 300;
+const INLINE_MEDIA_WIDTH_FRACTION = 0.7;
+const INLINE_MEDIA_MAX_HEIGHT = 360;
+
+/**
+ * `.bubble`/`.me`/`.them` (`Chat-Thread.html`). Same testIDs as before this pass — only the visual language changed.
+ *
+ * Keep-in-chat media is not a bubble: it renders as the image itself (or a
+ * video's poster with a play badge), no ink/surface fill, no padding frame,
+ * just the bubble radius on its corners, at its real aspect ratio
+ * (`media_width`/`media_height`, then the loaded image's own size), aligned to
+ * the sender's side and tappable to open the full-screen viewer. Limited media
+ * (view once/twice) keeps its bubble and pill, unchanged.
+ */
 export function MessageBubble({ message, meId, mediaUrl, recipientExhausted, onRetry, onOpenMedia }: Props) {
   const mine = message.sender_id === meId;
   const hasMedia = !!message.media_path;
   const limited = message.view_limit != null;
   const kind: 'photo' | 'video' = message.media_kind === 'video' ? 'video' : 'photo';
+  const inlineMedia = hasMedia && !limited;
 
   return (
     <View style={[styles.wrapper, mine ? styles.wrapperMine : styles.wrapperTheirs]}>
-      <View
-        style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}
-        testID={`message-${message.id}`}
-      >
-        {hasMedia && !limited ? (
-          kind === 'video' ? (
-            // Keep-in-chat video: poster + play affordance, opening the
-            // full-screen viewer (§3's "keep-in-chat video inline poster with
-            // a play affordance opening the viewer") — not inline playback in
-            // the bubble itself, so both keep-in-chat and limited video share
-            // one playback code path.
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Play video"
-              testID={`message-media-${message.id}`}
+      {inlineMedia ? (
+        <InlineMedia message={message} kind={kind} mediaUrl={mediaUrl} onOpenMedia={onOpenMedia} />
+      ) : null}
+
+      {(hasMedia && limited) || message.body ? (
+        <View
+          style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}
+          testID={inlineMedia ? `message-body-${message.id}` : `message-${message.id}`}
+        >
+          {hasMedia && limited ? (
+            <LimitedMediaPill
+              message={message}
+              mine={mine}
+              kind={kind}
+              recipientExhausted={!!recipientExhausted}
               onPress={() => onOpenMedia?.(message)}
-            >
-              <View style={styles.media}>
-                {mediaUrl ? (
-                  <Image source={{ uri: mediaUrl }} style={StyleSheet.absoluteFill} accessibilityIgnoresInvertColors />
-                ) : (
-                  <View
-                    style={[StyleSheet.absoluteFill, styles.mediaPlaceholder]}
-                    testID={`message-media-placeholder-${message.id}`}
-                  />
-                )}
-                <View style={styles.playOverlay}>
-                  <PlayIcon size={22} color={colors.onDark} />
-                </View>
-              </View>
-            </Pressable>
-          ) : mediaUrl ? (
-            <Image
-              source={{ uri: mediaUrl }}
-              style={styles.media}
-              accessibilityIgnoresInvertColors
-              testID={`message-media-${message.id}`}
             />
-          ) : (
-            // A path that no longer signs (the thread stopped being readable)
-            // falls back to a placeholder, never to an error or a reason.
-            <View style={[styles.media, styles.mediaPlaceholder]} testID={`message-media-placeholder-${message.id}`} />
-          )
-        ) : null}
+          ) : null}
 
-        {hasMedia && limited ? (
-          <LimitedMediaPill
-            message={message}
-            mine={mine}
-            kind={kind}
-            recipientExhausted={!!recipientExhausted}
-            onPress={() => onOpenMedia?.(message)}
-          />
-        ) : null}
-
-        {message.body ? (
-          <Text variant="body" color={mine ? colors.onDark : colors.ink}>
-            {message.body}
-          </Text>
-        ) : null}
-      </View>
+          {message.body ? (
+            <Text variant="body" color={mine ? colors.onDark : colors.ink}>
+              {message.body}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
       {message.pending ? (
         <ActivityIndicator size="small" testID={`message-sending-${message.id}`} />
@@ -123,6 +105,81 @@ export function MessageBubble({ message, meId, mediaUrl, recipientExhausted, onR
           </Text>
         </Pressable>
       ) : null}
+    </View>
+  );
+}
+
+interface InlineMediaProps {
+  message: ThreadMessage;
+  kind: 'photo' | 'video';
+  mediaUrl?: string;
+  onOpenMedia?: (message: ThreadMessage) => void;
+}
+
+/**
+ * The keep-in-chat image / video poster, frameless. Sized before it loads
+ * from the row's `media_width`/`media_height` so the list never jumps; a
+ * missing size falls back to square until the image reports its own.
+ * Extreme aspects are clamped (and the image cropped to the frame) so a
+ * panorama never becomes a sliver.
+ */
+function InlineMedia({ message, kind, mediaUrl, onOpenMedia }: InlineMediaProps) {
+  const { width: windowWidth } = useWindowDimensions();
+  const [loadedSize, setLoadedSize] = useState<MediaSize | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [mediaUrl]);
+
+  const rowSize = { width: message.media_width ?? undefined, height: message.media_height ?? undefined };
+  const frame = fitMedia(aspectOf(rowSize) != null ? rowSize : loadedSize, {
+    maxWidth: Math.min(INLINE_MEDIA_MAX_WIDTH, Math.round(windowWidth * INLINE_MEDIA_WIDTH_FRACTION)),
+    maxHeight: INLINE_MEDIA_MAX_HEIGHT,
+    fallbackAspect: 1,
+    minAspect: 0.5,
+    maxAspect: 2,
+  });
+  const showImage = !!mediaUrl && !failed;
+
+  return (
+    <View testID={`message-${message.id}`}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={kind === 'video' ? 'Play video' : 'Open photo'}
+        testID={`message-media-${message.id}`}
+        onPress={() => onOpenMedia?.(message)}
+        style={[styles.media, { width: frame.width, height: frame.height }]}
+      >
+        {showImage ? (
+          <Image
+            source={{ uri: mediaUrl }}
+            style={styles.mediaImage}
+            resizeMode="cover"
+            onLoad={(event) => {
+              const size = sizeFromLoadEvent(event);
+              if (size) setLoadedSize(size);
+            }}
+            onError={() => setFailed(true)}
+            accessibilityIgnoresInvertColors
+            testID={`message-media-image-${message.id}`}
+          />
+        ) : (
+          // A path that no longer signs (the thread stopped being readable)
+          // falls back to a placeholder, never to an error or a reason.
+          <View style={styles.mediaPlaceholder} testID={`message-media-placeholder-${message.id}`} />
+        )}
+        {kind === 'video' ? (
+          // Keep-in-chat video: poster + play affordance, opening the
+          // full-screen viewer (§3) — not inline playback, so keep-in-chat
+          // and limited video share one playback code path.
+          <View style={styles.playOverlay} pointerEvents="none">
+            <View style={styles.playBadge}>
+              <PlayIcon size={22} color={colors.onDark} />
+            </View>
+          </View>
+        ) : null}
+      </Pressable>
     </View>
   );
 }
@@ -203,17 +260,23 @@ const styles = StyleSheet.create({
   },
   bubbleMine: { backgroundColor: colors.ink, borderBottomRightRadius: spacing.smMd },
   bubbleTheirs: { backgroundColor: colors.surface, borderBottomLeftRadius: spacing.smMd, ...shadows.xs },
-  media: { width: 200, height: 200, borderRadius: radii.sm, backgroundColor: colors.dashed, overflow: 'hidden' },
-  mediaPlaceholder: { backgroundColor: colors.dashed },
+  // No fill, border or padding: the image is the message. The placeholder
+  // tint only shows while it loads or when it can't be signed.
+  media: { borderRadius: radii.lg, overflow: 'hidden' },
+  mediaImage: { width: '100%', height: '100%' },
+  mediaPlaceholder: { flex: 1, backgroundColor: colors.dashed },
   playOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  playBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: radii.circle,
     backgroundColor: colors.overlay,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   limitedPill: {
     flexDirection: 'row',

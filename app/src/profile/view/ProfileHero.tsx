@@ -46,6 +46,12 @@ export interface ProfileHeroProps {
   photoSlot?: ReactNode;
   /** Height above the top row (the safe-area inset on the profile screen). */
   topInset?: number;
+  /**
+   * `bleed` frame: extra space either side of the buttons and text, so they
+   * stay in the centred content column on a wide screen while the photo and
+   * scrims still fill the whole width. 0 on a phone.
+   */
+  sideInset?: number;
   topLeft?: ReactNode;
   topRight?: ReactNode;
   /** Rendered right under the name block (the old identity row slot; kept for `ProfileTile` callers). */
@@ -89,6 +95,7 @@ export function ProfileHero({
   photoUrl,
   photoSlot,
   topInset = 0,
+  sideInset = 0,
   topLeft,
   topRight,
   identitySlot,
@@ -107,6 +114,7 @@ export function ProfileHero({
   const hereFor = hereForChipLabel(data.goals ?? []) || HERE_FOR_FALLBACK;
   const tags = data.tagLabels ?? [];
   const bleed = frame === 'bleed';
+  const side = bleed ? sideInset : 0;
 
   return (
     <View
@@ -145,13 +153,22 @@ export function ProfileHero({
       </View>
 
       {topLeft || topRight ? (
-        <View style={[styles.topRow, { top: topInset + (bleed ? 26 : spacing.lgXl) }]} pointerEvents="box-none">
+        <View
+          style={[styles.topRow, { top: topInset + (bleed ? 26 : spacing.lgXl), left: spacing.lgXl + side, right: spacing.lgXl + side }]}
+          pointerEvents="box-none"
+        >
           {topLeft ?? <View />}
           {topRight ?? <View />}
         </View>
       ) : null}
 
-      <View style={[styles.bottom, { paddingBottom: bleed ? bottomSpace + spacing.lgXl : spacing.xxl }]} pointerEvents="box-none">
+      <View
+        style={[
+          styles.bottom,
+          { paddingBottom: bleed ? bottomSpace + spacing.lgXl : spacing.xxl, paddingHorizontal: spacing.xlXxl + side },
+        ]}
+        pointerEvents="box-none"
+      >
         {data.hereNow ? (
           <View style={styles.hereNowPill} testID={testIDs.hereNow}>
             <Dot color={colors.signal} size={8} />
@@ -307,13 +324,11 @@ const styles = StyleSheet.create({
   bottomScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '62%' },
   topRow: {
     position: 'absolute',
-    left: spacing.lgXl,
-    right: spacing.lgXl,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.xlXxl, gap: spacing.mdLg },
+  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, gap: spacing.mdLg },
   hereNowPill: {
     alignSelf: 'flex-start',
     flexDirection: 'row',

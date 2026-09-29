@@ -46,6 +46,7 @@ import { forgetConversation, forgetPerson, useGoneLatch, useLeaveWhenGone } from
 import { useConversationRealtime } from '../../chat/useChatRealtime';
 import { messageId as newMessageId } from '../../chat/uuid';
 import { checkVideo, generateVideoPoster, VIDEO_REJECTION_COPY } from '../../chat/video';
+import { UploadTooLargeError } from '../../storage/readUpload';
 import { tintForPhoto } from '../../photos/tint';
 import { colors, layout, radii, shadows, spacing } from '../../theme/tokens';
 import { BackIcon, MoreIcon } from '../../ui/icons';
@@ -542,7 +543,7 @@ export default function ChatThreadScreen() {
       localUri: asset.uri,
       posterUri: poster?.uri ?? null,
     });
-    setPreviewAsset({ kind, uri: asset.uri, posterUri: poster?.uri ?? null });
+    setPreviewAsset({ kind, uri: asset.uri, posterUri: poster?.uri ?? null, width: asset.width, height: asset.height });
     setMediaError(null);
     setMediaStep('preview');
   }, []);
@@ -585,7 +586,13 @@ export default function ChatThreadScreen() {
         height: item.mediaHeight ?? 0,
         trayItem: item,
       });
-      setPreviewAsset({ kind: item.mediaKind, uri: uri ?? '', posterUri: uri ?? null });
+      setPreviewAsset({
+        kind: item.mediaKind,
+        uri: uri ?? '',
+        posterUri: uri ?? null,
+        width: item.mediaWidth,
+        height: item.mediaHeight,
+      });
       setMediaError(null);
       setMediaStep('preview');
     },
@@ -651,10 +658,12 @@ export default function ChatThreadScreen() {
         });
         closeMediaFlow();
         void queryClient.invalidateQueries({ queryKey: ['recently-shared-media', meId] });
-      } catch {
+      } catch (error) {
         // Generic: an upload refused because the thread isn't `open` looks
         // exactly like a dropped connection, which is the point (decision 24).
-        setMediaError("Couldn't send. Try again.");
+        // The one exception is our own size gate (a video the picker didn't
+        // report a size for), which says what it is, same as at pick time.
+        setMediaError(error instanceof UploadTooLargeError ? VIDEO_REJECTION_COPY.size : "Couldn't send. Try again.");
         // An upload into a thread that has since vanished is refused by the
         // storage policy; re-reading the thread lets the gone latch leave.
         void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });

@@ -566,6 +566,46 @@ export const hairline = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Text inputs
+// ---------------------------------------------------------------------------
+
+/**
+ * One set of metrics for every text field, read by the shared field
+ * components (`ui/Input`, `ui/FieldCard`) so no screen sets its own.
+ *
+ * Why every side is set explicitly: an RN `TextInput` keeps platform padding
+ * on any side the style leaves unset — Android's EditText background padding
+ * (a few dp either side, ~10dp top and bottom) plus its font padding, and on
+ * iOS a 5px top inset on a multiline field with no vertical padding. Left to
+ * those, the text sits at a different inset on each platform and out of line
+ * with the label, `clear` and counter around it.
+ */
+export const inputs = {
+  /** `.field input`: `font-size: 16px`. */
+  fontSize: 16,
+  /** Fixed line height for multiline fields, so every line (and the field's growth) is the same on both platforms. */
+  lineHeight: 22,
+  /** `.field input`'s `padding: 16px 18px`, from the field's outer edge to the text. */
+  paddingX: 18,
+  paddingY: 16,
+  /**
+   * The focus/error ring. Always reserved (transparent at rest) and taken out
+   * of the padding, so focusing a field never moves its text or grows it.
+   */
+  ringWidth: 2,
+  /** Single-line field height: `paddingY + lineHeight + paddingY`. Fixed, so every single-line field matches on both platforms. */
+  height: 54,
+
+  // -- The Me editor's white field card (`07-edit-status.png`): status, place
+  //    line, prompts, usual places. The card carries the padding; the text
+  //    inside starts exactly at it, in line with `clear` and the counter.
+  /** The card's padding, all sides. */
+  cardPadding: 16,
+  /** A single-line input in a card: tall enough to be a comfortable tap target, text centred in it. */
+  cardSingleLineHeight: 44,
+} as const;
+
+// ---------------------------------------------------------------------------
 // Motion
 // ---------------------------------------------------------------------------
 
@@ -602,6 +642,7 @@ export const tokens = {
   radii,
   shadows,
   hairline,
+  inputs,
   motion,
 } as const;
 

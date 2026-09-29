@@ -2,6 +2,8 @@ export * from './Text';
 export * from './Button';
 export * from './Chip';
 export * from './Input';
+export * from './FieldCard';
+export * from './KeyboardScrollView';
 export * from './Surface';
 export * from './ListRow';
 export * from './Avatar';

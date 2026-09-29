@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -15,7 +15,7 @@ import {
   PRONOUN_MAX_LENGTH,
   PRONOUN_OPTIONS,
 } from '../../settings/vocab';
-import { Chip, Input, Text, Toggle } from '../../ui';
+import { Chip, Input, KeyboardScrollView, Text, Toggle } from '../../ui';
 import { colors, radii, spacing } from '../../theme/tokens';
 
 /**
@@ -144,7 +144,7 @@ export default function AboutYouEditorScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.container} testID="about-editor-screen">
+      <KeyboardScrollView contentContainerStyle={styles.container} testID="about-editor-screen">
         <View style={styles.headerRow} testID="about-editor-header">
           <Text testID="about-editor-cancel" variant="rowLabel" color={colors.muted} onPress={handleCancel}>
             cancel
@@ -176,7 +176,7 @@ export default function AboutYouEditorScreen() {
             </View>
             <Input
               testID="about-editor-pronoun-custom"
-              containerStyle={styles.customInput}
+              surface="card"
               placeholder="write your own"
               maxLength={PRONOUN_MAX_LENGTH + 10}
               value={customPronoun}
@@ -221,7 +221,7 @@ export default function AboutYouEditorScreen() {
             {errorMessage}
           </Text>
         ) : null}
-      </ScrollView>
+      </KeyboardScrollView>
     </SafeAreaView>
   );
 }
@@ -240,7 +240,6 @@ const styles = StyleSheet.create({
     gap: spacing.mdLg,
   },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.smMd },
-  customInput: { marginTop: 0 },
   publicRow: {
     flexDirection: 'row',
     alignItems: 'center',

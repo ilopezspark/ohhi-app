@@ -706,6 +706,32 @@ never an error).
 id), so `listSharedWithMeAlbums` is two queries (active album shares, then the matching
 `albums` rows) rather than one PostgREST embed.
 
+#### Viewing an album: the story viewer
+
+Album photos are viewed full screen, story style (`src/albums/StoryViewer.tsx`, rules in
+`src/albums/storyNav.ts`). The photo is shown whole on black, edge to edge. Tapping the left
+third goes back and the right two thirds go forward. Back on the first photo does nothing, and
+forward on the last one closes the viewer. A horizontal drag moves one photo and a downward drag
+closes it. Press and hold hides the bars, the name and the buttons. There is **no auto-advance**:
+the segmented bars only show position. The next photo is prefetched. A photo that fails to load
+re-signs its URL once on its own (they last 60s), then shows `try again`. There is no save,
+download or share-out action, and screen capture is prevented while the viewer is open
+(it takes effect on Android only). For screen readers, the photo area is one adjustable element
+(`photo 2 of 5`): increment and decrement move, and activate taps forward. Hardware back closes.
+
+- **Recipient from chat** (`app/chat/[id]/album/[albumId].tsx`): opens straight into the viewer.
+  The title row shows the album name and the owner's first name, taken from the thread's
+  conversation read. URLs re-sign every 45s while it is open.
+- **Shared with me, from the albums list** (`app/settings/albums/[id].tsx`, when the caller is
+  not the owner): opens straight into the viewer too. The owner's name comes from
+  `api/albumOwner.ts`, and closing goes back to the list.
+- **Owner** (`app/settings/albums/[id].tsx`): stays the management view, a thumbnail grid with
+  rename, add, remove, share, stop sharing and delete. Tapping a thumbnail opens the viewer at
+  that photo in a full-screen `Modal`. Its `…` offers `remove this photo`, which uses the same
+  `removeAlbumPhoto` as the grid.
+
+Gone handling (decision 90) is unchanged on both screens.
+
 ### Identity and private-card editors
 
 `settings/identity.tsx` and `settings/card.tsx` are thin forms over `identity` edge function

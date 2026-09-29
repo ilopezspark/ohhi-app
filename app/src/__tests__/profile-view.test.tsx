@@ -267,13 +267,41 @@ describe('ProfileView — scrolling (03)', () => {
     expect(onOverflow).toHaveBeenCalledTimes(1);
   });
 
-  it('caps the content width on wide screens and centres it', async () => {
+  it('on a wide screen the photo, header and bar run edge to edge; only the content is capped and centred', async () => {
+    const flat = (node: { props: { style?: unknown } }) => Object.assign({}, ...[node.props.style].flat(Infinity).filter(Boolean));
     const screen = await renderView(MAYA);
-    const column = screen.getByTestId('profile-scroll').parent;
-    const flat = Object.assign({}, ...[column?.props.style].flat(Infinity).filter(Boolean));
-    expect(flat.width).toBeLessThanOrEqual(PROFILE_MAX_WIDTH);
-    const root = screen.getByTestId('profile-view');
-    expect(Object.assign({}, ...[root.props.style].flat(Infinity).filter(Boolean)).alignItems).toBe('center');
+    await fireEvent(screen.getByTestId('profile-view'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 900, height: 800 } } });
+    const side = (900 - PROFILE_MAX_WIDTH) / 2;
+
+    // The scroll view (and so the hero inside it) is not capped: nothing
+    // leaves a bare strip beside the photo and its scrims.
+    expect(flat(screen.getByTestId('profile-scroll')).width).toBeUndefined();
+    expect(flat(screen.getByTestId('profile-hero')).width).toBe('100%');
+    expect(flat(screen.getByTestId('profile-hero')).height).toBe(800);
+    // The hero's bars sit in the centred column.
+    expect(flat(screen.getByTestId('profile-photo-progress', { includeHiddenElements: true }))).toMatchObject({
+      left: 16 + side,
+      right: 16 + side,
+    });
+    // The details are capped and centred.
+    expect(flat(screen.getByTestId('profile-details'))).toMatchObject({ width: PROFILE_MAX_WIDTH, alignSelf: 'center' });
+
+    // The action bar spans the window; its content is capped.
+    const bar = flat(screen.getByTestId('profile-action-bar'));
+    expect(bar).toMatchObject({ position: 'absolute', left: 0, right: 0, bottom: 0 });
+    expect(flat(screen.getByTestId('profile-action-bar-content'))).toMatchObject({ width: PROFILE_MAX_WIDTH, alignSelf: 'center' });
+
+    // So does the collapsed header, from the very top.
+    await scrollTo(screen, 3000);
+    expect(flat(screen.getByTestId('profile-header'))).toMatchObject({ position: 'absolute', top: 0, left: 0, right: 0 });
+    expect(flat(screen.getByTestId('profile-header-row'))).toMatchObject({ width: PROFILE_MAX_WIDTH, alignSelf: 'center' });
+  });
+
+  it('on a phone the content column is the full width', async () => {
+    const screen = await renderView(MAYA);
+    await fireEvent(screen.getByTestId('profile-view'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 390, height: 844 } } });
+    const details = Object.assign({}, ...[screen.getByTestId('profile-details').props.style].flat(Infinity).filter(Boolean));
+    expect(details.width).toBe(390);
   });
 });
 

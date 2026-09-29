@@ -85,8 +85,13 @@ jest.mock('../photos/resize', () => ({
   resizeForUpload: jest.fn(() => Promise.resolve({ uri: 'file:///resized.jpg', width: 10, height: 10 })),
 }));
 
-const globalAny = globalThis as unknown as { fetch: jest.Mock };
-globalAny.fetch = jest.fn(() => Promise.resolve({ blob: () => Promise.resolve('BLOB') })) as never;
+// Every upload reads its body through the one shared helper (native: file
+// bytes via expo-file-system; web: fetch().blob()) — its own per-platform
+// behavior is covered in `storage-read-upload.test.ts`.
+const mockReadUploadBody = jest.fn((_uri: string, _options?: { maxBytes?: number }) => Promise.resolve('BLOB'));
+jest.mock('../storage/readUpload', () => ({
+  readUploadBody: (uri: string, options?: { maxBytes?: number }) => mockReadUploadBody(uri, options),
+}));
 
 import { getConversation, listConversations, startConversation } from '../api/conversations';
 import {
@@ -123,6 +128,7 @@ beforeEach(() => {
   mockStorageUpload.mockReset().mockResolvedValue({ error: null });
   mockStorageSignedUrls.mockReset();
   mockRpc.mockReset();
+  mockReadUploadBody.mockClear();
 });
 
 // ---------------------------------------------------------------------------
@@ -460,6 +466,8 @@ describe('chatMedia', () => {
     });
 
     expect(path).toBe(`${CONV}/mmmm.jpg`);
+    // The resized (EXIF-stripped) file is what gets read, never the original pick.
+    expect(mockReadUploadBody).toHaveBeenCalledWith('file:///resized.jpg', {});
     expect(mockStorageUpload).toHaveBeenCalledWith('chat-media', `${CONV}/mmmm.jpg`, 'BLOB', {
       contentType: 'image/jpeg',
       upsert: false,
@@ -512,6 +520,8 @@ describe('chatMedia', () => {
     });
 
     expect(path).toBe(`${CONV}/vid1.mp4`);
+    // Read as-is, with the 50 MB cap enforced before the file is loaded.
+    expect(mockReadUploadBody).toHaveBeenCalledWith('file:///pick.mp4', { maxBytes: 50 * 1024 * 1024 });
     expect(mockStorageUpload).toHaveBeenCalledWith('chat-media', `${CONV}/vid1.mp4`, 'BLOB', {
       contentType: 'video/mp4',
       upsert: false,
@@ -538,6 +548,7 @@ describe('chatMedia', () => {
   it('uploads a poster frame to the same bucket, -poster.jpg suffix', async () => {
     const path = await uploadChatMediaPoster({ conversationId: CONV, messageId: 'vid1', uri: 'file:///poster.jpg' });
     expect(path).toBe(`${CONV}/vid1-poster.jpg`);
+    expect(mockReadUploadBody).toHaveBeenCalledWith('file:///poster.jpg', undefined);
     expect(mockStorageUpload).toHaveBeenCalledWith('chat-media', `${CONV}/vid1-poster.jpg`, 'BLOB', {
       contentType: 'image/jpeg',
       upsert: false,
@@ -576,6 +587,8 @@ describe('chatMedia', () => {
         viewLimit: null,
       });
       expect(result.mediaPath).toBe('new-conv/new-msg.jpg');
+      // Bytes come from the signed source URL, not a blob round trip.
+      expect(mockReadUploadBody).toHaveBeenCalledWith('https://signed/orig.jpg', {});
       expect(mockStorageUpload).toHaveBeenCalledWith('chat-media', 'new-conv/new-msg.jpg', 'BLOB', {
         contentType: 'image/jpeg',
         upsert: false,
@@ -607,6 +620,8 @@ describe('chatMedia', () => {
         viewLimit: 2,
       });
       expect(result.posterPath).toBe('new-conv/new-msg-poster.jpg');
+      expect(mockReadUploadBody).toHaveBeenCalledWith('https://signed/orig.mp4', { maxBytes: 50 * 1024 * 1024 });
+      expect(mockReadUploadBody).toHaveBeenCalledWith('https://signed/orig-poster.jpg', undefined);
       expect(mockStorageUpload).toHaveBeenCalledWith(
         'chat-media-limited',
         'new-conv/new-msg-poster.jpg',

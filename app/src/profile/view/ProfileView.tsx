@@ -18,7 +18,12 @@ import { PhotoIconButton, ProfileHero } from './ProfileHero';
 import { detailSections } from './sections';
 import { useInsets } from './useInsets';
 
-/** Wider than this (tablets, open foldables) the view stops growing and centres. */
+/**
+ * Wider than this (tablets, open foldables) the view's *content* stops
+ * growing and centres. The photo and its scrims, the collapsed header and
+ * the action bar's paper still run edge to edge, so no bare strip is left
+ * down either side of the window.
+ */
 export const PROFILE_MAX_WIDTH = 560;
 const HEADER_BAR = 56;
 /** First-frame guess for the action bar's height, before `onLayout` measures it. */
@@ -65,7 +70,10 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
   // The hero fills the view. On the profile screen that is the window; in
   // the editor's Preview it is the tab's own area, measured on layout.
   const [measured, setMeasured] = useState<{ width: number; height: number } | null>(null);
-  const contentWidth = Math.min(measured?.width ?? windowWidth, PROFILE_MAX_WIDTH);
+  const viewWidth = measured?.width ?? windowWidth;
+  const contentWidth = Math.min(viewWidth, PROFILE_MAX_WIDTH);
+  /** Space either side of the centred content column (0 on a phone). */
+  const sideInset = Math.max(0, (viewWidth - contentWidth) / 2);
   const heroHeight = measured?.height ?? windowHeight;
   const headerHeight = insets.top + HEADER_BAR;
 
@@ -110,74 +118,79 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
 
   return (
     <View style={styles.root} testID={`${p}-view`} onLayout={onRootLayout}>
-      <View style={[styles.column, { width: contentWidth }]}>
-        <ScrollView
-          ref={scrollRef}
-          testID={`${p}-scroll`}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: barHeight + spacing.lgXl }}
-        >
-          <ProfileHero
-            frame="bleed"
-            height={heroHeight}
-            topInset={insets.top}
-            bottomSpace={actions ? barHeight : insets.bottom}
-            data={data}
-            tint={tintForPhoto(data.userId, 0)}
-            photoSlot={
-              <PhotoPager
-                userId={data.userId}
-                firstName={data.firstName}
-                paths={data.photoPaths}
-                urls={data.photoUrls}
-                barsTop={insets.top + spacing.md}
-                testIDPrefix={p}
-              />
-            }
-            topLeft={
-              onBack ? (
-                <PhotoIconButton testID={`${p}-back`} accessibilityLabel="back" onPress={onBack}>
-                  <BackIcon size={20} color={colors.onDark} />
-                </PhotoIconButton>
-              ) : undefined
-            }
-            topRight={
-              onOverflow && !preview ? (
-                <PhotoIconButton testID={`${p}-overflow-trigger`} accessibilityLabel="more options" onPress={onOverflow}>
-                  <MoreIcon size={20} color={colors.onDark} />
-                </PhotoIconButton>
-              ) : undefined
-            }
-            notice={sparse ? sparseNotice(data.firstName, data.joinedRecency) : null}
-            onExpand={toDetail}
-            testIDs={{
-              root: `${p}-hero`,
-              hereNow: `${p}-here-now-badge`,
-              online: `${p}-online-dot`,
-              tier: `${p}-tier-pill`,
-              place: `${p}-place-line`,
-              meta: `${p}-meta`,
-              verified: `${p}-verified`,
-              name: `${p}-name`,
-              statusLine: `${p}-status-line`,
-              goals: `${p}-goals`,
-              tags: `${p}-tags`,
-              notice: `${p}-sparse-notice`,
-              expand: `${p}-expand`,
-            }}
-          />
+      <ScrollView
+        ref={scrollRef}
+        testID={`${p}-scroll`}
+        style={styles.scroll}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: barHeight + spacing.lgXl }}
+      >
+        <ProfileHero
+          frame="bleed"
+          height={heroHeight}
+          topInset={insets.top}
+          sideInset={sideInset}
+          bottomSpace={actions ? barHeight : insets.bottom}
+          data={data}
+          tint={tintForPhoto(data.userId, 0)}
+          photoSlot={
+            <PhotoPager
+              userId={data.userId}
+              firstName={data.firstName}
+              paths={data.photoPaths}
+              urls={data.photoUrls}
+              barsTop={insets.top + spacing.md}
+              sideInset={sideInset}
+              testIDPrefix={p}
+            />
+          }
+          topLeft={
+            onBack ? (
+              <PhotoIconButton testID={`${p}-back`} accessibilityLabel="back" onPress={onBack}>
+                <BackIcon size={20} color={colors.onDark} />
+              </PhotoIconButton>
+            ) : undefined
+          }
+          topRight={
+            onOverflow && !preview ? (
+              <PhotoIconButton testID={`${p}-overflow-trigger`} accessibilityLabel="more options" onPress={onOverflow}>
+                <MoreIcon size={20} color={colors.onDark} />
+              </PhotoIconButton>
+            ) : undefined
+          }
+          notice={sparse ? sparseNotice(data.firstName, data.joinedRecency) : null}
+          onExpand={toDetail}
+          testIDs={{
+            root: `${p}-hero`,
+            hereNow: `${p}-here-now-badge`,
+            online: `${p}-online-dot`,
+            tier: `${p}-tier-pill`,
+            place: `${p}-place-line`,
+            meta: `${p}-meta`,
+            verified: `${p}-verified`,
+            name: `${p}-name`,
+            statusLine: `${p}-status-line`,
+            goals: `${p}-goals`,
+            tags: `${p}-tags`,
+            notice: `${p}-sparse-notice`,
+            expand: `${p}-expand`,
+          }}
+        />
 
-          <View style={styles.details} testID={`${p}-details`}>
-            {sections.map((section) => (
-              <View key={section.key}>{section.render()}</View>
-            ))}
-          </View>
-        </ScrollView>
+        <View style={[styles.details, { width: contentWidth }]} testID={`${p}-details`}>
+          {sections.map((section) => (
+            <View key={section.key}>{section.render()}</View>
+          ))}
+        </View>
+      </ScrollView>
 
-        {collapsed ? (
-          <View style={[styles.header, { paddingTop: insets.top, height: headerHeight }]} testID={`${p}-header`}>
+      {collapsed ? (
+        // Full width and from the very top (under the status bar); only
+        // the row inside is held to the content column.
+        <View style={[styles.header, { paddingTop: insets.top, height: headerHeight }]} testID={`${p}-header`}>
+          <View style={[styles.headerRow, { width: contentWidth }]} testID={`${p}-header-row`}>
             <Pressable
               testID={`${p}-header-collapse`}
               accessibilityRole="button"
@@ -219,45 +232,61 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
               <View style={styles.headerButton} />
             )}
           </View>
-        ) : null}
+        </View>
+      ) : null}
 
-        {actions ? (
-          <View
-            onLayout={onBarLayout}
-            testID={`${p}-action-bar`}
-            style={[
-              styles.actionBar,
-              { paddingBottom: insets.bottom + spacing.mdLg },
-              onPaper && styles.actionBarOnPaper,
-              preview && styles.actionBarPreview,
-            ]}
-            pointerEvents={preview ? 'none' : 'box-none'}
-            accessibilityElementsHidden={preview}
-            importantForAccessibility={preview ? 'no-hide-descendants' : 'auto'}
-          >
+      {actions ? (
+        // Full width and down to the bottom edge (the home-indicator /
+        // gesture inset is inside its padding), so on paper its fill
+        // leaves no gap; the buttons are held to the content column.
+        <View
+          onLayout={onBarLayout}
+          testID={`${p}-action-bar`}
+          style={[
+            styles.actionBar,
+            { paddingBottom: insets.bottom + spacing.mdLg },
+            onPaper && styles.actionBarOnPaper,
+            preview && styles.actionBarPreview,
+          ]}
+          pointerEvents={preview ? 'none' : 'box-none'}
+          accessibilityElementsHidden={preview}
+          importantForAccessibility={preview ? 'no-hide-descendants' : 'auto'}
+        >
+          <View style={[styles.actionBarContent, { width: contentWidth }]} pointerEvents="box-none" testID={`${p}-action-bar-content`}>
             {actions}
           </View>
-        ) : null}
-      </View>
+        </View>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper, alignItems: 'center' },
-  column: { flex: 1, maxWidth: '100%' },
-  details: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xxl, gap: spacing.lgXl },
+  root: { flex: 1, backgroundColor: colors.paper },
+  scroll: { flex: 1 },
+  details: {
+    alignSelf: 'center',
+    maxWidth: '100%',
+    paddingHorizontal: spacing.lgXl,
+    paddingTop: spacing.xxl,
+    gap: spacing.lgXl,
+  },
   header: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xs,
     backgroundColor: colors.paper,
     borderBottomWidth: hairline.width,
     borderBottomColor: colors.lineSoft,
+  },
+  headerRow: {
+    flex: 1,
+    alignSelf: 'center',
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xs,
   },
   headerButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.smMd, paddingLeft: spacing.mdLg },
@@ -276,9 +305,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: spacing.lgXl,
     paddingTop: spacing.mdLg,
   },
+  actionBarContent: { alignSelf: 'center', maxWidth: '100%', paddingHorizontal: spacing.lgXl },
   actionBarOnPaper: {
     backgroundColor: colors.paper,
     borderTopWidth: hairline.width,
