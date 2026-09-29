@@ -174,6 +174,16 @@ async function openMedia(
   const row = await deps.db.getMessageMedia(messageId);
   if (!row) return notFound();
 
+  // Plan §4 step 4: "not a participant" and "a blocker hitting a hidden
+  // thread" collapse into this one check. Decision 90 (migration 0014): it
+  // also refuses a thread whose other participant is suspended, banned or
+  // deleted. Run for the sender too, so a sender cannot re-open their own
+  // media in a thread that has vanished for them (the SQL cannot enforce
+  // that: this function reads as service_role, past every RLS policy).
+  if (!(await deps.db.canReadConversation(row.conversation_id, userId))) {
+    return notFound();
+  }
+
   // Plan §4 step 3 / decision CM-3: the sender always reads their own send,
   // uncounted -- skip the RPC entirely, no lock, no message_media_views row.
   if (userId === row.sender_id) {
@@ -184,12 +194,6 @@ async function openMedia(
       viewsUsed: row.views_used,
       viewLimit: row.view_limit,
     });
-  }
-
-  // Plan §4 step 4: "not a participant" and "a blocker hitting a hidden
-  // thread" collapse into this one check.
-  if (!(await deps.db.canReadConversation(row.conversation_id, userId))) {
-    return notFound();
   }
 
   // Reordered (fix): mint the signed URL(s) from the row's own paths *before*

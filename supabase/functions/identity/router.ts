@@ -204,6 +204,9 @@ async function getIdentity(
   // Decision 33: a block in either direction (private.is_blocked, symmetric)
   // hides the row even when it is public — same generic 404, no distinguishable
   // error, exactly like the card path's private.share_is_active.
+  // Decision 90 (migration 0014): `blocked` is also true when the owner is
+  // suspended, banned or deleted (private.is_visible_user), so a hidden user's
+  // public identity is the same 404 as a missing one.
   if (!row || !row.payload_ciphertext) return notFound();
   if (targetId !== callerId && (!row.is_public || row.blocked)) return notFound();
 
@@ -228,7 +231,9 @@ async function getCard(
   if (targetId !== callerId) {
     // private.share_is_active(owner, viewer, 'private_card', owner) — it already
     // folds in `private.is_blocked` and a `revoked_at` share, so revocation and
-    // a block both take effect on the very next read.
+    // a block both take effect on the very next read. Since migration 0014 it
+    // also requires the owner to be visible (decision 90), in SQL, so a
+    // suspended, banned or deleted owner's card is a 404 with no change here.
     if (!(await deps.db.cardShareIsActive(targetId, callerId))) return notFound();
   }
 

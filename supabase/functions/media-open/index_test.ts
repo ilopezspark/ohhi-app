@@ -183,7 +183,7 @@ Deno.test("keep-in-chat: view_limit null reads back as not found, so it's a 404"
 // ---------------------------------------------------------------------------
 
 Deno.test("sender: mints a signed URL without calling the RPC", async () => {
-  const h = harness({ message: photoRow() }, SENDER);
+  const h = harness({ message: photoRow(), canRead: true }, SENDER);
   const res = await h.handle(post({ message_id: MESSAGE }));
   assertEquals(res.status, 200);
   assertEquals(await res.json(), {
@@ -193,11 +193,22 @@ Deno.test("sender: mints a signed URL without calling the RPC", async () => {
     views_remaining: 1,
   });
   assert(!h.calls.some((c) => c.startsWith("openLimitedMedia")));
-  assert(!h.calls.some((c) => c.startsWith("canReadConversation")));
+  // Decision 90 (migration 0014): the sender is also held to
+  // can_read_conversation, so a vanished thread is closed to them too.
+  assert(h.calls.includes(`canReadConversation:${CONVERSATION}:${SENDER}`));
+});
+
+Deno.test("sender: a thread they can no longer read (other party suspended, banned or deleted) is 404, nothing signed", async () => {
+  const h = harness({ message: photoRow(), canRead: false }, SENDER);
+  const res = await h.handle(post({ message_id: MESSAGE }));
+  assertEquals(res.status, 404);
+  assertEquals((await res.json()).error.code, "not_found");
+  assert(!h.calls.some((c) => c.startsWith("sign:")));
+  assert(!h.calls.some((c) => c.startsWith("openLimitedMedia")));
 });
 
 Deno.test("sender: views_remaining reflects the row even after the recipient has opened it", async () => {
-  const h = harness({ message: photoRow({ view_limit: 2, views_used: 1 }) }, SENDER);
+  const h = harness({ message: photoRow({ view_limit: 2, views_used: 1 }), canRead: true }, SENDER);
   const res = await h.handle(post({ message_id: MESSAGE }));
   assertEquals((await res.json()).views_remaining, 1);
 });
@@ -325,7 +336,7 @@ Deno.test("routing: wrong method or extra path segments are the generic 404", as
 // ---------------------------------------------------------------------------
 
 Deno.test("Cache-Control: no-store is present on both a success and a refusal", async () => {
-  const okHarness = harness({ message: photoRow() }, SENDER);
+  const okHarness = harness({ message: photoRow(), canRead: true }, SENDER);
   const ok = await okHarness.handle(post({ message_id: MESSAGE }));
   assertEquals(ok.headers.get("Cache-Control"), "no-store");
 
@@ -339,7 +350,7 @@ Deno.test("Cache-Control: no-store is present on both a success and a refusal", 
 // ---------------------------------------------------------------------------
 
 Deno.test("rate limit: the 31st request in a window is 429", async () => {
-  const h = harness({ message: photoRow() }, SENDER);
+  const h = harness({ message: photoRow(), canRead: true }, SENDER);
   for (let i = 0; i < RATE_LIMIT_MAX; i++) {
     assertEquals(
       (await h.handle(post({ message_id: MESSAGE }))).status,
@@ -384,7 +395,7 @@ Deno.test("rate limit: the budget is per user, not global", async () => {
 // ---------------------------------------------------------------------------
 
 Deno.test("logs: every line carries route/user/status and no payload", async () => {
-  const h = harness({ message: photoRow() }, SENDER);
+  const h = harness({ message: photoRow(), canRead: true }, SENDER);
   await h.handle(post({ message_id: MESSAGE }));
   assertEquals(h.logs.length, 1);
   const entry = h.logs[0];

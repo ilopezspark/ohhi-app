@@ -9,7 +9,7 @@ One function, four routes, one crypto boundary.
 
 | Route                                  | Method | Authorized when                                                                             |
 | -------------------------------------- | ------ | ------------------------------------------------------------------------------------------- |
-| `/functions/v1/identity/:user_id`      | GET    | caller is the owner, **or** `is_public` is true **and** neither user has blocked the other  |
+| `/functions/v1/identity/:user_id`      | GET    | caller is the owner, **or** `is_public` is true **and** neither user has blocked the other **and** the owner is visible (not suspended, banned or deleted; decision 90)  |
 | `/functions/v1/identity`               | PUT    | owner only (the caller's own `auth.uid()`)                                                  |
 | `/functions/v1/identity/card/:user_id` | GET    | caller is the owner, **or** `private.share_is_active(owner, caller, 'private_card', owner)` |
 | `/functions/v1/identity/card`          | PUT    | owner only                                                                                  |

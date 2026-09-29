@@ -10,9 +10,10 @@ One route:
 | -------------------------- | ------ | --------------------- |
 | `/functions/v1/media-open` | POST   | `{ "message_id": uuid }` |
 
-Authorized when the caller is the message's sender (uncounted preview, decision CM-3), or
-the caller can read the message's conversation (`private.can_read_conversation`) **and**
-`private.open_limited_media` records them a view. Everything else — no caller, malformed
+Authorized only when the caller can read the message's conversation
+(`private.can_read_conversation`, which since migration 0014 also requires the other
+participant to be visible — decision 90), and then either the caller is the message's sender
+(uncounted preview, decision CM-3) or `private.open_limited_media` records them a view. Everything else — no caller, malformed
 body, keep-in-chat media (`view_limit is null`), a non-participant, or an already-exhausted
 view — is the identical generic `404 not_found` (decision 24's ambiguous-refusal posture,
 extended here: unlike `identity`, a missing/invalid JWT is *also* a 404 here, never a 401,

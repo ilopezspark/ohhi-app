@@ -23,7 +23,13 @@ export interface IdentityRow {
   is_public: boolean;
   payload_ciphertext: Uint8Array | null;
   key_version: number;
-  /** private.is_blocked(user_id, caller) — symmetric, either direction blocks. */
+  /**
+   * private.is_blocked(user_id, caller) — symmetric, either direction blocks —
+   * OR the row's owner is not visible (migration 0014, decision 90:
+   * private.is_visible_user is false for a suspended, banned or deleted
+   * account). Either way the router refuses a non-owner with the same 404;
+   * the owner's own read never consults this flag.
+   */
   blocked: boolean;
 }
 
@@ -100,7 +106,8 @@ export function createDb(): Db {
       const rows = await asServiceRole<IdentityRow[]>((tx) =>
         tx`
           select is_public, payload_ciphertext, key_version,
-                 private.is_blocked(user_id, ${callerId}::uuid) as blocked
+                 (private.is_blocked(user_id, ${callerId}::uuid)
+                  or not private.is_visible_user(user_id)) as blocked
             from public.user_identity
            where user_id = ${userId}
         `
