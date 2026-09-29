@@ -103,9 +103,9 @@ export interface ChipGroupProps {
   /** Currently-selected values (order not significant — `hereForLabel`/callers that care about order pass their own list). */
   value: string[];
   onChange: (next: string[]) => void;
-  /** `single` — selecting one deselects any other (radio-like, still rendered as chips). `multi` — toggles freely up to `max`. */
-  mode?: 'single' | 'multi';
-  /** Multi-select cap (e.g. tags: 3, hard-nos: 8). Ignored in `single` mode. Selecting past the cap is a no-op — the caller decides whether to surface that. */
+  /** `one` — selecting one deselects any other (radio-like, still rendered as chips). `multi` — toggles freely up to `max`. */
+  mode?: 'one' | 'multi';
+  /** Multi-select cap (e.g. tags: 3, hard-nos: 8). Ignored in `one` mode. Selecting past the cap is a no-op — the caller decides whether to surface that. */
   max?: number;
   tone?: ChipTone;
   size?: ChipSize;
@@ -114,7 +114,7 @@ export interface ChipGroupProps {
 }
 
 /**
- * The wrapping, single/multi-select group of `Chip`s the Me redesign's
+ * The wrapping, one-or-many select group of `Chip`s the Me redesign's
  * "here for", "tags", "about you" and private-card cards all need
  * (`docs/design/me-redesign/brief.md`'s "PICKED"/"N of 3" section headers
  * pair with this — see `ui/SectionLabel.tsx`). Deliberately owns only
@@ -134,7 +134,7 @@ export function ChipGroup({
 }: ChipGroupProps) {
   function toggle(optionValue: string) {
     const isSelected = value.includes(optionValue);
-    if (mode === 'single') {
+    if (mode === 'one') {
       onChange(isSelected ? [] : [optionValue]);
       return;
     }

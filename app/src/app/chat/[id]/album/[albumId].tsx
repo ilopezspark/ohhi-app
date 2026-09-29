@@ -18,10 +18,12 @@ const COLUMNS = 3;
  * app's existing photo-grid vocabulary (`Grid.html`'s 3-across tile grid)
  * rather than inventing new chrome.
  *
- * Read-only: `listAlbumPhotos` (`src/api/albums.ts`, called not edited) is
- * RLS-scoped to `ok`-only for a non-owner viewer via the "album-photos
- * shared read" storage policy and the matching `album_photos` select policy
- * — this screen adds no extra filtering of its own.
+ * Read-only: `listAlbumPhotos` (`src/api/albums.ts`) is RLS-scoped for a
+ * non-owner viewer to an active, unrevoked share with no block either way,
+ * via the "album-photos shared read" storage policy and the matching
+ * `album_photos` select policy. Album photos are not moderated (migration
+ * 0013), so every photo in a shared album is shown; this screen adds no
+ * extra filtering of its own.
  */
 export default function ChatSharedAlbumScreen() {
   const params = useLocalSearchParams<{ id: string; albumId: string }>();

@@ -1,6 +1,8 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
+import { currentUserId } from './session';
 import { resizeForUpload } from '../photos/resize';
+import { newPhotoId } from '../photos/path';
 import type { Database } from '../types/database';
 
 export type AlbumRow = Database['public']['Tables']['albums']['Row'];
@@ -24,17 +26,17 @@ export type AlbumPhotoRow = Database['public']['Tables']['album_photos']['Row'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
- * A v4-shaped random id for the storage path segment. Not cryptographically
- * strong and doesn't need to be — it only has to satisfy the storage
- * policies' uuid-shaped-folder regex and be unique enough to not collide
- * within one album. No `crypto.randomUUID`/`expo-crypto` dependency exists
- * in this app yet (checked: not in `app/package.json`), so this avoids
- * adding one for a single non-security-sensitive id.
+ * A fresh v4-shaped id for the storage path segment, so every upload lands
+ * on a brand-new object name. Migration 0012 makes that a requirement, not a
+ * nicety: there is no client UPDATE policy on `album-photos` any more, so an
+ * object can never be overwritten in place, and the owner insert policy
+ * refuses a name one of the caller's `album_photos` rows already references.
+ * Same generator as profile photos (`photos/path.ts#newPhotoId`:
+ * `crypto.randomUUID` when available, a `Math.random` v4 shape otherwise);
+ * the id is a name, not a secret.
  */
 export function randomPathId(): string {
-  const hex = (n: number) =>
-    Array.from({ length: n }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-  return `${hex(8)}-${hex(4)}-4${hex(3)}-${(8 + Math.floor(Math.random() * 4)).toString(16)}${hex(3)}-${hex(12)}`;
+  return newPhotoId();
 }
 
 export function albumPhotoPath(userId: string, albumId: string, photoId: string, ext = 'jpg'): string {
@@ -48,9 +50,19 @@ export function albumPhotoPath(userId: string, albumId: string, photoId: string,
 // Albums
 // -----------------------------------------------------------------------------
 
-/** The caller's own albums. */
+/**
+ * The caller's own albums. Filtered on `owner_id` explicitly: the albums
+ * select policy also admits albums someone else has actively shared with the
+ * caller, so an unfiltered read would count those as the caller's own (Me's
+ * "N albums" line, the share sheet's album list).
+ */
 export async function listMyAlbums(): Promise<AlbumRow[]> {
-  const { data, error } = await supabase.from('albums').select('*').order('created_at', { ascending: false });
+  const uid = await currentUserId();
+  const { data, error } = await supabase
+    .from('albums')
+    .select('*')
+    .eq('owner_id', uid)
+    .order('created_at', { ascending: false });
   if (error) throw mapSupabaseError(error);
   return data ?? [];
 }
@@ -82,9 +94,36 @@ export async function renameAlbum(albumId: string, name: string): Promise<void> 
   if (error) throw mapSupabaseError(error);
 }
 
+/**
+ * Deletes an album and everything in it, rows first and objects last
+ * (migration 0012: the owner may delete an `album-photos` object only once
+ * none of their rows references it). `album_photos.album_id` has no
+ * `on delete cascade`, so the photo rows have to go before the album row or
+ * the album delete fails on the foreign key. Object removal is best effort:
+ * once the rows are gone nothing can show those objects, and a leftover is
+ * only storage, never a visible photo.
+ */
 export async function deleteAlbum(albumId: string): Promise<void> {
-  const { error } = await supabase.from('albums').delete().eq('id', albumId);
+  const uid = await currentUserId();
+  const photos = await listAlbumPhotos(albumId);
+
+  if (photos.length > 0) {
+    const { error: photosError } = await supabase.from('album_photos').delete().eq('album_id', albumId);
+    if (photosError) throw mapSupabaseError(photosError);
+  }
+
+  const { error } = await supabase.from('albums').delete().eq('id', albumId).eq('owner_id', uid);
   if (error) throw mapSupabaseError(error);
+
+  await removeAlbumObjects(photos.map((photo) => photo.storage_path));
+}
+
+async function removeAlbumObjects(paths: string[]): Promise<void> {
+  if (paths.length === 0) return;
+  const { error } = await supabase.storage.from('album-photos').remove(paths);
+  if (error && __DEV__) {
+    console.error('[api/albums] storage remove failed', error);
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -92,10 +131,10 @@ export async function deleteAlbum(albumId: string): Promise<void> {
 // -----------------------------------------------------------------------------
 
 /**
- * The owner's own photos in an album, every `moderation_state` — the owner
- * select ignores moderation state (plan §5's "pending photos stay visible to
- * the owner"). A non-owner viewer additionally needs `ok`, enforced by RLS on
- * this same select; `listSharedAlbumPhotos` below is the viewer-facing path.
+ * Every photo in an album. Album photos are not moderated (migration 0013,
+ * decision 89): the select policy admits the album's owner and the viewer of
+ * an active, unrevoked share with no block either way, and nobody else.
+ * `listSharedAlbumPhotos` below is the viewer-facing name for the same read.
  */
 export async function listAlbumPhotos(albumId: string): Promise<AlbumPhotoRow[]> {
   const { data, error } = await supabase
@@ -117,10 +156,11 @@ export interface AddAlbumPhotoInput {
 
 /**
  * Upload-then-insert order (plan §5): the storage policy checks album
- * ownership, not row existence, so the object can land first. The insert
- * never includes `moderation_state` — it isn't in the owner's insert grant
- * (`grant insert (album_id, storage_path) on public.album_photos`), and
- * `album_photos_guard()` force-sets it to `pending` regardless.
+ * ownership, not row existence, so the object can land first. Always a
+ * fresh object name with `upsert: false` (migration 0012). The insert
+ * sends only `{ album_id, storage_path }`, the owner's whole insert grant.
+ * There is no review step: album photos are not moderated (migration 0013),
+ * so a new photo is visible to active share viewers straight away.
  */
 export async function addAlbumPhoto({ albumId, uri, width, height }: AddAlbumPhotoInput): Promise<AlbumPhotoRow> {
   const {
@@ -150,9 +190,17 @@ export async function addAlbumPhoto({ albumId, uri, width, height }: AddAlbumPho
   return data;
 }
 
-export async function removeAlbumPhoto(photoId: string): Promise<void> {
+/**
+ * Removes one album photo: the row first, then its storage object
+ * (migration 0012 refuses the object delete while a row still references
+ * it). Deleting the row is what hides the photo from share viewers, so that
+ * is the step that must succeed; the object removal is best effort, same as
+ * `deleteAlbum`.
+ */
+export async function removeAlbumPhoto(photoId: string, storagePath: string): Promise<void> {
   const { error } = await supabase.from('album_photos').delete().eq('id', photoId);
   if (error) throw mapSupabaseError(error);
+  await removeAlbumObjects([storagePath]);
 }
 
 /**
@@ -193,9 +241,13 @@ export interface SharedAlbum {
  * share" policy, which `share_is_active` also grants for these ids).
  */
 export async function listSharedWithMeAlbums(): Promise<SharedAlbum[]> {
+  // `shares` is readable by owner OR viewer: without the viewer filter this
+  // would also list the caller's own outgoing shares as "shared with me".
+  const uid = await currentUserId();
   const { data: shareRows, error: sharesError } = await supabase
     .from('shares')
     .select('id, subject_id')
+    .eq('viewer_id', uid)
     .eq('subject_type', 'album')
     .is('revoked_at', null)
     .order('created_at', { ascending: false });
@@ -212,7 +264,7 @@ export async function listSharedWithMeAlbums(): Promise<SharedAlbum[]> {
     .map((row) => ({ share_id: row.id, album: albumsById.get(row.subject_id) as AlbumRow }));
 }
 
-/** A shared album's photos, from the viewer's side — `ok`-only via RLS. */
+/** A shared album's photos, from the viewer's side. RLS admits them only while the share is active and neither side has blocked the other; there is no moderation filter (migration 0013). */
 export async function listSharedAlbumPhotos(albumId: string): Promise<AlbumPhotoRow[]> {
   return listAlbumPhotos(albumId);
 }

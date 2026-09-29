@@ -84,7 +84,7 @@ describe('addAlbumPhoto', () => {
   beforeEach(() => {
     mockUpload.mockResolvedValue({ error: null });
     mockSingle.mockResolvedValue({
-      data: { id: 'photo-1', album_id: ALBUM_ID, storage_path: 'x', moderation_state: 'pending', created_at: 'now' },
+      data: { id: 'photo-1', album_id: ALBUM_ID, storage_path: 'x', created_at: 'now' },
       error: null,
     });
     (resizeForUpload as jest.Mock).mockResolvedValue({ uri: 'file://resized.jpg', width: 1600, height: 1200 });
@@ -103,7 +103,7 @@ describe('addAlbumPhoto', () => {
     expect(opts).toEqual({ contentType: 'image/jpeg', upsert: false });
   });
 
-  it('inserts only { album_id, storage_path } — never moderation_state, never an id', async () => {
+  it('inserts only { album_id, storage_path }: no moderation_state (albums are not moderated, migration 0013), never an id', async () => {
     await addAlbumPhoto({ albumId: ALBUM_ID, uri: 'file://original.jpg', width: 4000, height: 3000 });
 
     expect(mockFrom).toHaveBeenCalledWith('album_photos');

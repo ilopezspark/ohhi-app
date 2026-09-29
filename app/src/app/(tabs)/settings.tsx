@@ -1,256 +1,224 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { me as fetchMe } from '../../api/me';
-import { getMyPresence, setHereNow } from '../../api/presence';
-import { listMyPhotos, signedPhotoUrls } from '../../api/photos';
-import { listMyAlbums } from '../../api/albums';
-import { getMyCard } from '../../api/identityWrite';
-import { getIdentity } from '../../api/identity';
-import { getFirstName, getStatusLine, updateProfile } from '../../api/profile';
-import { tintForPhoto } from '../../photos/tint';
-import { usePresenceStore } from '../../presence/store';
-import { Badge, Header, Input, ListRow, Surface, Text, Toggle } from '../../ui';
-import { SettingsIcon } from '../../ui/icons';
-import { PhotoTile } from '../../settings/components/PhotoTile';
-import { colors, shadows, spacing } from '../../theme/tokens';
-
-const VERIFICATION_COPY: Record<string, string> = {
-  unverified: 'get verified',
-  email_verified: 'finish verifying',
-  id_pending: 'in progress',
-  manual_review: 'in progress',
-  verified: 'verified',
-  id_failed: 'try again',
-};
+import { CompletionBar, Header, PillButton, RowCard, SectionLabel, SettingsRow, Text } from '../../ui';
+import { CheckIcon, EyeIcon, PencilIcon, SettingsIcon } from '../../ui/icons';
+import { ProfileTile } from '../../profile/ProfileTile';
+import { colors, radii, shadows, spacing } from '../../theme/tokens';
+import { useMeData } from '../../me/root/useMeData';
 
 /**
- * `(tabs)/settings.tsx` renders `Me.html` — the "me" tab's own landing
- * screen (confusingly named: the file/route is still `settings.tsx` so
- * nothing that links `/(tabs)/settings` (this screen's own
- * `settings/block/[id].tsx`) breaks — see `docs/design/system.md`'s
- * screen->route map and the task brief). The gear button routes to
- * `/settings/menu`, this pass's new home for `Settings.html`'s content
- * (pause/here-now/notifications/blocked/sign-out/delete — see that file's
- * own doc comment for why those live there instead of a second copy here).
+ * `docs/design/me-redesign/brief.md`'s Me screen — the Me tab's root and
+ * launchpad (route file stays `(tabs)/settings.tsx` per ruling 11: other
+ * screens already link `/settings/...` and the tab bar's own route table
+ * expects this exact file, so only its content changes here, not its
+ * location). Gear -> `/me/settings`. Editing itself never happens here —
+ * `edit profile` opens the profile editor (built concurrently under
+ * `app/profile-editor/**`), the status row opens `/quick-status` (same),
+ * and the private-card/albums rows push to screens this pass doesn't own
+ * either (`/me/private-card`, `/settings/albums`).
  *
- * "here now" is still a real, wired toggle on this screen (as in the
- * mockup's own status card) even though it also appears in `/settings/menu`
- * — both read/write the same `usePresenceStore`/`set_here_now` RPC, so they
- * can never drift out of sync; "pause my grid" is a plain navigational row
- * here (matching the mockup's row styling) rather than a second toggle,
- * since decision-time this build put the actual pause switch in
- * `/settings/menu` only.
+ * All data comes from `src/me/root/useMeData.ts`, which refetches on every
+ * focus so a change made in one of those other screens shows up here
+ * without a manual pull-to-refresh.
  */
 export default function MeScreen() {
-  const queryClient = useQueryClient();
+  const {
+    firstName,
+    verified,
+    identityText,
+    photoUrl,
+    tint,
+    completionPercent,
+    nextBestCopy,
+    statusLine,
+    privateCardShareCount,
+    albumCount,
+    sharedAlbumCount,
+  } = useMeData();
 
-  const { data: meData } = useQuery({ queryKey: ['me'], queryFn: fetchMe });
-  const { data: myPresence } = useQuery({ queryKey: ['my_presence'], queryFn: getMyPresence });
-  const { data: myPhotos } = useQuery({ queryKey: ['my_photos'], queryFn: listMyPhotos });
-  const { data: albums } = useQuery({ queryKey: ['my_albums'], queryFn: listMyAlbums });
-  const { data: firstName } = useQuery({ queryKey: ['my_first_name'], queryFn: getFirstName });
-  const { data: statusLine } = useQuery({ queryKey: ['my_status_line'], queryFn: getStatusLine });
-  const { data: card } = useQuery({ queryKey: ['my_card'], queryFn: getMyCard });
-  const { data: identity } = useQuery({
-    queryKey: ['my_identity', meData?.id],
-    queryFn: () => getIdentity(meData!.id),
-    enabled: !!meData?.id,
-  });
-
-  const hereNow = usePresenceStore((s) => s.hereNow);
-
-  const seeded = useRef(false);
-  useEffect(() => {
-    if (seeded.current || meData === undefined) return;
-    seeded.current = true;
-    usePresenceStore.getState().setHereNow(!!meData?.here_now);
-  }, [meData]);
-
-  const [status, setStatus] = useState('');
-  const statusSeeded = useRef(false);
-  useEffect(() => {
-    if (statusSeeded.current || statusLine === undefined) return;
-    statusSeeded.current = true;
-    setStatus(statusLine ?? '');
-  }, [statusLine]);
-
-  const mainPhoto = myPhotos?.find((photo) => photo.position === 0) ?? null;
-  const { data: photoUrls } = useQuery({
-    queryKey: ['my_photo_urls', mainPhoto?.storage_path],
-    queryFn: () => signedPhotoUrls([mainPhoto!.storage_path]),
-    enabled: !!mainPhoto,
-  });
-  const mainPhotoUrl = mainPhoto ? photoUrls?.[mainPhoto.storage_path] : undefined;
-  const tint = meData ? tintForPhoto(meData.id, 0) : colors.avatarTints[0];
-
-  async function onToggleHereNow(next: boolean) {
-    usePresenceStore.getState().setHereNow(next);
-    try {
-      await setHereNow(next);
-      void queryClient.invalidateQueries({ queryKey: ['me'] });
-    } catch {
-      usePresenceStore.getState().setHereNow(!next);
-    }
-  }
-
-  async function onStatusBlur() {
-    const trimmed = status.trim();
-    if (trimmed === (statusLine ?? '')) return;
-    try {
-      await updateProfile({ status_line: trimmed.length > 0 ? trimmed : null });
-      void queryClient.invalidateQueries({ queryKey: ['my_status_line'] });
-    } catch {
-      // Best-effort — the field keeps whatever the user typed either way.
-    }
-  }
-
-  const filledCount = useMemo(() => {
-    let n = 0;
-    if (card) n += (['into', 'safer_sex', 'kinks', 'hard_nos'] as const).filter((f) => card[f]?.length > 0).length;
-    if (identity?.pronouns) n += 1;
-    if (identity?.orientation?.length) n += 1;
-    return n;
-  }, [card, identity]);
-
-  const verificationStatus = meData?.verification_status ?? null;
-  const verificationCopy = verificationStatus ? VERIFICATION_COPY[verificationStatus] : null;
-  const verified = verificationStatus === 'verified';
-
-  const campusText = meData ? [meData.campus_slug?.toUpperCase(), meData.campus_label].filter(Boolean).join(' · ') : '';
+  const hasStatus = !!statusLine && statusLine.trim().length > 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']} testID="me-screen">
       <ScrollView contentContainerStyle={styles.scroll}>
         <Header
           title="me"
-          titleSize={32}
+          titleSize={30}
           right={
             <Pressable
               testID="me-settings-gear"
               accessibilityRole="button"
-              accessibilityLabel="Settings"
+              accessibilityLabel="settings"
               style={styles.gear}
-              onPress={() => router.push('/settings/menu' as never)}
+              onPress={() => router.push('/me/settings' as never)}
             >
               <SettingsIcon size={20} />
             </Pressable>
           }
         />
 
-        <View style={styles.heroRow}>
-          <PhotoTile
+        <View style={styles.identityRow}>
+          <ProfileTile
             testID="me-photo-tile"
-            uri={mainPhotoUrl}
-            tint={tint}
-            pending={mainPhoto?.moderation_state === 'pending'}
-            hereNow={hereNow}
-            name={firstName ?? 'you'}
-            subtitle={campusText || undefined}
+            size="thumbnail"
+            data={{
+              firstName,
+              // `thumbnail` never renders `tier` — required by `ProfileTileData` regardless.
+              tier: 'away',
+              photoUrl,
+              tint,
+            }}
           />
-          <View style={styles.heroSide}>
-            <Surface radius="lg" shadow="xs" padding="lg" style={styles.hereNowCard}>
-              <View style={styles.hereNowRow}>
-                <Text variant="rowLabel">here now</Text>
-                <Toggle testID="me-here-now-toggle" value={hereNow} onValueChange={onToggleHereNow} />
-              </View>
-              <Text variant="helper" style={styles.hereNowHelper}>
-                turns off by itself after 2 hours quiet
+          <View style={styles.identityCol}>
+            <View style={styles.nameRow}>
+              <Text variant="display" numberOfLines={1} style={styles.name} testID="me-name">
+                {firstName}
               </Text>
-            </Surface>
-            {/*
-              `Me.html`'s "edit photos & tags" chip -> `/settings/profile-edit`
-              (added in the profile-edit build; previously rendered disabled
-              here since no route existed yet — see that screen's own doc
-              comment for the three-section editor it opens).
-            */}
+              {verified ? (
+                <View style={styles.verifiedBadge} accessibilityLabel="verified student" testID="me-verified-check">
+                  <CheckIcon size={13} color={colors.ink} />
+                </View>
+              ) : null}
+            </View>
+            {identityText ? (
+              <Text variant="bodyMedium" color={colors.inkSoft} testID="me-identity-line">
+                {identityText}
+              </Text>
+            ) : null}
             <Pressable
-              testID="me-edit-photos"
-              style={styles.editPhotosChip}
-              onPress={() => router.push('/settings/profile-edit' as never)}
+              testID="me-edit-profile"
+              accessibilityRole="button"
+              accessibilityLabel="edit profile"
+              style={styles.editPill}
+              onPress={() => router.push('/profile-editor' as never)}
             >
-              <Text variant="caption" color={colors.ink}>
-                edit photos &amp; tags
+              <PencilIcon size={14} color={colors.onDark} />
+              <Text variant="labelLg" color={colors.onDark}>
+                edit profile
               </Text>
             </Pressable>
-            <Text variant="helper" style={styles.gridHelper}>
-              this is how you look on the grid
-            </Text>
           </View>
         </View>
 
-        <Input
-          testID="me-status"
-          label="status"
-          multiline
-          value={status}
-          onChangeText={setStatus}
-          onBlur={onStatusBlur}
+        <View style={styles.completionBlock}>
+          <CompletionBar testID="me-completion" percent={completionPercent} />
+          {completionPercent < 100 && nextBestCopy ? (
+            <Text variant="micro" color={colors.inkSoft} testID="me-next-best">
+              {nextBestCopy}
+            </Text>
+          ) : null}
+        </View>
+
+        <PillButton
+          testID="me-preview"
+          label="see how you look on the grid"
+          icon={<EyeIcon size={16} color={colors.ink} />}
+          onPress={() => router.push('/profile-editor?tab=preview' as never)}
         />
 
-        <View>
-          <ListRow
-            testID="me-row-albums"
-            title="albums"
-            helper={`${albums?.length ?? 0} · private`}
-            onPress={() => router.push('/settings/albums' as never)}
-          />
-          <ListRow
-            testID="me-row-more-about-me"
-            title="more about me"
-            helper={`private card · ${filledCount} of 6 filled`}
-            onPress={() => router.push('/settings/card' as never)}
-          />
-          <ListRow testID="me-row-campus" title="my campus" helper={campusText} />
-          <ListRow
-            testID="me-row-verification"
-            title="verification"
-            right={
-              <Badge
-                label={verificationCopy ?? ''}
-                tone={verified ? 'success' : 'neutral'}
-              />
-            }
-            onPress={verified ? undefined : () => router.push('/settings/menu' as never)}
-          />
-          <ListRow
-            testID="me-row-pause"
-            title="pause my grid"
-            helper="hide me, keep my chats"
-            last
-            onPress={() => router.push('/settings/menu' as never)}
-          />
+        <View style={styles.section}>
+          <SectionLabel label="status" />
+          <RowCard style={styles.cardPadding}>
+            <Pressable
+              testID="me-status-row"
+              accessibilityRole="button"
+              accessibilityLabel={hasStatus ? statusLine! : 'add a status'}
+              onPress={() => router.push('/quick-status' as never)}
+              style={styles.statusRow}
+            >
+              <Text
+                variant="bodyMedium"
+                color={hasStatus ? colors.ink : colors.inkSoft}
+                style={styles.statusText}
+                numberOfLines={2}
+              >
+                {hasStatus ? statusLine : 'add a status'}
+              </Text>
+              <PencilIcon size={16} color={colors.inkSoft} />
+            </Pressable>
+          </RowCard>
+        </View>
+
+        <View style={styles.section}>
+          <SectionLabel label="only for people you choose" />
+          <RowCard style={styles.cardPadding}>
+            <SettingsRow
+              testID="me-row-private-card"
+              icon="lock"
+              title="private card"
+              subtitle={shareCountLabel(privateCardShareCount)}
+              accessory={{ kind: 'chevron' }}
+              onPress={() => router.push('/me/private-card' as never)}
+            />
+            <SettingsRow
+              testID="me-row-albums"
+              icon="image"
+              title="albums"
+              subtitle={albumsLabel(albumCount, sharedAlbumCount)}
+              accessory={{ kind: 'chevron' }}
+              onPress={() => router.push('/settings/albums' as never)}
+            />
+          </RowCard>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function shareCountLabel(count: number): string {
+  if (count === 0) return 'not shared with anyone';
+  return `shared with ${count} ${count === 1 ? 'person' : 'people'}`;
+}
+
+function albumsLabel(albumCount: number, sharedAlbumCount: number): string {
+  return `${albumCount} album${albumCount === 1 ? '' : 's'} · ${sharedAlbumCount} shared`;
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.mdLg, paddingBottom: spacing.huge, gap: spacing.xl },
   gear: {
     width: 40,
     height: 40,
-    borderRadius: 9999,
-    backgroundColor: colors.surface,
+    borderRadius: radii.circle,
+    backgroundColor: colors.paperRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.float,
+  },
+  identityRow: { flexDirection: 'row', gap: spacing.lgXl, alignItems: 'flex-start' },
+  identityCol: { flex: 1, gap: spacing.xs, paddingTop: spacing.xs },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.smMd },
+  name: { flexShrink: 1 },
+  verifiedBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: radii.circle,
+    backgroundColor: colors.sage,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroRow: { flexDirection: 'row', gap: spacing.lg, alignItems: 'stretch' },
-  heroSide: { flex: 1, gap: spacing.md, justifyContent: 'flex-start' },
-  hereNowCard: { gap: spacing.smMd },
-  hereNowRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  hereNowHelper: { fontSize: 11 },
-  editPhotosChip: {
+  editPill: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 9999,
+    alignSelf: 'flex-start',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+    backgroundColor: colors.ink,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.lgXl,
     paddingVertical: spacing.smMd,
-    ...shadows.sm,
   },
-  gridHelper: { fontSize: 12, textAlign: 'center' },
+  completionBlock: { gap: spacing.smMd },
+  section: { gap: spacing.smMd },
+  cardPadding: { paddingHorizontal: spacing.lgXl },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.mdLg,
+    paddingVertical: spacing.lgXl,
+  },
+  statusText: { flex: 1 },
 });

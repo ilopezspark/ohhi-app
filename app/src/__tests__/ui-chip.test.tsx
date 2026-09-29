@@ -113,15 +113,15 @@ describe('ui/ChipGroup', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('single mode replaces the selection, and re-tapping the selected chip clears it', async () => {
+  it('one mode replaces the selection, and re-tapping the selected chip clears it', async () => {
     const onChange = jest.fn();
     const { getByTestId, rerender } = await render(
-      <ChipGroup testID="g" options={options} value={[]} onChange={onChange} mode="single" />
+      <ChipGroup testID="g" options={options} value={[]} onChange={onChange} mode="one" />
     );
     await fireEvent.press(getByTestId('g-study'));
     expect(onChange).toHaveBeenCalledWith(['study']);
 
-    await rerender(<ChipGroup testID="g" options={options} value={['study']} onChange={onChange} mode="single" />);
+    await rerender(<ChipGroup testID="g" options={options} value={['study']} onChange={onChange} mode="one" />);
     await fireEvent.press(getByTestId('g-dates'));
     expect(onChange).toHaveBeenCalledWith(['dates']);
 

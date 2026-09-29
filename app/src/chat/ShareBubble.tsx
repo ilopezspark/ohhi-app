@@ -1,7 +1,8 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { AlbumRow } from '../api/albums';
+import { PrivateCardView } from '../me/card/PrivateCardView';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
-import { AlbumIcon, PersonIcon } from '../ui/icons';
+import { AlbumIcon } from '../ui/icons';
 import { Text } from '../ui';
 import type { ShareFeedItem } from './shareFeed';
 
@@ -29,43 +30,71 @@ interface Props {
  * thread open — the tap target and "shared until you unshare" framing are
  * kept, the photo grid itself is not reproduced. Flagged, not silently
  * dropped.
+ *
+ * The private-card branch renders through `me/card/PrivateCardView` (the
+ * same component `/me/private-card`'s own "how it arrives in a chat"
+ * preview uses), header-only (no `entries` — this bubble carries no card
+ * content, only the ids `chat/shareFeed.ts#ShareFeedItem` gives it), so the
+ * title/lock/`private` styling is guaranteed identical in both places
+ * instead of a second, hand-copied rendering of the same three pieces.
  */
 export function ShareBubble({ item, mine, otherName, album, onPress }: Props) {
   const isAlbum = item.kind === 'album';
-  const interactive = isAlbum || !mine; // outgoing private-card share has nowhere of mine to link to yet
 
-  const title = isAlbum ? (album?.name ?? 'an album') : mine ? 'more about you' : `more about ${otherName}`;
+  const title = album?.name ?? 'an album';
   const subtitle = isAlbum
     ? album
       ? `${album.photo_count} photo${album.photo_count === 1 ? '' : 's'} · tap to view`
       : 'tap to view'
     : mine
-      ? 'you shared this'
-      : 'tap to see it on their profile';
+      ? 'you shared this · tap to manage'
+      : 'tap to open';
 
   const content = (
     <View
       style={[styles.card, mine ? styles.cardMine : styles.cardTheirs]}
       testID={`share-bubble-${item.id}`}
     >
-      <View style={[styles.icon, isAlbum ? styles.iconAlbum : styles.iconCard]}>
-        {isAlbum ? <AlbumIcon size={18} color={colors.ink} /> : <PersonIcon size={18} color={colors.ink} />}
-      </View>
-      <View style={styles.body}>
-        <Text variant="rowLabel" style={{ fontSize: 13 }} color={mine ? colors.onDark : colors.ink}>
-          {title}
-        </Text>
-        <Text variant="captionMuted" color={mine ? colors.onDark : colors.subtle} style={styles.subtitle}>
-          {subtitle}
-        </Text>
-      </View>
+      {isAlbum ? (
+        <>
+          <View style={[styles.icon, styles.iconAlbum]}>
+            <AlbumIcon size={18} color={colors.ink} />
+          </View>
+          <View style={styles.body}>
+            <Text variant="rowLabel" style={{ fontSize: 13 }} color={mine ? colors.onDark : colors.ink}>
+              {title}
+            </Text>
+            <Text variant="captionMuted" color={mine ? colors.onDark : colors.subtle} style={styles.subtitle}>
+              {subtitle}
+            </Text>
+          </View>
+        </>
+      ) : (
+        <View style={styles.body}>
+          <PrivateCardView
+            name={mine ? 'you' : otherName}
+            titleColor={mine ? colors.onDark : colors.ink}
+            mutedColor={mine ? colors.onDark : colors.subtle}
+            testID={`share-bubble-${item.id}-card`}
+          />
+          <Text variant="captionMuted" color={mine ? colors.onDark : colors.subtle} style={styles.subtitle}>
+            {subtitle}
+          </Text>
+        </View>
+      )}
     </View>
   );
 
-  if (!interactive) return content;
-
+  // Every bubble opens something: an album, the full private card they
+  // shared with me (`chat/PrivateCardSheet.tsx`), or, for my own card, my
+  // card screen where I can see who has it and take it back.
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} testID={`share-bubble-press-${item.id}`}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={isAlbum ? `open ${title}` : mine ? 'your private card' : `more about ${otherName}`}
+      onPress={onPress}
+      testID={`share-bubble-press-${item.id}`}
+    >
       {content}
     </Pressable>
   );
@@ -91,7 +120,6 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   iconAlbum: { backgroundColor: colors.avatarTints[2] },
-  iconCard: { backgroundColor: colors.avatarTints[1] },
   body: { gap: 2, flexShrink: 1 },
   subtitle: { opacity: 0.85 },
 });

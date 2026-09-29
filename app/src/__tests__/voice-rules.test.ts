@@ -428,10 +428,21 @@ describe('voice rules — real source tree', () => {
     expect(violations).toEqual([]);
   });
 
-  it('app/me, app/profile-editor, app/quick-status* and me/ are not built yet — scanning them degrades to an empty list, not a crash', () => {
-    expect(listTsFiles(path.join(SRC, 'app', 'me'))).toEqual([]);
-    expect(listTsFiles(path.join(SRC, 'app', 'profile-editor'))).toEqual([]);
-    expect(listQuickStatusFiles(path.join(SRC, 'app'))).toEqual([]);
-    expect(listTsFiles(path.join(SRC, 'me'))).toEqual([]);
+  it('the scanner degrades to an empty list rather than crashing for a directory that does not exist', () => {
+    expect(listTsFiles(path.join(SRC, 'app', 'this-does-not-exist'))).toEqual([]);
+    expect(listQuickStatusFiles(path.join(SRC, 'this-does-not-exist'))).toEqual([]);
+  });
+
+  // app/me, app/profile-editor, app/quick-status* and me/ have since landed
+  // (the Me root/Settings, private-card and profile-editor builds this
+  // foundation pass's own comment predicted) — the assertion above now
+  // covers the "degrades gracefully" behaviour generically instead, and the
+  // scoped-scan test right above this one picks their real files up
+  // automatically and voice-lints them for real.
+  it('picked up real files from app/me, app/profile-editor, app/quick-status* and me/ once those screens landed', () => {
+    const relative = SCOPE_FILES.map((f) => path.relative(SRC, f));
+    expect(relative.some((f) => f.startsWith(path.join('app', 'me')))).toBe(true);
+    expect(relative.some((f) => f.startsWith(path.join('app', 'profile-editor')))).toBe(true);
+    expect(relative.some((f) => f.startsWith('me'))).toBe(true);
   });
 });

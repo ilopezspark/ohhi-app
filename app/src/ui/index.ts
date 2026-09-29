@@ -18,3 +18,5 @@ export * from './SectionLabel';
 export * from './CompletionBar';
 export * from './RowCard';
 export * from './SettingsRow';
+export * from './PillButton';
+export * from './VerificationPill';

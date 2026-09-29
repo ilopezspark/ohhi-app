@@ -38,3 +38,44 @@ export async function getIdentity(userId: string): Promise<Identity | null> {
   const body = (await response.json()) as Partial<Identity>;
   return { pronouns: body.pronouns ?? null, orientation: body.orientation ?? [] };
 }
+
+export interface SharedPrivateCard {
+  into: string[];
+  safer_sex: string[];
+  kinks: string[];
+  hard_nos: string[];
+}
+
+/**
+ * `GET /functions/v1/identity/card/:owner_id` from the recipient's side
+ * (`supabase/functions/identity/README.md`): authorized when the caller is
+ * the owner or holds an active `private_card` share from them
+ * (`private.share_is_active`). Every refusal is the same 404 (decision 24),
+ * including a share the owner has since taken back, so a `null` here means
+ * "not shared with you (any more)", never an error to show. The owner
+ * revoking a share therefore takes effect on the recipient's next fetch.
+ */
+export async function getSharedPrivateCard(ownerId: string): Promise<SharedPrivateCard | null> {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+  if (sessionError) throw mapSupabaseError(sessionError);
+  const accessToken = session?.access_token;
+  if (!accessToken) throw mapSupabaseError(new Error('not signed in'));
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/identity/card/${ownerId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (response.status === 404) return null;
+  if (!response.ok) throw mapSupabaseError(new Error(`identity card ${response.status}`));
+
+  const body = (await response.json()) as Partial<SharedPrivateCard>;
+  return {
+    into: body.into ?? [],
+    safer_sex: body.safer_sex ?? [],
+    kinks: body.kinks ?? [],
+    hard_nos: body.hard_nos ?? [],
+  };
+}

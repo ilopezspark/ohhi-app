@@ -110,8 +110,8 @@ export default function AlbumDetailScreen() {
   });
 
   const removePhotoMutation = useMutation({
-    mutationFn: (photoId: string) => removeAlbumPhoto(photoId),
-    onSuccess: (_void, photoId) => setPhotos((prev) => prev.filter((p) => p.id !== photoId)),
+    mutationFn: (photo: { id: string; storage_path: string }) => removeAlbumPhoto(photo.id, photo.storage_path),
+    onSuccess: (_void, photo) => setPhotos((prev) => prev.filter((p) => p.id !== photo.id)),
     onError: (error: unknown) => setActionError(mapSupabaseError(error).message),
   });
 
@@ -212,16 +212,11 @@ export default function AlbumDetailScreen() {
         return (
           <View style={styles.photoCell} testID={`album-photo-${item.id}`}>
             {url ? <Image source={{ uri: url }} style={styles.photoImage} /> : <View style={styles.photoPlaceholder} />}
-            {item.moderation_state === 'pending' ? (
-              <Text style={styles.pendingBadge} testID={`album-photo-pending-${item.id}`}>
-                Pending review
-              </Text>
-            ) : null}
             {isOwner ? (
               <Pressable
                 testID={`album-photo-remove-${item.id}`}
                 style={styles.removeButton}
-                onPress={() => removePhotoMutation.mutate(item.id)}
+                onPress={() => removePhotoMutation.mutate(item)}
               >
                 <Text style={styles.removeButtonText}>Remove</Text>
               </Pressable>
@@ -306,19 +301,6 @@ const styles = StyleSheet.create({
   photoCell: { flex: 1 / 3, aspectRatio: 1, margin: 2, position: 'relative' },
   photoImage: { width: '100%', height: '100%', borderRadius: radii.sm / 2 },
   photoPlaceholder: { width: '100%', height: '100%', borderRadius: radii.sm / 2, backgroundColor: colors.tint },
-  pendingBadge: {
-    position: 'absolute',
-    bottom: 4,
-    left: 4,
-    right: 4,
-    fontSize: 9,
-    color: colors.onDark,
-    backgroundColor: colors.overlay,
-    textAlign: 'center',
-    borderRadius: 4,
-    paddingVertical: 1,
-    fontFamily: fontFamilies.outfitSemiBold,
-  },
   removeButton: { position: 'absolute', top: 2, right: 2, backgroundColor: colors.overlay, borderRadius: 4, paddingHorizontal: 4 },
   removeButtonText: { color: colors.onDark, fontSize: 10 },
   footer: { padding: spacing.lgXl, gap: spacing.md },

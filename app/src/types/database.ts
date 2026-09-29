@@ -19,21 +19,18 @@ export type Database = {
           album_id: string
           created_at: string
           id: string
-          moderation_state: Database["public"]["Enums"]["photo_moderation_state"]
           storage_path: string
         }
         Insert: {
           album_id: string
           created_at?: string
           id?: string
-          moderation_state?: Database["public"]["Enums"]["photo_moderation_state"]
           storage_path: string
         }
         Update: {
           album_id?: string
           created_at?: string
           id?: string
-          moderation_state?: Database["public"]["Enums"]["photo_moderation_state"]
           storage_path?: string
         }
         Relationships: [

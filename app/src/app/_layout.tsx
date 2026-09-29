@@ -82,6 +82,13 @@ export default function RootLayout() {
           <Stack.Screen name="(onboarding)" />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="profile/[id]" options={{ headerShown: true, title: 'Profile' }} />
+          {/* Me redesign (docs/design/me-redesign/brief.md, ruling 11): the
+              profile editor is presented modally over the tabs; QuickStatus is
+              its own standalone modal from Me's status row. Both need
+              `presentation: 'modal'` set here — it can't be set from inside
+              the nested route itself. */}
+          <Stack.Screen name="profile-editor" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="quick-status" options={{ presentation: 'modal' }} />
           <Stack.Screen name="restricted" />
           <Stack.Screen name="+not-found" />
         </Stack>

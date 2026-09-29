@@ -168,14 +168,11 @@ The onboarding photo step (`(onboarding)/photo.tsx`, main photo / position 0 onl
 supporting modules, per `docs/app-onboarding-grid-plan.md` §2 and
 `docs/app-architecture-plan.md` §7.
 
-- **`src/photos/path.ts`** — `profilePhotoPath(userId, position, ext = 'jpg')` builds
-  `{userId}/{position}.jpg` and validates it against the `profile-photos` bucket's
-  `storage.objects` "read when ok and readable" policy regex, copied verbatim from
-  `supabase/migrations/20260918000002_core_schema.sql` (folder must match the uuid shape,
-  filename must match `^[0-2]\.jpg$`). The looser owner insert/update/delete policies only
-  require the folder segment to equal `auth.uid()::text`, but a path that only satisfied that
-  shape could upload successfully and then never become visible to anyone else once
-  approved — so the helper always enforces the stricter regex.
+- **`src/photos/path.ts`** — since migration 0011, a new or replaced photo is stored at
+  `{user_id}/{photo_id}.jpg`, where `photo_id` is a fresh client-minted uuid
+  (`newPhotoId()` / `profilePhotoPathForId()`); the path no longer follows the grid position.
+  Legacy `{user_id}/{0-2}.jpg` rows stay readable (the read policy accepts either shape,
+  `isReadableProfilePhotoPath()`), and `profilePhotoPath()` survives only for that legacy shape.
 - **`src/photos/resize.ts`** — `resizeForUpload({ uri, width, height })` resizes to a 1600px
   long edge and re-encodes JPEG at quality 0.8 (`docs/decisions.md` #39) via
   `expo-image-manipulator`'s `manipulateAsync`. Never upscales. The manipulator's output is a
@@ -191,15 +188,19 @@ supporting modules, per `docs/app-onboarding-grid-plan.md` §2 and
 - **`src/photos/TintedPlaceholder.tsx`** — the tinted color-block component, with an optional
   "under review" badge for the pending-moderation state. Reused later by the grid/profile
   card as a generic broken-image fallback.
-- **`src/api/photos.ts`** — `uploadProfilePhoto({ position, uri, width, height })`: resize ->
-  compute tint -> `storage.from('profile-photos').upload(path, blob, { contentType:
-  'image/jpeg', upsert: true })` -> upsert the `user_photos` row (`user_id`, `position`,
-  `storage_path`, `tint` only — `moderation_state` is never sent; it's excluded from the
-  owner's column grants and force-set to `pending` server-side by `user_photos_guard()`
-  regardless of the request body). The row is only written after the storage upload confirms,
-  so a failed upload can never leave a `user_photos` row pointing at a missing object
-  (onboarding-grid plan §6). `listMyPhotos()` reads all of the caller's own photos,
-  unfiltered by `moderation_state` (the owner's own reads are never filtered to `ok`).
+- **`src/api/photos.ts`** — the migration 0011/0012 contract, used by onboarding and the
+  profile editor alike. **New photo** (`addProfilePhoto`): resize -> upload to a fresh
+  `{user_id}/{photo_id}.jpg` with `upsert: false` -> insert `{ id, user_id, position,
+  storage_path, tint }`. **Replace** (`replaceProfilePhoto`): upload to another fresh name ->
+  update the row's `storage_path`/`tint` by id -> remove the old object last. **Remove**
+  (`removeProfilePhoto`): delete the row -> remove the object -> close the gap with
+  `set_my_photo_order`. **Reorder** (`setMyPhotoOrder`): the RPC only; the client can no
+  longer write `position`. `moderation_state` is never sent: `user_photos_guard()` sets every
+  new row, and every `storage_path` change, to `pending`, so nothing skips review. The row is
+  written only after the upload confirms, so a row never points at a missing object.
+  `uploadProfilePhoto({ position, ... })` is onboarding's entry point: it replaces when a row
+  already sits at `position` and adds otherwise. `listMyPhotos()` reads the caller's own
+  photos, filtered by `user_id`, unfiltered by `moderation_state`.
 - **`(onboarding)/photo.tsx`** — standalone screen (reads the current user off the Supabase
   session itself, no props); `expo-image-picker` for camera/library with permission-denied
   copy; local preview before upload; disables the upload/retake controls and shows a spinner
@@ -215,8 +216,9 @@ Packages added: `expo-image-picker`, `expo-image-manipulator` (via `npx expo ins
 Tests: `src/__tests__/photos-path.test.ts` (storage policy regex conformance),
 `src/__tests__/photos-tint.test.ts` (fallback-tint determinism), `src/__tests__/photos-resize.test.ts`
 (resize/compress options, mocked manipulator), `src/__tests__/photos-api.test.ts`
-(`uploadProfilePhoto` sequencing against a mocked client — resize, then storage upload, then
-row upsert; asserts `moderation_state` is never in the upsert payload), and
+(the add/replace/remove/reorder sequences and their ordering against a mocked client; never
+`moderation_state`, never `upsert: true`), `src/__tests__/storage-no-overwrite.test.ts` (every
+storage upload in the app passes `upsert: false`; no storage `update()`/`move()`), and
 `src/__tests__/photos-screen.test.tsx` (component test for the picker/preview/uploading/
 pending/error states).
 
@@ -667,9 +669,16 @@ object under RLS rather than erroring, and the row falls back to "Blocked user".
 grant), album-photo upload-then-insert (`album-photos` bucket, `{user_id}/{album_id}/
 {photo_id}.jpg` — `photo_id` is a locally generated v4-shaped id used only for path
 uniqueness, since `album_photos.id` is server-assigned and not in the owner's insert grant),
-never sending `moderation_state`. Pending photos render a "Pending review" badge for the owner
-(the owner select ignores moderation state); the shared-viewer path (`listSharedAlbumPhotos`)
-is the same query, filtered to `ok` by RLS instead of by the client.
+with `upsert: false` to a fresh name every time (migration 0012: no client storage UPDATE
+policy, and a name one of the owner's rows references can be neither re-uploaded nor deleted).
+Removing a photo deletes the row first and the object second; deleting an album deletes its
+photo rows, then the album (the `album_photos` foreign key has no cascade), then the objects.
+Album photos are **not moderated** (migration 0013, decision 89): there is no
+`moderation_state` column on `album_photos` any more, no "pending review" badge, and a share
+viewer sees every photo in the album while the share is active and neither side has blocked
+the other; `listSharedAlbumPhotos` is the same query as the owner's, scoped by RLS.
+`listMyAlbums` filters on `owner_id` and `listSharedWithMeAlbums` on `viewer_id`: the albums
+and shares select policies also admit the other party, so an unfiltered read mixed the two.
 
 `api/shares.ts`'s `enforce_share_rules()` requires: subject ownership (album owned by the
 sharer, or `subject_id = owner_id` for `private_card`), a **mutual** conversation
@@ -731,8 +740,9 @@ states the 30-day window plainly and that re-signup purges-and-restarts rather t
 ### Tests
 
 `blocks-api.test.ts`, `reports-api.test.ts` (exactly six insert columns, note→null blank
-trim, no severity value for any category), `albums-api.test.ts` (album-photo insert never
-sends `moderation_state`/`id`, upload-before-insert ordering, path shape), `shares-api.test.ts`
+trim, no severity value for any category), `albums-api.test.ts` (album-photo insert sends only
+`album_id`/`storage_path`, upload-before-insert ordering, path shape), `albums-no-overwrite.test.ts`
+(fresh names with `upsert: false`, row-before-object on remove and album delete, owner/viewer filters), `shares-api.test.ts`
 (share insert shape for both subject types, revoke's single-column update, share-candidate
 scoping to `open` conversations), `editors-vocab.test.ts` (the source-diff divergence check
 described above), `editors-validation.test.ts` (decision 20/21 limits, `ChipPicker`'s
@@ -740,8 +750,9 @@ described above), `editors-validation.test.ts` (decision 20/21 limits, `ChipPick
 renders before any API call, target name best-effort load, navigate-away-on-success, error
 copy, cancel), `settings-report-screen.test.tsx` (decision 47 hidden state, no severity control
 in the DOM, disabled-until-category, context passthrough, generic thanks copy),
-`settings-account-delete.test.tsx` (two-tap confirm, RPC-then-sign-out ordering, no sign-out on
-RPC failure).
+the account-delete cases (two-tap confirm, RPC-then-sign-out ordering, no sign-out on RPC
+failure, the 30-day copy) now live in `me-settings-screen.test.tsx`, since `/settings/account`
+redirects to `/me/settings`.
 
 ### Deviations
 
@@ -886,6 +897,8 @@ gear → settings — now lives inside that same `settings.tsx` file; only the t
 screen's own contents changed.
 
 ### `Settings.html`'s content moved to a new route, not a literal `/settings`
+
+> **Superseded by the Me redesign** (see "Me redesign: profile editor, photo uploads and cleanups" at the end of this file): `/settings/menu` is now a redirect to `/me/settings`, and `/settings/notifications` and `/settings/account` are too; this section's layout is replaced. Kept for history.
 
 `Me.html`'s gear button needed somewhere to go that (a) matches `Settings.html`'s content and
 (b) doesn't collide with the tab's own URL. Expo Router strips `(tabs)` from the tab screen's
@@ -1202,6 +1215,8 @@ added locally per the task brief:
 
 <!-- BEGIN: Edit photos & tags -->
 ## Edit photos & tags
+
+> **Superseded by the Me redesign** (see "Me redesign: profile editor, photo uploads and cleanups" at the end of this file): this route is now a `<Redirect>`. Kept for history.
 
 `/settings/profile-edit` (`app/src/app/settings/profile-edit.tsx`) — `Me.html`'s "edit photos &
 tags" chip, previously rendered disabled on `(tabs)/settings.tsx` with a doc comment noting no
@@ -1609,3 +1624,258 @@ exported and unit-tested directly against synthetic strings, separately from the
 - The private card, `set_my_photo_order` RPC, legal-link placeholder map, and all eight screens
   themselves are explicitly out of scope for this pass — foundation only.
 <!-- END: Me redesign: foundation -->
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Me redesign: private card section below — PrivateCard, EditPrivateCard,-->
+<!-- the about-you editor, and the shared card view. Please keep further    -->
+<!-- additions after this point in their own clearly delimited section.     -->
+<!-- ---------------------------------------------------------------------- -->
+
+<!-- BEGIN: Me redesign: private card -->
+## Me redesign: private card
+
+`docs/design/me-redesign/brief.md`'s **Rulings**, built alongside the Me root/Settings and
+profile-editor slices landing in the same pass. Owned files: `src/app/me/private-card.tsx`,
+`src/app/profile-editor/private-card.tsx`, `src/app/profile-editor/about.tsx`, `src/me/card/**`,
+the two `src/app/settings/{identity,card}.tsx` redirects, and one edit to `src/chat/ShareBubble.tsx`.
+
+### Routes
+
+- `/me/private-card` — view: the lock explainer, a "how it arrives in a chat" preview (or an
+  empty state when nothing is filled in), and the "shared with" list with per-person `take back`.
+- `/profile-editor/private-card` — the four-group chip editor (into, safer sex, kinks, hard nos).
+- `/profile-editor/about` — pronouns + orientation + the `show on my profile` toggle, ruling 2.
+- `src/app/settings/identity.tsx` and `.../card.tsx` are now `<Redirect>`s to `/profile-editor/about`
+  and `/profile-editor/private-card` respectively, so old links/deep-links keep working.
+
+### The shared card component
+
+`src/me/card/PrivateCardView.tsx` — one component, content only (no card chrome: background/
+shadow/padding stay with the caller, since it sits inside two different surfaces). `entries`
+present renders the full card (groups in ruled order, empty groups omitted, hard nos last in
+`boundary` tone); `entries` omitted renders header-only (lock tile + `more about <name>` + a
+`private` label, no groups). Two call sites:
+
+- `/me/private-card.tsx`'s "how it arrives in a chat" preview — full mode, inside a plain white
+  card the screen itself styles.
+- `src/chat/ShareBubble.tsx`'s private-card branch — header-only mode, inside the existing chat
+  bubble chrome (dark for the sender's own "mine" bubble, white otherwise; `titleColor`/
+  `mutedColor` props adapt the text colour to each). This is the one edit made to `ShareBubble.tsx`:
+  the old branch's hand-rolled icon+title block is replaced with `<PrivateCardView>`, so the
+  bubble and the `/me/private-card` preview render the exact same title/lock/label instead of two
+  hand-copied strings that could drift.
+
+### Summary hooks (`src/me/card/summary.ts`)
+
+- `usePrivateCardSummary()` → `{ filled: number, total: 4 }` — groups with at least one entry,
+  from `getMyCard()`.
+- `useAboutSummary()` → `{ isPublic: boolean, filled: number }` — `filled` is 0-2 (pronouns set,
+  orientation non-empty); `isPublic` reads `user_identity.is_public` directly (not part of
+  `getIdentity`'s return shape, which also serves reading *other* people's identity).
+
+Both are React Query hooks reading `queryKeys.me.card` / `queryKeys.me.about`
+(`src/me/queryKeys.ts` — created by this build since no other agent had yet; the Me root/Settings
+build later extended the same file additively with its own keys, see that file's own header).
+
+### Other `src/me/card/` files
+
+`fieldLabels.ts` (the four groups' lowercase display copy, shared by the view and the editor's
+`SectionLabel` headers), `hardNos.ts` (client-side mirror of `validate.ts`'s `hardNosArray` — trim,
+collapse whitespace, 40-char cap, control-character rejection, case-insensitive de-duplication
+against both fixed suggestions and other typed entries, canonicalizing to a fixed suggestion's own
+spelling on a case-insensitive match), `relativeTime.ts` (`sent 3 days ago` / `sent last week`
+formatting, `now` injectable for tests), `sharedWith.ts` (active `private_card` shares joined with
+each recipient's first name — a small local join on top of `api/shares.ts#listSharesForSubject`,
+same convention as that file's own `listShareCandidates`).
+
+### Deviations from the artboards
+
+- **Pronouns/`i'm` are never in the card view or editor** (ruling 1) — `02-private-card.png` and
+  `08-edit-private-card.png` draw them inside the card; per the rulings they live only at
+  `/profile-editor/about`, gated behind one `is_public` switch.
+- **No "single" chip** anywhere (ruling 6) — not offered. `ChipGroup`'s one-at-a-time mode is
+  now spelled `mode="one"` (it was `"single"`, a banned word under the voice rules).
+- **Hard nos "always shown last"**, not "always shown first" — the editor artboard's caption is
+  corrected per ruling 5; `SectionLabel`'s `note` prop carries the corrected copy.
+- **The `tested <mon> '<yy>` picker** is a small inline `Sheet` (month chips, then year chips —
+  the six most recent years, computed from the real clock, not hardcoded) rather than a native
+  date/wheel picker, matching the kit's existing `Sheet` primitive and avoiding a new dependency.
+- **`ShareBubble`'s private-card bubble carries no card content inline** (into/safer-sex/kinks/
+  hard-nos chips) — `chat/shareFeed.ts#ShareFeedItem` only carries share ids, and fetching a card
+  per bubble on every thread open would be wasteful. Tapping it opens the full card:
+  `chat/PrivateCardSheet.tsx` reads it through `api/identity.ts#getSharedPrivateCard` (the
+  identity function's `GET /card/:owner_id`, authorized by an active share) and renders it with
+  the same `PrivateCardView`. A taken-back card answers 404 and the sheet says it is no longer
+  shared. Tapping your own outgoing card bubble opens `/me/private-card`.
+- **`EmptyState`'s action button and the "shared with" `take back` chip** use `Button`/`Chip`
+  rather than a bespoke control — no new primitive was needed.
+
+### Verification
+
+- Owned suites — `npx jest card-private card-about ShareBubble` — 5 suites / 48 tests pass.
+- Full run: 91/95 suites pass; the 4 failing (`photos-api`, `api-owner-filter`,
+  `me-settings-toggles`, and one file's worth of violations inside `voice-rules`) all point at
+  `src/api/photos.ts`, `src/me/root/**`/`src/me/settings/**`, and
+  `src/me/editor/ProfileEditorDraftContext.tsx` — the concurrently in-progress profile-editor and
+  Me-root/Settings builds, not this pass. `voice-rules`'s other failure is its own guard assertion
+  that `app/me`/`app/profile-editor` are empty, which is now stale by design once any agent's
+  screens land (its own doc comment anticipates this).
+- `npx tsc --noEmit` — clean except two pre-existing errors in the same in-progress files
+  (`settings/profile-edit.tsx`'s route type, `photos-api.test.ts`'s `deleteProfilePhoto` import);
+  nothing in `me/card/`, `app/me/private-card.tsx`, `app/profile-editor/{private-card,about}.tsx`,
+  or `chat/ShareBubble.tsx`.
+- `npx expo export --platform web` — succeeds.
+<!-- END: Me redesign: private card -->
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Me redesign: Me and Settings section below — added alongside the      -->
+<!-- private card and profile editor slices in the same pass. Please keep  -->
+<!-- further additions after this point in their own clearly delimited     -->
+<!-- section.                                                               -->
+<!-- ---------------------------------------------------------------------- -->
+
+<!-- BEGIN: Me redesign: Me and Settings -->
+## Me redesign: Me and Settings
+
+`docs/design/me-redesign/brief.md`'s **Rulings**, built alongside the private-card and
+profile-editor slices landing in the same pass. Owned files: `src/app/(tabs)/settings.tsx` (the
+Me root — route file unchanged, per ruling 11), `src/app/me/{_layout,settings,campus,verification,
+blocked,report-help}.tsx`, `src/app/me/info/[slug].tsx`, `src/app/settings/{menu,notifications,
+account}.tsx` (now `<Redirect href="/me/settings">`s), `src/me/{queryKeys,links}.ts` (see below),
+`src/me/root/**`, `src/me/settings/**`.
+
+### Route map
+
+`(tabs)/settings` (Me) → gear → `/me/settings` → `my campus`/`verification` → `/me/campus`,
+`/me/verification`; `blocked` → `/me/blocked`; `report someone` → `/me/report-help`; the four
+"boring but important" rows → `/me/info/[slug]` (`src/me/links.ts`'s placeholder map — no real
+URLs yet). Me's own rows: `edit profile` → `/profile-editor` (built concurrently), `see how you
+look on the grid` → `/profile-editor?tab=preview`, status card → `/quick-status` (concurrent),
+`private card` → `/me/private-card` (concurrent), `albums` → the existing `/settings/albums`
+(untouched). `/settings/{menu,notifications,account}` redirect to `/me/settings`;
+`/settings/{block,report}/[id]` and `/settings/albums/**` are untouched.
+
+### Query keys (`src/me/queryKeys.ts`)
+
+Shared with the private-card build, which created the file first — extended additively (nothing
+of theirs renamed/removed). This build added `queryKeys.me.{result, firstName, gradYear,
+albumsSummary, majorLabel, notificationPrefs, blockedUsers, presence}`; see that file's own doc
+comments for exactly what each key reads and who should invalidate it. The profile editor should
+import from here too rather than inventing its own key strings.
+
+### Local components (nothing added to `ui/`/`profile/`/`theme/`)
+
+`src/me/settings/DetailRow.tsx` — a title + arbitrary right-hand `ReactNode` + optional `onPress`
+row, same 44pt metrics as `ui/SettingsRow`. Built because `SettingsRow`'s `accessory` prop is a
+closed one-kind-at-a-time union and several artboard rows need two accessories at once ("my
+campus"'s value text *and* a chevron; "verification"'s pill *and* a chevron; "blocked"'s count
+*and* a chevron). `src/me/root/useMeData.ts` / `src/me/settings/useSettingsData.ts` — the two
+screens' data hooks (composed entirely from existing `api/` functions, see their own doc
+comments), plus `src/me/root/queries.ts` and `src/me/settings/queries.ts` for the few small
+aggregates/reads (private-card share count, albums-with-a-share count, first `major` tag,
+`users_private.school_email`, campus city/state) that have no existing `api/` wrapper.
+`src/me/settings/{verification,notificationGroups}.ts` are pure label/mapping helpers.
+
+### Deviations from the artboards
+
+- **Verification/campus rows aren't `SettingsRow`** — see `DetailRow` above.
+- **Delete my account has no dedicated route.** Ruling 11's route map lists none, and the old
+  `/settings/account` screen is now a redirect — the two-tap confirm (decision 17's copy,
+  rewritten to the voice rules) lives inline in `/me/settings` itself instead.
+- **"log out" renders as a white pill**, matching `01-me.png`'s "see how you look on the grid"
+  chrome, rather than `ui/Button`'s ink-filled `secondary` variant. Both now use one shared
+  `ui/PillButton`; the verification pill (Settings row and `/me/verification`) is likewise one
+  shared `ui/VerificationPill`.
+- **Albums summary aggregates existing `api/` calls** (`listMyAlbums` + one `listSharesForSubject`
+  per album, same N+1 pattern `settings/albums/index.tsx` already uses) rather than a new bulk
+  query — consistent with the existing codebase, not a new pattern.
+
+### Verification
+
+- Owned suites — `npx jest me-root me-settings` — 5 suites / 39 tests pass.
+- Full run: `npx jest` — 97 suites / 1000 tests pass (includes the concurrent private-card and
+  profile-editor builds' own suites).
+- `npx tsc --noEmit` — clean.
+- `npx expo export --platform web` — succeeds.
+<!-- END: Me redesign: Me and Settings -->
+
+<!-- BEGIN: Me redesign: profile editor, photo uploads and cleanups -->
+## Me redesign: profile editor, photo uploads and cleanups
+
+`docs/design/me-redesign/brief.md` (rulings first), finishing the profile editor and the
+cross-cutting pieces the Me redesign left open.
+
+### Route map (the whole Me section)
+
+| Route | File | Notes |
+|---|---|---|
+| Me (tab `me`) | `(tabs)/settings.tsx` | route file unchanged (ruling 11) |
+| `/me/settings` | `me/settings.tsx` | plus `/me/{campus,verification,blocked,report-help}`, `/me/info/[slug]` |
+| `/me/private-card` | `me/private-card.tsx` | the owner's card, who has it, `take back` |
+| `/profile-editor` | `profile-editor/index.tsx` | modal; Edit / Preview tabs, `?tab=preview` opens Preview |
+| `/profile-editor/photos` | `profile-editor/photos.tsx` | add, replace, remove, long-press drag / make first |
+| `/profile-editor/status` | `profile-editor/status.tsx` | writes into the editor draft |
+| `/profile-editor/about` | `profile-editor/about.tsx` | pronouns, i'm, `show on my profile` |
+| `/profile-editor/private-card` | `profile-editor/private-card.tsx` | the four groups, hard nos last |
+| `/quick-status` | `quick-status.tsx` | modal from Me's status row; saves straight away |
+| `/settings/albums`, `/settings/albums/[id]` | unchanged | albums keep their routes |
+| `/settings/block/[id]`, `/settings/report/[id]` | unchanged | |
+
+Redirects, so old links keep working: `/settings/menu`, `/settings/notifications` and
+`/settings/account` go to `/me/settings`; `/settings/profile-edit` to `/profile-editor`;
+`/settings/identity` to `/profile-editor/about`; `/settings/card` to
+`/profile-editor/private-card`. Nothing in the app links to a removed screen.
+
+### Profile editor
+
+- **Draft.** Status, here for and tags are a draft (`me/editor/useProfileEditorDraft.ts`, one
+  instance shared by the whole modal stack through `ProfileEditorDraftContext`). `done` writes
+  only what changed, in parallel; a field that fails stays dirty and in the draft, and whatever
+  did save is invalidated so Me shows it without a refresh. `cancel` on a dirty draft asks
+  first, and so does every other way out (swipe-down, hardware back) via `usePreventRemove`. A
+  failed first load shows the error and `try again` instead of spinning.
+- **Photos are not draft**: every add/replace/remove/reorder applies at once, because each
+  upload goes to review whenever it lands. Every write is optimistic against
+  `queryKeys.me.photos` (so the editor row, Preview and Me move together) and rolls back, then
+  refetches, on failure. A new photo goes into the lowest free position, not `photos.length`.
+  Any change that would take the caller off the grid (a photo still in review becoming first by
+  reorder, removal or replacing an approved first photo, or removing the last photo) asks
+  first, per the reorder contract. Tiles in review say `in review`.
+- **Section weights.** Each section's `+N%` comes from `profile/completion.ts#sectionWeight`,
+  the same function Me's bar uses; a complete section shows its note (`N picked`, `N of 3`).
+- **Preview** renders the shared `ProfileTile` hero with the draft values; its say-hi/message
+  footer is at 40% opacity, untouchable and hidden from accessibility.
+
+### Shared components promoted to `ui/`
+
+`ui/PillButton` (Me's "see how you look on the grid" and Settings' "log out", previously two
+copies of one style) and `ui/VerificationPill` (Settings' verification row and
+`/me/verification`, previously two copies). `DetailRow` is used by one screen only and stays in
+`me/settings/`. `ChipGroup`'s one-at-a-time mode is `mode="one"` (was `"single"`, a banned word).
+
+### Private card, recipient side
+
+Tapping a private-card bubble in a chat opens `chat/PrivateCardSheet.tsx`: the full card, read
+fresh through `api/identity.ts#getSharedPrivateCard` and rendered with the same
+`PrivateCardView` the owner previews. A card the owner has taken back answers 404 and the sheet
+says so. Your own outgoing bubble opens `/me/private-card`.
+
+### Deviations
+
+- **Replace keeps the row.** A replaced photo keeps its `user_photos.id` and position; only its
+  `storage_path` moves to a fresh object, the guard resets it to `pending`, and the old object
+  is removed after the row no longer names it. This is the replace flow migration 0012's own
+  header lists as legitimate. Deleting the row and inserting a new one would also satisfy the
+  storage policies, but would lose the position (and the photo, if the new upload failed).
+- **Private card row has no signal dot**, although the editor artboard draws one: the card
+  carries no completion weight and the brief says nobody should be nudged into filling it in.
+- **Drag handle.** The whole tile follows the finger on a long press; the ⠿ badge is the
+  artboard's cue. Web has no drag and offers `move up` / `move down` in the pencil sheet.
+
+### Tests
+
+`editor-screen.test.tsx` (tabs, cancel/discard, dismiss guard, done, load failure, EditStatus,
+QuickStatus), `editor-photos-screen.test.tsx`, `editor-photo-slots.test.ts`,
+`chat-private-card-sheet.test.tsx`, two share-bubble cases in `chat-thread-screen.test.tsx`,
+`albums-no-overwrite.test.ts`, `storage-no-overwrite.test.ts`.
+<!-- END: Me redesign: profile editor, photo uploads and cleanups -->

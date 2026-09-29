@@ -35,6 +35,7 @@ import { signedPhotoUrls } from '../../api/photos';
 import { Composer } from '../../chat/Composer';
 import { MediaPreview, type MediaPreviewAsset, type ViewLimitChoice } from '../../chat/MediaPreview';
 import { MessageBubble, type ThreadMessage } from '../../chat/MessageBubble';
+import { PrivateCardSheet } from '../../chat/PrivateCardSheet';
 import { RecentlySharedTray } from '../../chat/RecentlySharedTray';
 import { useRecipientExhaustedStore } from '../../chat/recipientExhausted';
 import { ShareBubble } from '../../chat/ShareBubble';
@@ -96,6 +97,8 @@ export default function ChatThreadScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [shareSheetOpen, setShareSheetOpen] = useState(false);
+  // The owner id of a private card opened from its share bubble, or null.
+  const [openCardOwnerId, setOpenCardOwnerId] = useState<string | null>(null);
   const [sharingAlbumId, setSharingAlbumId] = useState<string | null>(null);
   const [sharingCard, setSharingCard] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
@@ -817,7 +820,10 @@ export default function ChatThreadScreen() {
                 album={item.share.kind === 'album' ? sharedAlbums?.[item.share.subjectId] : undefined}
                 onPress={() => {
                   if (item.share.kind === 'album') openSharedAlbum(item.share.subjectId);
-                  else openProfile();
+                  // My own outgoing card: open my card screen (who has it,
+                  // take it back). Theirs: the full card, as shared with me.
+                  else if (item.share.ownerId === meId) router.push('/me/private-card' as never);
+                  else setOpenCardOwnerId(item.share.ownerId);
                 }}
               />
             </View>
@@ -832,6 +838,14 @@ export default function ChatThreadScreen() {
         onOpenShare={openShareSheet}
         initialText={initialDraft}
       />
+
+      {openCardOwnerId ? (
+        <PrivateCardSheet
+          ownerId={openCardOwnerId}
+          ownerName={otherName}
+          onDismiss={() => setOpenCardOwnerId(null)}
+        />
+      ) : null}
 
       <ShareSheet
         visible={shareSheetOpen}

@@ -29,6 +29,8 @@ jest.mock('../api/me', () => ({ me: jest.fn() }));
 jest.mock('../api/photos', () => ({ signedPhotoUrls: jest.fn() }));
 jest.mock('../api/albums', () => ({ listMyAlbums: jest.fn(), getAlbum: jest.fn() }));
 jest.mock('../api/shares', () => ({ shareAlbum: jest.fn(), sharePrivateCard: jest.fn() }));
+jest.mock('../api/identity', () => ({ getSharedPrivateCard: jest.fn() }));
+jest.mock('../chat/shareFeed', () => ({ listShareFeed: jest.fn(() => Promise.resolve([])) }));
 jest.mock('expo-image-picker', () => ({
   requestMediaLibraryPermissionsAsync: jest.fn(),
   launchImageLibraryAsync: jest.fn(),
@@ -57,6 +59,8 @@ import { me } from '../api/me';
 import { signedPhotoUrls } from '../api/photos';
 import { listMyAlbums } from '../api/albums';
 import { shareAlbum, sharePrivateCard } from '../api/shares';
+import { getSharedPrivateCard } from '../api/identity';
+import { listShareFeed } from '../chat/shareFeed';
 import { checkVideo, generateVideoPoster } from '../chat/video';
 import ChatThreadScreen from '../app/chat/[id]';
 
@@ -666,5 +670,38 @@ describe('thread — share sheet', () => {
     for (const word of ['block', 'expired', 'deleted']) {
       expect(screen.queryByText(new RegExp(word, 'i'))).toBeNull();
     }
+  });
+});
+
+describe('private card share bubbles', () => {
+  const cardShare = (overrides: Record<string, unknown> = {}) => ({
+    id: 'share-card',
+    kind: 'private_card',
+    ownerId: THEM,
+    viewerId: ME,
+    subjectId: THEM,
+    createdAt: '2026-09-20T10:30:00.000Z',
+    ...overrides,
+  });
+
+  it("opens the full card they shared with me, through PrivateCardSheet", async () => {
+    (listShareFeed as jest.Mock).mockResolvedValue([cardShare()]);
+    (getSharedPrivateCard as jest.Mock).mockResolvedValue({ into: ['hiking'], safer_sex: [], kinks: [], hard_nos: ['smoking'] });
+    const screen = await renderScreen();
+
+    await fireEvent.press(await screen.findByTestId('share-bubble-press-share-card'));
+    await screen.findByTestId('private-card-sheet');
+    await screen.findByTestId('private-card-sheet-card-group-hard_nos');
+    expect(getSharedPrivateCard).toHaveBeenCalledWith(THEM);
+    expect(router.push).not.toHaveBeenCalledWith(`/profile/${THEM}`);
+  });
+
+  it('my own card bubble opens my private card screen', async () => {
+    (listShareFeed as jest.Mock).mockResolvedValue([cardShare({ ownerId: ME, viewerId: THEM, subjectId: ME })]);
+    const screen = await renderScreen();
+
+    await fireEvent.press(await screen.findByTestId('share-bubble-press-share-card'));
+    expect(router.push).toHaveBeenCalledWith('/me/private-card');
+    expect(getSharedPrivateCard).not.toHaveBeenCalled();
   });
 });
