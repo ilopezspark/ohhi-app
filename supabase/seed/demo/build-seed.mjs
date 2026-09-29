@@ -935,15 +935,15 @@ begin
       end if;
     end loop;
 
-    -- Albums (photos ok, photo_count kept by maintain_album_photo_count()).
+    -- Albums (not moderated since migration 0013; photo_count kept by maintain_album_photo_count()).
     for v_al in select value from jsonb_array_elements(v_acc -> 'albums') loop
       continue when exists (select 1 from public.albums where id = (v_al ->> 'id')::uuid);
       v_owner := case when (v_al ->> 'owner_is_me')::boolean then v_me else (v_al ->> 'owner')::uuid end;
       insert into public.albums (id, owner_id, name, created_at)
       values ((v_al ->> 'id')::uuid, v_owner, v_al ->> 'name', v_now - make_interval(mins => (v_al ->> 'created_min')::int));
-      insert into public.album_photos (id, album_id, storage_path, moderation_state, created_at)
+      insert into public.album_photos (id, album_id, storage_path, created_at)
       select (ph ->> 'id')::uuid, (v_al ->> 'id')::uuid,
-             v_owner::text || '/' || (v_al ->> 'id') || '/' || (ph ->> 'id') || '.jpg', 'ok',
+             v_owner::text || '/' || (v_al ->> 'id') || '/' || (ph ->> 'id') || '.jpg',
              v_now - make_interval(mins => (ph ->> 'min')::int)
         from jsonb_array_elements(v_al -> 'photos') ph;
     end loop;

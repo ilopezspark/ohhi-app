@@ -140,7 +140,9 @@ begin
     $q$insert into public.album_photos (album_id, storage_path) values
        ('f0120000-0000-0000-0000-000000000001', 'a0120000-0000-0000-0000-000000000001/f0120000-0000-0000-0000-000000000001/e0120000-0000-0000-0000-0000000000c1.jpg'),
        ('f0120000-0000-0000-0000-000000000001', 'a0120000-0000-0000-0000-000000000001/f0120000-0000-0000-0000-000000000001/e0120000-0000-0000-0000-0000000000c3.jpg')$q$);
-  update public.album_photos set moderation_state = 'ok' where album_id = 'f0120000-0000-0000-0000-000000000001';
+  -- No album_photos approval step: album photos are not moderated (migration
+  -- 0013, decision 89). This line used to set moderation_state = 'ok';
+  -- plan(56) is unchanged.
 
   -- Ada opens a conversation with Ben, Ben replies: the thread is open.
   perform pg_temp._run_as12('a0120000-0000-0000-0000-000000000001',

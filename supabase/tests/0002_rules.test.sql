@@ -29,6 +29,14 @@
 -- assertion here is about blocks, rule 11's verified check, defect F's
 -- self-exclusion, or the grid being non-empty), so none changed and the plan
 -- stays 98. The new rule is covered by supabase/tests/0009_grid_shows_everyone.test.sql.
+--
+-- Migration 0013 (album photos are not moderated, decision 89, 29 September
+-- 2026) dropped album_photos.moderation_state and album_photos_guard() and
+-- removed the moderation condition from the album_photos select policy. Three
+-- fixture UPDATEs that approved album photos are removed, and the one group-29
+-- assertion that updated the dropped column is now a hasnt_column check, so
+-- the plan stays 98. Every album read assertion (rules 10 and 22) still holds:
+-- the photos are visible to the owner and to an active share, nothing else.
 
 begin;
 
@@ -256,26 +264,20 @@ select pg_temp._run_as('f00d0000-0000-0000-0000-000000000006', $$insert into pub
 
 -- ann owns an album, shares it with fay (mutual exchange above satisfies rule 9).
 select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$insert into public.albums (owner_id, name) values (auth.uid(), 'Ann Trip')$$);
--- Defect C fix: album_photos.moderation_state is no longer in the owner's
--- insert column grant (album_photos_guard() also forces it to 'pending' on
--- any client insert regardless), so the insert can no longer set it
--- directly -- approved the way the real moderation service would, as
--- postgres, same convention as user_photos above.
+-- Album photos are not moderated (migration 0013, decision 89): there is no
+-- album_photos.moderation_state to approve, so the insert alone makes the
+-- photo visible to the owner and to the viewer of an active share.
 select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$insert into public.album_photos (album_id, storage_path)
   select id, 'ann/trip/1.jpg' from public.albums where owner_id = auth.uid() and name = 'Ann Trip'$$);
-update public.album_photos set moderation_state = 'ok'
- where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000001' and name = 'Ann Trip');
 select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$insert into public.shares (owner_id, viewer_id, subject_type, subject_id)
   select auth.uid(), 'f00d0000-0000-0000-0000-000000000006', 'album', id from public.albums where owner_id = auth.uid() and name = 'Ann Trip'$$);
 
 -- fay owns an album, shares it with ann, so test 22 can show the block
 -- taking access away in the other direction too.
 select pg_temp._run_as('f00d0000-0000-0000-0000-000000000006', $$insert into public.albums (owner_id, name) values (auth.uid(), 'Fay Trip')$$);
--- Defect C fix: see the same note on Ann Trip above.
+-- No album_photos approval step (migration 0013): see the note on Ann Trip above.
 select pg_temp._run_as('f00d0000-0000-0000-0000-000000000006', $$insert into public.album_photos (album_id, storage_path)
   select id, 'fay/trip/1.jpg' from public.albums where owner_id = auth.uid() and name = 'Fay Trip'$$);
-update public.album_photos set moderation_state = 'ok'
- where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000006' and name = 'Fay Trip');
 select pg_temp._run_as('f00d0000-0000-0000-0000-000000000006', $$insert into public.shares (owner_id, viewer_id, subject_type, subject_id)
   select auth.uid(), 'f00d0000-0000-0000-0000-000000000001', 'album', id from public.albums where owner_id = auth.uid() and name = 'Fay Trip'$$);
 
@@ -687,11 +689,9 @@ select lives_ok(
 );
 reset role;
 
--- Defect C fix: see the same note on Ann Trip above.
+-- No album_photos approval step (migration 0013): see the note on Ann Trip above.
 select pg_temp._run_as('f00d0000-0000-0000-0000-000000000001', $$insert into public.album_photos (album_id, storage_path)
   select id, 'ann/bea-album/1.jpg' from public.albums where owner_id = auth.uid() and name = 'Ann Bea Album'$$);
-update public.album_photos set moderation_state = 'ok'
- where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000001' and name = 'Ann Bea Album');
 
 -- -----------------------------------------------------------------------------
 -- 16: rule 10 - after revocation, share_is_active is false and the album
@@ -1101,9 +1101,12 @@ select is(
 );
 
 -- -----------------------------------------------------------------------------
--- 29: defect C - user_photos and album_photos: moderation_state is excluded
--- from the owner's column grants, and the guard triggers force 'pending' on
--- any client insert regardless.
+-- 29: defect C - user_photos: moderation_state is excluded from the owner's
+-- column grants, and the guard trigger forces 'pending' on any client insert
+-- regardless. The album_photos half of this group was superseded by migration
+-- 0013 (decision 89): the column and its guard are gone, so the assertion
+-- that used to try to update it now checks the column no longer exists (same
+-- count, plan stays 98).
 -- -----------------------------------------------------------------------------
 
 select pg_temp._as('f00d0000-0000-0000-0000-000000000002'); -- bea, owns her own user_photos row
@@ -1114,14 +1117,10 @@ select throws_ok(
 );
 reset role;
 
-select pg_temp._as('f00d0000-0000-0000-0000-000000000006'); -- fay, owns Fay Trip's album_photos row
-set local role authenticated;
-select throws_ok(
-  $$update public.album_photos set moderation_state = 'pending'
-      where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000006' and name = 'Fay Trip')$$,
-  '42501'
+select hasnt_column(
+  'public', 'album_photos', 'moderation_state',
+  'defect C (superseded by 0013): album_photos has no moderation_state column; album photos are not moderated'
 );
-reset role;
 
 select is(
   (select moderation_state::text from public.user_photos where user_id = 'f00d0000-0000-0000-0000-000000000001' and position = 1),

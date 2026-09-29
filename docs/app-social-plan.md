@@ -176,6 +176,11 @@ policy checks album ownership, not row existence). Pending photos stay visible t
 (owner select ignores moderation state) with a "pending review" treatment; a non-owner viewer
 additionally needs `ok` (decision 10's pattern, extended to albums).
 
+> **Superseded (29 Sept 2026, migration 0013, decision 89):** album photos are no longer
+> moderated. `album_photos.moderation_state` and `album_photos_guard()` are gone, so there is no
+> "pending review" treatment and a share viewer sees every photo in an album shared with them
+> (owner, or an active share with no block either way). The paragraph above is the original plan.
+
 **Share** an album or the private card: `insert into shares (owner_id, viewer_id,
 subject_type, subject_id)` — `subject_id` is the album id, or **must equal `owner_id`** for
 `private_card`. `enforce_share_rules()` requires subject ownership, **a mutual conversation**

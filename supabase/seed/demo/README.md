@@ -58,7 +58,7 @@ below turns it into SQL, uploads the images, keeps the demo alive, and removes i
   conversations with 83 messages at the scripted relative times, `message_reads` so exactly the
   scripted threads are unread (Izaac 3, Debbie 2), 8 chat photos with migration 0010's columns
   (kept -> `chat-media`, limited -> `chat-media-limited`, path bound to `{conversation}/{message}.jpg`,
-  `views_used` matching `message_media_views`), 8 albums with 35 `ok` photos, and 6 shares in both
+  `views_used` matching `message_media_views`), 8 albums with 35 photos (album photos are not moderated, migration 0013), and 6 shares in both
   directions (each over a mutual open conversation).
 
 ### How the guards are handled
@@ -68,7 +68,7 @@ below turns it into SQL, uploads the images, keeps the demo alive, and removes i
 | `profiles_from_auth` | Runs as written; the demo domain maps to CLC and it stamps `email_verified`. |
 | `profiles_guard` | `verification_status = 'verified'` is set under `app.bypass_profiles_guard`, saved and restored. |
 | `dob_write_once` | DOB is written on insert; never updated. |
-| `user_photos_guard`, `album_photos_guard` | Written as the table owner (no client role), so `ok` stands. |
+| `user_photos_guard` | Written as the table owner (no client role), so `ok` stands. (`album_photos_guard` and `album_photos.moderation_state` were dropped by migration 0013, decision 89: album photos are not moderated, so there is nothing to set.) |
 | `enforce_hi_rules` | Runs on every hi (verified sender, no block, no conversation yet: hi's are inserted before conversations). It stamps `sent` / now + 7 days; the scripted state and `created_at + 7 days` follow as a privileged update (`his_update_guard` allows it). |
 | `enforce_message_rules` (incl. 0010's rule 4b), `advance_conversation` | Every message is inserted one statement at a time through both triggers, so the opener rule, media-only-when-open and the path binding all run; `awaiting_reply` -> `open` happens by the real trigger. `last_message_at` is then set to the scripted time (the trigger stamps now()). |
 | `message_reads_guard` | Runs as written (the real account is a participant). |
@@ -163,7 +163,7 @@ The sections below describe the content files.
   one unopened view-once from a cast member, one opened view-once sent by the account, one
   view-twice with one view used). Photos only — no video files in the seed.
 - Album photos: 35 across both accounts (2 albums shared in + 2 albums owned, per account).
-- **Total images the prompts call for: 98** (30 main + 25 extra + 8 chat media + 35 album).
+- **Total images the prompts call for: 98** (30 main + 25 extra + 8 chat media + 35 album). The seed as applied uses 82: 16 extras that showed a different face were left out.
 - Scripted messages: 83 across both accounts' conversation histories.
 
 ## Conventions carried through both files

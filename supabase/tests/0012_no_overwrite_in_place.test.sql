@@ -30,7 +30,8 @@
 --   a3 ok, pos 2, object ABSENT       a8, a9: objects with no row (orphans)
 --   Ben b1 ok, pos 0, object present
 -- album-photos (Ada's album f0120000-...-01):
---   c1 ok, object present   c3 ok, object ABSENT   c9 orphan object
+--   c1 object present   c3 object ABSENT   c9 orphan object
+--   (album photos carry no moderation state since migration 0013, decision 89)
 -- Ada-Ben conversation c0120000-...-01 (open), messages b0120000-...-0N:
 --   01 keep-in-chat photo, object present
 --   02 keep-in-chat photo, object ABSENT (a late fill would change it)
@@ -153,7 +154,9 @@ select pg_temp._run_as12('a0120000-0000-0000-0000-000000000001',
   $q$insert into public.album_photos (album_id, storage_path) values
      ('f0120000-0000-0000-0000-000000000001', 'a0120000-0000-0000-0000-000000000001/f0120000-0000-0000-0000-000000000001/e0120000-0000-0000-0000-0000000000c1.jpg'),
      ('f0120000-0000-0000-0000-000000000001', 'a0120000-0000-0000-0000-000000000001/f0120000-0000-0000-0000-000000000001/e0120000-0000-0000-0000-0000000000c3.jpg')$q$);
-update public.album_photos set moderation_state = 'ok' where album_id = 'f0120000-0000-0000-0000-000000000001';
+-- No album_photos approval step: album photos are not moderated (migration
+-- 0013, decision 89), so the insert above is all the fixture needs. This line
+-- used to set moderation_state = 'ok'; plan(56) is unchanged.
 
 -- Ada opens a conversation with Ben, Ben replies: the thread is open.
 select pg_temp._run_as12('a0120000-0000-0000-0000-000000000001',

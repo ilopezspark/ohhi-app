@@ -8,6 +8,12 @@
 -- private.is_grid_visible(). No assertion below relied on an away or stale
 -- user being hidden, so none changed and the plan stays 98; see the pgTAP
 -- file's header and supabase/tests/hosted/0009_hosted_run.sql.
+--
+-- Migration 0013 (album photos are not moderated, decision 89) dropped
+-- album_photos.moderation_state and album_photos_guard(). The three fixture
+-- UPDATEs that approved album photos are removed and the one group-29
+-- assertion that updated the dropped column is now a hasnt_column check, so
+-- the plan stays 98. See the pgTAP file's header.
 
 create extension if not exists pgtap with schema public;
 
@@ -170,28 +176,23 @@ begin
      where user_a_id = least('f00d0000-0000-0000-0000-000000000001'::uuid,'f00d0000-0000-0000-0000-000000000006'::uuid)
        and user_b_id = greatest('f00d0000-0000-0000-0000-000000000001'::uuid,'f00d0000-0000-0000-0000-000000000006'::uuid);
   insert into public.albums (owner_id, name) values (auth.uid(), 'Fay Trip');
-  -- Defect C fix: moderation_state is out of the insert column grant, and
-  -- album_photos_guard() forces it to 'pending' on any client insert anyway;
-  -- approved directly as postgres below, same convention as user_photos.
+  -- Album photos are not moderated (migration 0013, decision 89): no
+  -- moderation_state to approve; the insert alone makes the photo visible.
   insert into public.album_photos (album_id, storage_path)
     select id, 'fay/trip/1.jpg' from public.albums where owner_id = auth.uid() and name = 'Fay Trip';
   insert into public.shares (owner_id, viewer_id, subject_type, subject_id)
     select auth.uid(), 'f00d0000-0000-0000-0000-000000000001', 'album', id from public.albums where owner_id = auth.uid() and name = 'Fay Trip';
   execute 'reset role';
-  update public.album_photos set moderation_state = 'ok'
-   where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000006' and name = 'Fay Trip');
 
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated';
   insert into public.albums (owner_id, name) values (auth.uid(), 'Ann Trip');
-  -- Defect C fix: see the note on Fay Trip above.
+  -- See the note on Fay Trip above (migration 0013).
   insert into public.album_photos (album_id, storage_path)
     select id, 'ann/trip/1.jpg' from public.albums where owner_id = auth.uid() and name = 'Ann Trip';
   insert into public.shares (owner_id, viewer_id, subject_type, subject_id)
     select auth.uid(), 'f00d0000-0000-0000-0000-000000000006', 'album', id from public.albums where owner_id = auth.uid() and name = 'Ann Trip';
   insert into public.blocks (blocker_id, blocked_id) values (auth.uid(), 'f00d0000-0000-0000-0000-000000000006');
   execute 'reset role';
-  update public.album_photos set moderation_state = 'ok'
-   where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000001' and name = 'Ann Trip');
 
   -- ===========================================================================
   -- Fixtures: independent hi/conversation pairs for tests 6, 7, 9, 10
@@ -439,12 +440,10 @@ begin
       select 'f00d0000-0000-0000-0000-000000000001','f00d0000-0000-0000-0000-000000000002','album', id
         from public.albums where owner_id='f00d0000-0000-0000-0000-000000000001' and name='Ann Bea Album'$$,
     'rule 9: share insert succeeds once both sides have sent a message') into v_line; out := out || v_line || E'\n';
-  -- Defect C fix: see the note on Fay Trip/Ann Trip above.
+  -- See the note on Fay Trip above (migration 0013).
   insert into public.album_photos (album_id, storage_path)
     select id, 'ann/bea-album/1.jpg' from public.albums where owner_id=auth.uid() and name='Ann Bea Album';
   execute 'reset role';
-  update public.album_photos set moderation_state = 'ok'
-   where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000001' and name = 'Ann Bea Album');
 
   -- 16
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000002', true); execute 'set local role authenticated';
@@ -671,19 +670,18 @@ begin
 
   -- ===========================================================================
   -- 29: defect C - moderation_state is excluded from the owner's column
-  -- grants on user_photos/album_photos; the guard triggers also force
-  -- 'pending' on any client insert.
+  -- grants on user_photos; the guard trigger also forces 'pending' on any
+  -- client insert. The album_photos half was superseded by migration 0013
+  -- (decision 89): the column is gone, so that assertion is now a
+  -- hasnt_column check (same count, plan stays 98).
   -- ===========================================================================
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000002', true); execute 'set local role authenticated';
   select throws_ok($$update public.user_photos set moderation_state = 'ok' where user_id = 'f00d0000-0000-0000-0000-000000000002' and position = 0$$,
     '42501') into v_line; out := out || v_line || E'\n';
   execute 'reset role';
 
-  perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000006', true); execute 'set local role authenticated';
-  select throws_ok($$update public.album_photos set moderation_state = 'pending'
-      where album_id = (select id from public.albums where owner_id = 'f00d0000-0000-0000-0000-000000000006' and name = 'Fay Trip')$$,
-    '42501') into v_line; out := out || v_line || E'\n';
-  execute 'reset role';
+  select hasnt_column('public', 'album_photos', 'moderation_state',
+    'defect C (superseded by 0013): album_photos has no moderation_state column; album photos are not moderated') into v_line; out := out || v_line || E'\n';
 
   select is((select moderation_state::text from public.user_photos where user_id='f00d0000-0000-0000-0000-000000000001' and position=1),
     'pending', 'defect C: user_photos_guard() left ann''s never-approved position-1 photo at pending') into v_line; out := out || v_line || E'\n';

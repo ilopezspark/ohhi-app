@@ -232,6 +232,11 @@ non-owners also need `moderation_state = 'ok'` on photos. Owner writes, same rul
 `user_photos`: `moderation_state` is service-role-only, excluded from the owner's column
 grants, and the `album_photos_guard()` trigger forces it to `pending` on client writes.
 
+> **Superseded for `album_photos` (29 Sept 2026):** migration 0013 (decision 89) removed album
+> photo moderation: the `moderation_state` column, `album_photos_guard()` and the `ok` condition
+> in the select policy are gone. Owner and active-share viewers see every album photo. The text
+> above describes migration 0002 as first written; `user_photos` moderation is unchanged.
+
 ### `shares`
 
 `owner_id`, `viewer_id`, `subject_type`, `subject_id`, `revoked_at`, `check (<>)`.

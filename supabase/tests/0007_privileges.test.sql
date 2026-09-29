@@ -94,10 +94,13 @@ select ok(
   'user_photos.moderation_state is NOT updatable by authenticated (defect C)'
 );
 
--- 9
-select ok(
-  not has_column_privilege('authenticated', 'public.album_photos', 'moderation_state', 'update'),
-  'album_photos.moderation_state is NOT updatable by authenticated (defect C)'
+-- 9 — amended by migration 0013 (decision 89): album photos are not
+-- moderated, so album_photos.moderation_state no longer exists and there is no
+-- column privilege left to check. It now asserts the column is gone (same
+-- count, plan stays 27).
+select hasnt_column(
+  'public', 'album_photos', 'moderation_state',
+  'album_photos has no moderation_state column (0013: album photos are not moderated)'
 );
 
 -- 10
