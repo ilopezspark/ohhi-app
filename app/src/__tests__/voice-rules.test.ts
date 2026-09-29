@@ -16,6 +16,11 @@ import path from 'path';
  *    point of listing them here is that this suite runs again, unchanged,
  *    once those screens land, and catches a voice-rule violation in them
  *    without a screen agent having to know this file exists.
+ *  - `app/(onboarding)/photo.tsx` (the rest of onboarding is not covered
+ *    yet; see the note on `SCOPE_FILES` below).
+ *
+ * Only string literals are scanned: JSX text children (`<Text>copy</Text>`)
+ * are not literals and are not checked here.
  *
  * Import/export specifiers, comments, and test files are excluded before
  * scanning — none of those are copy a person reads.
@@ -404,6 +409,13 @@ const SCOPE_FILES: string[] = [
   ...listTsFiles(path.join(SRC, 'app', 'profile-editor')),
   ...listQuickStatusFiles(path.join(SRC, 'app')),
   ...listTsFiles(path.join(SRC, 'me')),
+  // Onboarding's photo step: its copy was brought into the voice rules in the
+  // 0014 pass. The other onboarding files are not listed yet: they still
+  // carry sentence-case copy ("Something went wrong. Please try again.",
+  // finish.tsx's "Go back and fix it", validation.ts's messages) and the
+  // DateTimePicker's `mode="date"`, which want their own pass (and an
+  // allow-list decision for that prop) before they can be linted.
+  path.join(SRC, 'app', '(onboarding)', 'photo.tsx'),
 ].filter((file) => fs.existsSync(file));
 
 describe('voice rules — real source tree', () => {
@@ -418,6 +430,7 @@ describe('voice rules — real source tree', () => {
         path.join('profile', 'completion.ts'),
         path.join('profile', 'goalLabels.ts'),
         path.join('profile', 'ProfileTile.tsx'),
+        path.join('app', '(onboarding)', 'photo.tsx'),
       ])
     );
   });

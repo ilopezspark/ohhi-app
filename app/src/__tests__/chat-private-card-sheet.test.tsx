@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 jest.mock('../api/client', () => ({
@@ -25,11 +25,11 @@ function mockFetch(status: number, body?: unknown) {
   return fetchMock;
 }
 
-function renderSheet(onDismiss = jest.fn()) {
+function renderSheet(onDismiss = jest.fn(), onGone = jest.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <PrivateCardSheet ownerId={OWNER} ownerName="maya" onDismiss={onDismiss} />
+      <PrivateCardSheet ownerId={OWNER} ownerName="maya" onDismiss={onDismiss} onGone={onGone} />
     </QueryClientProvider>
   );
 }
@@ -60,15 +60,25 @@ describe('PrivateCardSheet', () => {
     expect(groups[groups.length - 1]).toBe('private-card-sheet-card-group-hard_nos');
   });
 
-  it('says plainly when the card is no longer shared', async () => {
+  it('reports an empty read (taken back, or the owner vanished) through onGone, once, and says nothing about why', async () => {
     mockFetch(404);
-    const { findByTestId } = await renderSheet();
-    const gone = await findByTestId('private-card-sheet-gone');
-    expect(gone.props.children).toBe("maya isn't sharing this with you any more.");
+    const onGone = jest.fn();
+    const { findByTestId, queryByText } = await renderSheet(jest.fn(), onGone);
+    await findByTestId('private-card-sheet-gone');
+    await waitFor(() => expect(onGone).toHaveBeenCalledTimes(1));
+    expect(queryByText(/sharing|available|banned|suspended|deleted|blocked/i)).toBeNull();
+  });
+
+  it('does not report gone for a card that loads', async () => {
+    mockFetch(200, { into: ['hiking'], safer_sex: [], kinks: [], hard_nos: [] });
+    const onGone = jest.fn();
+    const { findByTestId } = await renderSheet(jest.fn(), onGone);
+    await findByTestId('private-card-sheet-card-title');
+    expect(onGone).not.toHaveBeenCalled();
   });
 
   it('closes', async () => {
-    mockFetch(404);
+    mockFetch(200, { into: ['hiking'], safer_sex: [], kinks: [], hard_nos: [] });
     const onDismiss = jest.fn();
     const { findByTestId } = await renderSheet(onDismiss);
     await fireEvent.press(await findByTestId('private-card-sheet-close'));

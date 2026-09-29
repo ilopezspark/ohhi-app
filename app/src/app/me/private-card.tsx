@@ -11,6 +11,7 @@ import { queryKeys } from '../../me/queryKeys';
 import { PrivateCardView } from '../../me/card/PrivateCardView';
 import { listPrivateCardSharedWith, type SharedWithPerson } from '../../me/card/sharedWith';
 import { relativeSentLabel } from '../../me/card/relativeTime';
+import { useRefetchOnFocus } from '../../query/gone';
 import { tintForPhoto } from '../../photos/tint';
 import { Avatar, Button, Chip, EmptyState, Header, RowCard, SectionLabel, Text } from '../../ui';
 import { LockIcon } from '../../ui/icons';
@@ -32,6 +33,11 @@ export default function PrivateCardScreen() {
     queryKey: queryKeys.me.shares,
     queryFn: async () => listPrivateCardSharedWith(await currentUserId()),
   });
+  // Someone I shared the card with drops off this list, with no trace, when
+  // they are suspended, banned or delete their account (decision 90): the
+  // share row stops being returned. Refetch when coming back to this screen;
+  // foreground and reconnect are covered by `query/lifecycle.ts`.
+  useRefetchOnFocus(sharedQuery.refetch);
 
   const revokeMutation = useMutation({
     mutationFn: (shareId: string) => revokeShare(shareId),

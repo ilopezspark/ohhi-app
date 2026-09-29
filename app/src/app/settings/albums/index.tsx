@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -43,10 +43,13 @@ export default function AlbumsListScreen() {
   const [creating, setCreating] = useState(false);
 
   const { data: albums, refetch: refetchAlbums } = useQuery({ queryKey: ['my_albums'], queryFn: listMyAlbums });
-  const { data: shared } = useQuery({ queryKey: ['shared_with_me_albums'], queryFn: listSharedWithMeAlbums });
+  const { data: shared, refetch: refetchShared } = useQuery({
+    queryKey: ['shared_with_me_albums'],
+    queryFn: listSharedWithMeAlbums,
+  });
 
   const albumIds = (albums ?? []).map((a) => a.id).join(',');
-  const { data: shareCounts } = useQuery({
+  const { data: shareCounts, refetch: refetchShareCounts } = useQuery({
     queryKey: ['my_album_share_counts', albumIds],
     queryFn: async () => {
       const entries = await Promise.all(
@@ -60,10 +63,16 @@ export default function AlbumsListScreen() {
     enabled: !!albums && albums.length > 0,
   });
 
+  // Every list here can change without this screen doing anything: an album
+  // shared with me disappears, and my "shared with N" counts drop, when the
+  // other person is suspended, banned or deletes their account (decision
+  // 90). Foreground and reconnect refetch globally (`query/lifecycle.ts`).
   useFocusEffect(
     useCallback(() => {
       void refetchAlbums();
-    }, [refetchAlbums])
+      void refetchShared();
+      void refetchShareCounts();
+    }, [refetchAlbums, refetchShared, refetchShareCounts])
   );
 
   const createMutation = useMutation({

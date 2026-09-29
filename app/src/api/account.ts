@@ -18,8 +18,14 @@ export type ConsentRow = Database['public']['Tables']['consents']['Row'];
 
 /**
  * `delete_my_account()` sets `users_private.deleted_at`;
- * `close_threads_on_delete()` closes every conversation to `closed_deleted`
- * and sets `status = 'deleted'` in the same transaction (plan §7).
+ * `close_threads_on_delete()` sets `status = 'deleted'` in the same
+ * transaction (plan §7). From that moment the account is invisible to every
+ * other user (migration 0014, decision 90): their grid, hi's, whole chat
+ * threads, shares and albums simply stop being returned to anyone else.
+ * Nobody sees a closed thread or any other trace of the deletion; the
+ * trigger still writes `closed_deleted` server-side, but that state never
+ * reaches the other participant. The purge pipeline removes the data later
+ * (decision 17).
  *
  * **Does not invalidate the session** — the caller must sign out
  * immediately after this resolves, before navigating anywhere. See

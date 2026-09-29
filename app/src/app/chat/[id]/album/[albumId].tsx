@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAlbum, listAlbumPhotos, signedAlbumPhotoUrls } from '../../../../api/albums';
+import type { ShareFeedItem } from '../../../../chat/shareFeed';
+import { dropQueries, useGoneLatch, useLeaveWhenGone } from '../../../../query/gone';
 import { colors, layout, radii, shadows, spacing } from '../../../../theme/tokens';
 import { BackIcon } from '../../../../ui/icons';
 import { Text } from '../../../../ui';
@@ -24,22 +26,51 @@ const COLUMNS = 3;
  * `album_photos` select policy. Album photos are not moderated (migration
  * 0013), so every photo in a shared album is shown; this screen adds no
  * extra filtering of its own.
+ *
+ * Gone (decision 90): when the album read comes back empty, on open or on
+ * any refetch (the share was taken back, or the owner was suspended, banned
+ * or deleted their account; the same empty read either way), the album and
+ * its bubble drop out of the cache and the screen goes back to the thread,
+ * without a word. An album that is there but has no photos is not gone.
  */
 export default function ChatSharedAlbumScreen() {
   const params = useLocalSearchParams<{ id: string; albumId: string }>();
   const albumId = Array.isArray(params.albumId) ? params.albumId[0] : params.albumId ?? '';
+  const conversationId = Array.isArray(params.id) ? params.id[0] : params.id ?? '';
+  const queryClient = useQueryClient();
+  const { gone, latch } = useGoneLatch();
 
-  const { data: album, isPending: albumPending } = useQuery({
+  const {
+    data: album,
+    isPending: albumPending,
+    isSuccess: albumLoaded,
+  } = useQuery({
     queryKey: ['chat-shared-album', albumId],
     queryFn: () => getAlbum(albumId),
-    enabled: !!albumId,
+    enabled: !!albumId && !gone,
   });
 
   const { data: photos, isPending: photosPending } = useQuery({
     queryKey: ['chat-shared-album-photos', albumId],
     queryFn: () => listAlbumPhotos(albumId),
-    enabled: !!albumId,
+    enabled: !!albumId && !gone,
   });
+
+  latch(albumLoaded && album === null);
+  useLeaveWhenGone(
+    gone,
+    () => {
+      dropQueries(queryClient, ['chat-shared-album', albumId]);
+      dropQueries(queryClient, ['chat-shared-album-photos', albumId]);
+      queryClient.setQueriesData<ShareFeedItem[]>({ queryKey: ['chat-share-feed', conversationId] }, (current) =>
+        current?.filter((item) => !(item.kind === 'album' && item.subjectId === albumId))
+      );
+      void queryClient.invalidateQueries({ queryKey: ['chat-share-feed', conversationId] });
+      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+      void queryClient.invalidateQueries({ queryKey: ['shared_with_me_albums'] });
+    },
+    conversationId ? `/chat/${conversationId}` : '/chats'
+  );
 
   const paths = useMemo(() => (photos ?? []).map((p) => p.storage_path), [photos]);
   const pathsKey = useMemo(() => [...paths].sort().join('|'), [paths]);
@@ -51,6 +82,10 @@ export default function ChatSharedAlbumScreen() {
   });
 
   const loading = albumPending || photosPending;
+
+  if (gone) {
+    return <View style={styles.container} testID="chat-shared-album-gone" />;
+  }
 
   return (
     <View style={styles.container} testID="chat-shared-album-screen">
@@ -73,10 +108,13 @@ export default function ChatSharedAlbumScreen() {
         <View style={styles.center} testID="chat-shared-album-loading">
           <ActivityIndicator size="large" color={colors.ink} />
         </View>
-      ) : !album || (photos ?? []).length === 0 ? (
+      ) : !album ? (
+        // Between the empty read and the gone latch above: nothing to say.
+        <View style={styles.center} />
+      ) : (photos ?? []).length === 0 ? (
         <View style={styles.center}>
           <Text variant="body" color={colors.muted} testID="chat-shared-album-empty">
-            {album ? 'No photos here yet.' : "This album isn't available."}
+            no photos here yet.
           </Text>
         </View>
       ) : (

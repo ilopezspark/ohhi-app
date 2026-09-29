@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { getSharedPrivateCard } from '../api/identity';
@@ -12,6 +13,13 @@ export interface PrivateCardSheetProps {
   /** Their first name, for "more about <name>". */
   ownerName: string;
   onDismiss: () => void;
+  /**
+   * The read came back empty (404): the card was taken back, or its owner
+   * was suspended, banned or deleted their account (decision 90), which the
+   * identity function answers identically. The parent closes the sheet and
+   * drops the bubble; the sheet itself says nothing about why.
+   */
+  onGone: () => void;
 }
 
 /**
@@ -22,9 +30,14 @@ export interface PrivateCardSheetProps {
  *
  * Fetched fresh every time it opens (`staleTime: 0`, not cached across
  * opens): the identity function answers 404 once the owner takes the card
- * back, and that has to win on the next open, not after a cache expiry.
+ * back, and that has to win on the next open, not after a cache expiry. It
+ * also refetches on app foreground and reconnect while open.
+ *
+ * An empty read (on open or on any refetch) is "gone": `onGone` fires once
+ * and the sheet renders nothing more. No copy, since the same 404 covers a
+ * take-back and an owner who vanished, and neither gets a reason.
  */
-export function PrivateCardSheet({ ownerId, ownerName, onDismiss }: PrivateCardSheetProps) {
+export function PrivateCardSheet({ ownerId, ownerName, onDismiss, onGone }: PrivateCardSheetProps) {
   const cardQuery = useQuery({
     queryKey: ['shared-private-card', ownerId],
     queryFn: () => getSharedPrivateCard(ownerId),
@@ -33,6 +46,14 @@ export function PrivateCardSheet({ ownerId, ownerName, onDismiss }: PrivateCardS
   });
 
   const card = cardQuery.data ?? null;
+  const gone = cardQuery.isSuccess && !card;
+
+  const reported = useRef(false);
+  useEffect(() => {
+    if (!gone || reported.current) return;
+    reported.current = true;
+    onGone();
+  }, [gone, onGone]);
   const hasAnything = !!card && CARD_FIELDS.some((field) => card[field].length > 0);
 
   return (
@@ -46,9 +67,7 @@ export function PrivateCardSheet({ ownerId, ownerName, onDismiss }: PrivateCardS
           that didn&apos;t load. try again in a bit.
         </Text>
       ) : !card ? (
-        <Text variant="body" color={colors.inkSoft} testID="private-card-sheet-gone">
-          {`${ownerName} isn't sharing this with you any more.`}
-        </Text>
+        <View style={styles.center} testID="private-card-sheet-gone" />
       ) : (
         <ScrollView style={styles.scroll} contentContainerStyle={styles.card}>
           <PrivateCardView name={ownerName} entries={card} testID="private-card-sheet-card" />

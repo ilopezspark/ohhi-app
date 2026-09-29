@@ -1325,6 +1325,7 @@ export type Database = {
         Returns: Database["public"]["Enums"]["user_status"]
       }
       delete_my_account: { Args: never; Returns: undefined }
+      delete_my_album: { Args: { p_album_id: string }; Returns: string[] }
       disablelongtransactions: { Args: never; Returns: string }
       dropgeometrycolumn:
         | {

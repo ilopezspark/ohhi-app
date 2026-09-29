@@ -153,7 +153,7 @@ describe('PhotoScreen', () => {
     await fireEvent.press(getByTestId('photo-upload-button'));
 
     await waitFor(() => expect(getByTestId('photo-error')).toBeTruthy());
-    expect(getByTestId('photo-error').props.children).toBe("That didn't work. Please try again.");
+    expect(getByTestId('photo-error').props.children).toBe("that didn't work. try again.");
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('upload failed'), underlyingError);
 
     consoleErrorSpy.mockRestore();

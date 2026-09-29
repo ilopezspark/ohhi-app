@@ -11,7 +11,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getConversation } from '../../api/conversations';
+import { getConversation, type ConversationListItem } from '../../api/conversations';
 import {
   listMessages,
   listRecentlySharedMedia,
@@ -30,7 +30,7 @@ import {
 import { me as fetchMe } from '../../api/me';
 import { getAlbum, listMyAlbums, type AlbumRow } from '../../api/albums';
 import { shareAlbum, sharePrivateCard } from '../../api/shares';
-import { mapSupabaseError } from '../../api/errors';
+import { GoneError, isUnavailableError, mapSupabaseError } from '../../api/errors';
 import { signedPhotoUrls } from '../../api/photos';
 import { Composer } from '../../chat/Composer';
 import { MediaPreview, type MediaPreviewAsset, type ViewLimitChoice } from '../../chat/MediaPreview';
@@ -42,6 +42,7 @@ import { ShareBubble } from '../../chat/ShareBubble';
 import { ShareSheet } from '../../chat/ShareSheet';
 import { composerState } from '../../chat/rules';
 import { listShareFeed, type ShareFeedItem } from '../../chat/shareFeed';
+import { forgetConversation, forgetPerson, useGoneLatch, useLeaveWhenGone } from '../../query/gone';
 import { useConversationRealtime } from '../../chat/useChatRealtime';
 import { messageId as newMessageId } from '../../chat/uuid';
 import { checkVideo, generateVideoPoster, VIDEO_REJECTION_COPY } from '../../chat/video';
@@ -125,11 +126,47 @@ export default function ChatThreadScreen() {
   const { data: meData } = useQuery({ queryKey: ['me'], queryFn: fetchMe });
   const meId = meData?.id ?? null;
 
-  const { data: conversation, isPending: conversationPending } = useQuery({
+  // -----------------------------------------------------------------------
+  // Gone (migration 0014, decision 90). A thread whose other participant was
+  // suspended, banned or deleted their account stops being returned at all,
+  // exactly like a bad id, a purged thread or the blocker's own
+  // `closed_block` row. Whenever the read comes back empty (first load or any
+  // refetch: focus, foreground, reconnect, realtime), or a send answers
+  // `conversation not found`, the thread is dropped from the cache and the
+  // screen goes back to the list. No copy, no reason.
+  // -----------------------------------------------------------------------
+  const { gone, latch } = useGoneLatch();
+
+  const {
+    data: conversation,
+    isPending: conversationPending,
+    isSuccess: conversationLoaded,
+  } = useQuery({
     queryKey: ['conversation', conversationId],
     queryFn: () => getConversation(conversationId),
-    enabled: !!conversationId,
+    enabled: !!conversationId && !gone,
   });
+  latch(conversationLoaded && conversation === null);
+
+  // The other participant's id outlives the conversation row, so their
+  // cached profile, hi's and shares can be dropped once the row is gone.
+  const lastOtherId = useRef<string | null>(null);
+  if (conversation) lastOtherId.current = conversation.other.id;
+
+  useLeaveWhenGone(
+    gone,
+    () => {
+      const goneOtherId =
+        lastOtherId.current ??
+        queryClient
+          .getQueryData<ConversationListItem[]>(['conversations'])
+          ?.find((item) => item.id === conversationId)?.other.id ??
+        null;
+      if (conversationId) forgetConversation(queryClient, conversationId);
+      if (goneOtherId) forgetPerson(queryClient, goneOtherId);
+    },
+    '/chats'
+  );
 
   const {
     data: pages,
@@ -142,7 +179,7 @@ export default function ChatThreadScreen() {
     queryFn: ({ pageParam }) => listMessages(conversationId, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    enabled: !!conversationId,
+    enabled: !!conversationId && !gone,
   });
 
   /**
@@ -186,7 +223,7 @@ export default function ChatThreadScreen() {
   const { data: shareFeed, refetch: refetchShareFeed } = useQuery({
     queryKey: ['chat-share-feed', conversationId, meId, otherId],
     queryFn: () => listShareFeed(meId as string, otherId as string),
-    enabled: !!meId && !!otherId,
+    enabled: !!meId && !!otherId && !gone,
   });
 
   const albumShareIds = useMemo(
@@ -385,17 +422,27 @@ export default function ChatThreadScreen() {
         await queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
         void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
         void queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      } catch {
+      } catch (error) {
+        if (error instanceof GoneError) {
+          // `conversation not found`: the thread vanished (decision 90). There
+          // is nothing to retry into, so no failed bubble: drop it and leave.
+          setPending((current) => current.filter((row) => row.id !== input.id));
+          latch(true);
+          return;
+        }
         setPending((current) =>
           current.map((row) =>
             row.id === input.id ? { ...row, pending: false, failed: true } : row
           )
         );
+        // Re-read the thread: if it is no longer readable, the gone latch
+        // takes the user back to the list instead of offering retries.
+        void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
       } finally {
         setSending(false);
       }
     },
-    [conversationId, meId, queryClient]
+    [conversationId, meId, queryClient, latch]
   );
 
   const onSend = useCallback(
@@ -608,6 +655,9 @@ export default function ChatThreadScreen() {
         // Generic: an upload refused because the thread isn't `open` looks
         // exactly like a dropped connection, which is the point (decision 24).
         setMediaError("Couldn't send. Try again.");
+        // An upload into a thread that has since vanished is refused by the
+        // storage policy; re-reading the thread lets the gone latch leave.
+        void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
       } finally {
         setMediaSending(false);
       }
@@ -643,11 +693,16 @@ export default function ChatThreadScreen() {
         void refetchShareFeed();
       } catch (error) {
         setShareError(mapSupabaseError(error).message);
+        // A share to someone who has vanished is refused like any other
+        // (decision 90); re-reading the thread finds out, and leaves.
+        if (isUnavailableError(error)) {
+          void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+        }
       } finally {
         setSharingAlbumId(null);
       }
     },
-    [otherId, refetchShareFeed]
+    [otherId, refetchShareFeed, queryClient, conversationId]
   );
 
   const onSharePrivateCard = useCallback(async () => {
@@ -660,10 +715,28 @@ export default function ChatThreadScreen() {
       void refetchShareFeed();
     } catch (error) {
       setShareError(mapSupabaseError(error).message);
+      if (isUnavailableError(error)) {
+        void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+      }
     } finally {
       setSharingCard(false);
     }
-  }, [otherId, refetchShareFeed]);
+  }, [otherId, refetchShareFeed, queryClient, conversationId]);
+
+  // The card sheet's read came back empty: the card was taken back, or its
+  // owner vanished. Either way the sheet closes without a word, its bubble
+  // goes, and the thread re-reads itself (and leaves, if it is gone too).
+  const onPrivateCardGone = useCallback(
+    (ownerId: string) => {
+      setOpenCardOwnerId(null);
+      queryClient.setQueriesData<ShareFeedItem[]>({ queryKey: ['chat-share-feed', conversationId] }, (current) =>
+        current?.filter((item) => !(item.kind === 'private_card' && item.ownerId === ownerId))
+      );
+      void queryClient.invalidateQueries({ queryKey: ['chat-share-feed', conversationId] });
+      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+    },
+    [queryClient, conversationId]
+  );
 
   const openProfile = useCallback(() => {
     if (otherId) router.push(`/profile/${otherId}` as never);
@@ -690,6 +763,11 @@ export default function ChatThreadScreen() {
     if (otherId) router.push(`/settings/report/${otherId}?context=chat` as never);
   }, [otherId]);
 
+  // Leaving (see `useLeaveWhenGone` above): nothing to show on the way out.
+  if (gone) {
+    return <View style={styles.center} testID="thread-gone" />;
+  }
+
   if (conversationPending || messagesPending) {
     return (
       <View style={styles.center} testID="thread-loading">
@@ -698,17 +776,10 @@ export default function ChatThreadScreen() {
     );
   }
 
-  // One neutral empty state for every unreadable-thread case: a bad id, a
-  // purged thread, and the blocker's own `closed_block` row are all the same
-  // here, and none of them gets a reason.
+  // An empty read latches `gone` above, so this only covers the render in
+  // between; like the gone state it says nothing.
   if (!conversation) {
-    return (
-      <View style={styles.center} testID="thread-unavailable">
-        <Text variant="body" color={colors.muted}>
-          This conversation isn&apos;t available.
-        </Text>
-      </View>
-    );
+    return <View style={styles.center} testID="thread-gone" />;
   }
 
   const otherName = conversation.other.firstName ?? 'Someone';
@@ -844,6 +915,7 @@ export default function ChatThreadScreen() {
           ownerId={openCardOwnerId}
           ownerName={otherName}
           onDismiss={() => setOpenCardOwnerId(null)}
+          onGone={() => onPrivateCardGone(openCardOwnerId)}
         />
       ) : null}
 

@@ -1,8 +1,18 @@
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+// useFocusEffect runs its callback once on mount (the first focus) and keeps
+// the latest one so a test can simulate coming back to the tab.
+let mockFocusCallback: (() => void) | null = null;
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), replace: jest.fn(), back: jest.fn() },
+  useFocusEffect: (cb: () => void) => {
+    const { useEffect } = jest.requireActual('react');
+    useEffect(() => {
+      mockFocusCallback = cb;
+      cb();
+    }, [cb]);
+  },
 }));
 jest.mock('../api/client', () => ({ supabase: {}, SUPABASE_URL: 'https://example.test' }));
 jest.mock('../api/conversations', () => ({ listConversations: jest.fn() }));
@@ -62,6 +72,7 @@ function renderScreen() {
 beforeEach(() => {
   jest.clearAllMocks();
   listHandlers = null;
+  mockFocusCallback = null;
   (me as jest.Mock).mockResolvedValue({ id: ME, status: 'active', verification_status: 'verified' });
   (signedPhotoUrls as jest.Mock).mockResolvedValue({ [`${THEM}/0.jpg`]: 'https://signed/them' });
   (listConversations as jest.Mock).mockResolvedValue([item()]);
@@ -104,10 +115,11 @@ describe('chat list', () => {
     expect(await screen.findByTestId('conversation-chip-conv-1')).toHaveTextContent('Closed');
   });
 
-  it('chips a closed_deleted thread with the same word — the two are not distinguishable', async () => {
+  it('gives a closed_deleted row no chip: since migration 0014 such a thread vanishes, it is never shown closed', async () => {
     (listConversations as jest.Mock).mockResolvedValue([item({ state: 'closed_deleted' })]);
     const screen = await renderScreen();
-    expect(await screen.findByTestId('conversation-chip-conv-1')).toHaveTextContent('Closed');
+    await screen.findByTestId('conversation-row-conv-1');
+    expect(screen.queryByTestId('conversation-chip-conv-1')).toBeNull();
   });
 
   it('renders a shadow-accepted thread with no chip at all (decision 12)', async () => {
@@ -199,5 +211,28 @@ describe('chat list', () => {
       expect(screen.getByTestId('conversation-preview-conv-1')).toHaveTextContent('mine')
     );
     expect(screen.queryByTestId('conversation-unread-conv-1')).toBeNull();
+  });
+});
+
+describe('chat list — vanishing (migration 0014, decision 90)', () => {
+  it('does not refetch on the first focus (that is the mount), but does on every later one', async () => {
+    const screen = await renderScreen();
+    await screen.findByTestId('conversation-row-conv-1');
+    expect(listConversations).toHaveBeenCalledTimes(1);
+
+    await act(async () => mockFocusCallback?.());
+    await waitFor(() => expect(listConversations).toHaveBeenCalledTimes(2));
+  });
+
+  it('drops a thread whose other participant vanished on the next focus, with nothing in its place', async () => {
+    const screen = await renderScreen();
+    await screen.findByTestId('conversation-row-conv-1');
+
+    (listConversations as jest.Mock).mockResolvedValue([]);
+    await act(async () => mockFocusCallback?.());
+
+    await waitFor(() => expect(screen.queryByTestId('conversation-row-conv-1')).toBeNull());
+    expect(screen.getByTestId('chats-empty')).toBeTruthy();
+    expect(screen.queryByText(/banned|suspended|deleted|blocked|available/i)).toBeNull();
   });
 });

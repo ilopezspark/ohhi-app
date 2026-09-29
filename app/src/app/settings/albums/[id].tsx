@@ -1,9 +1,9 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { me } from '../../../api/me';
 import {
   addAlbumPhoto,
@@ -17,7 +17,8 @@ import {
   type AlbumRow,
 } from '../../../api/albums';
 import { listSharesForSubject, listShareCandidates, revokeShare, shareAlbum, type ShareCandidate, type ShareRow } from '../../../api/shares';
-import { mapSupabaseError } from '../../../api/errors';
+import { isUnavailableError, mapSupabaseError } from '../../../api/errors';
+import { useGoneLatch, useLeaveWhenGone, useOnAppActive } from '../../../query/gone';
 import { ConfirmButton } from '../../../settings/ConfirmButton';
 import { colors, fontFamilies, radii, spacing } from '../../../theme/tokens';
 
@@ -32,6 +33,13 @@ const NAME_MAX_LENGTH = 60;
  * `Me-Albums.html`, but no detail view) — restyled onto the shared colour/
  * type tokens only, structure unchanged, rather than inventing a new
  * detail-screen layout.
+ *
+ * Reloads on focus, app foreground and reconnect. Gone (decision 90): an
+ * album that was on screen and then reads back empty (a shared album whose
+ * owner was suspended, banned or deleted their account, or whose share was
+ * taken back; the owner's own album deleted elsewhere) sends the screen back
+ * to the albums list without a word. The owner's "shared with" list and
+ * candidates simply stop naming someone who vanished.
  */
 export default function AlbumDetailScreen() {
   const params = useLocalSearchParams<{ id: string }>();
@@ -47,6 +55,9 @@ export default function AlbumDetailScreen() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const { gone, latch } = useGoneLatch();
+  const hadAlbum = useRef(false);
 
   const isOwner = !!album && !!myUserId && album.owner_id === myUserId;
 
@@ -54,6 +65,11 @@ export default function AlbumDetailScreen() {
     if (!albumId) return;
     try {
       const [meResult, albumRow, photoRows] = await Promise.all([me(), getAlbum(albumId), listAlbumPhotos(albumId)]);
+      if (!albumRow && hadAlbum.current) {
+        latch(true);
+        return;
+      }
+      if (albumRow) hadAlbum.current = true;
       setMyUserId(meResult?.id ?? null);
       setAlbum(albumRow);
       setName(albumRow?.name ?? '');
@@ -77,12 +93,24 @@ export default function AlbumDetailScreen() {
     } finally {
       setLoaded(true);
     }
-  }, [albumId]);
+  }, [albumId, latch]);
 
   useFocusEffect(
     useCallback(() => {
-      void load();
-    }, [load])
+      if (!gone) void load();
+    }, [load, gone])
+  );
+  useOnAppActive(() => {
+    if (!gone) void load();
+  });
+  useLeaveWhenGone(
+    gone,
+    () => {
+      for (const key of [['shared_with_me_albums'], ['my_albums'], ['me', 'albums'], ['me', 'albums_summary']]) {
+        void queryClient.invalidateQueries({ queryKey: key });
+      }
+    },
+    '/settings/albums'
   );
 
   const renameMutation = useMutation({
@@ -118,7 +146,12 @@ export default function AlbumDetailScreen() {
   const shareMutation = useMutation({
     mutationFn: (viewerId: string) => shareAlbum(albumId, viewerId),
     onSuccess: (share) => setShares((prev) => [share, ...prev]),
-    onError: (error: unknown) => setActionError(mapSupabaseError(error).message),
+    onError: (error: unknown) => {
+      setActionError(mapSupabaseError(error).message);
+      // Refused like any other when the person has vanished (decision 90):
+      // reload so they drop out of the candidates instead of inviting retries.
+      if (isUnavailableError(error)) void load();
+    },
   });
 
   const revokeMutation = useMutation({
@@ -139,6 +172,10 @@ export default function AlbumDetailScreen() {
     if (result.canceled) return;
     const asset = result.assets[0];
     addPhotoMutation.mutate({ uri: asset.uri, width: asset.width, height: asset.height });
+  }
+
+  if (gone) {
+    return <View style={styles.center} testID="album-gone" />;
   }
 
   if (!loaded) {

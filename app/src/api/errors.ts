@@ -15,6 +15,21 @@ export class RefusedError extends Error {
   }
 }
 
+/**
+ * The thing the call was about is not there for the caller any more: a
+ * message into a thread whose other participant has vanished (`conversation
+ * not found`, migration 0014 / decision 90), or a hi back to a hi whose
+ * sender has (`hi not found`). The server words both exactly as it words an
+ * id that never existed, so this says nothing about *why*; screens treat it
+ * as "gone" (drop it from the cache, leave quietly) and never retry.
+ */
+export class GoneError extends Error {
+  constructor() {
+    super("this isn't available anymore.");
+    this.name = 'GoneError';
+  }
+}
+
 /** Any RPC/edge-function failure that isn't the refusal convention above. */
 export class UnknownError extends Error {
   override cause?: unknown;
@@ -28,14 +43,25 @@ export class UnknownError extends Error {
 
 const REFUSAL_CODE = '42501';
 const REFUSAL_MESSAGE = 'not allowed';
+const GONE_MESSAGES = new Set(['conversation not found', 'hi not found']);
 
 /**
- * Maps a raw Supabase/Postgres error to one of the two client-side error
- * types above. `src/api/*.ts` calls this on every RPC/table error so no
- * screen ever branches on `error.message` to infer *why* a call failed —
- * that reconstructs the exact leak decision 24 exists to prevent.
+ * Maps a raw Supabase/Postgres error to one of the client-side error types
+ * above. `src/api/*.ts` calls this on every RPC/table error so no screen ever
+ * branches on `error.message` to infer *why* a call failed — that
+ * reconstructs the exact leak decision 24 exists to prevent.
+ *
+ * Idempotent: an error that is already one of the types above comes back
+ * unchanged, so a screen re-mapping what an `api/` function threw keeps a
+ * refusal a refusal instead of demoting it to "something went wrong".
  */
-export function mapSupabaseError(error: PostgrestError | Error | unknown): RefusedError | UnknownError {
+export function mapSupabaseError(
+  error: PostgrestError | Error | unknown
+): RefusedError | GoneError | UnknownError {
+  if (error instanceof RefusedError || error instanceof GoneError || error instanceof UnknownError) {
+    return error;
+  }
+
   const code = (error as { code?: string } | null | undefined)?.code;
   const message = (error as { message?: string } | null | undefined)?.message;
 
@@ -43,5 +69,20 @@ export function mapSupabaseError(error: PostgrestError | Error | unknown): Refus
     return new RefusedError();
   }
 
+  if (message !== undefined && GONE_MESSAGES.has(message)) {
+    return new GoneError();
+  }
+
   return new UnknownError(error);
+}
+
+/**
+ * True for the two outcomes a write toward a vanished person or thread can
+ * have (decision 90): the generic refusal (a hi, a first message or a share
+ * to a hidden or nonexistent user) and "gone" (a message into a vanished
+ * thread, a hi back to a vanished sender). Screens use it only to decide
+ * to re-check and drop the target from their caches, never to word copy.
+ */
+export function isUnavailableError(error: unknown): boolean {
+  return error instanceof RefusedError || error instanceof GoneError;
 }

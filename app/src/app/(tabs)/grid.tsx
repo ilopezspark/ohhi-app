@@ -29,6 +29,7 @@ import {
   usePresenceStore,
 } from '../../presence';
 import { getRealtimeManager, type HereNowEvent } from '../../realtime';
+import { useRefetchOnFocus } from '../../query/gone';
 import { BellIcon, EmptyState, SearchIcon, Text } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 
@@ -85,6 +86,12 @@ export default function GridScreen() {
     refetchInterval: 75_000,
     refetchOnWindowFocus: true,
   });
+
+  // Foreground and reconnect refetch through `query/lifecycle.ts`; this
+  // covers switching back to the tab, so someone who was suspended, banned
+  // or deleted their account drops off without waiting for the poll
+  // (decision 90).
+  useRefetchOnFocus(refetch);
 
   // Reads 2 and 3 of §3.1's three-read visibility check (read 1 is `me()`).
   const { data: myPresence } = useQuery({ queryKey: ['my_presence'], queryFn: getMyPresence });

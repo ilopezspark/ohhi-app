@@ -21,6 +21,7 @@ import { router } from 'expo-router';
 import { dismissHi, hiBack, listReceivedHis } from '../api/his';
 import { signedPhotoUrls } from '../api/photos';
 import HisScreen from '../app/(tabs)/his';
+import { GoneError } from '../api/errors';
 
 function renderScreen() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -115,5 +116,35 @@ describe('HisScreen', () => {
 
     await waitFor(() => expect(hiBack).toHaveBeenCalledWith('hi-1'));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/chat/conv-9'));
+  });
+});
+
+describe('HisScreen — vanishing (migration 0014, decision 90)', () => {
+  it('a hi back answered "hi not found" (the sender vanished) just drops the row: no copy, no retry, no navigation', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValueOnce([hiRow(), hiRow({ id: 'hi-2', fromUserId: 'sender-2' })]);
+    // The refetch after the failure no longer returns the vanished sender's hi.
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow({ id: 'hi-2', fromUserId: 'sender-2' })]);
+    (hiBack as jest.Mock).mockRejectedValue(new GoneError());
+
+    const { findByTestId, queryByTestId, queryByText } = await renderScreen();
+    await findByTestId('his-row-hi-1');
+    await fireEvent.press(await findByTestId('his-row-hiback-hi-1'));
+
+    await waitFor(() => expect(queryByTestId('his-row-hi-1')).toBeNull());
+    expect(await findByTestId('his-row-hi-2')).toBeTruthy();
+    expect(hiBack).toHaveBeenCalledTimes(1);
+    expect(router.push).not.toHaveBeenCalled();
+    expect(queryByText(/banned|suspended|deleted|blocked|available/i)).toBeNull();
+  });
+
+  it('keeps the row after a failure that is not about the hi being gone', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
+    (hiBack as jest.Mock).mockRejectedValue(new Error('network'));
+
+    const { findByTestId } = await renderScreen();
+    await fireEvent.press(await findByTestId('his-row-hiback-hi-1'));
+
+    await waitFor(() => expect(hiBack).toHaveBeenCalledTimes(1));
+    expect(await findByTestId('his-row-hi-1')).toBeTruthy();
   });
 });

@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
+import { currentUserId } from './session';
 import type { Database } from '../types/database';
 
 export type ShareRow = Database['public']['Tables']['shares']['Row'];
@@ -104,11 +105,19 @@ export async function revokeShare(shareId: string): Promise<void> {
 /**
  * Every share (active or revoked) the caller owns for one subject — an
  * album's or the private card's "shared with" management list.
+ *
+ * Filtered on `owner_id` explicitly: the shares select policy also admits
+ * rows where the caller is the viewer. Since migration 0014 (decision 90) it
+ * also hides a share whose viewer is suspended, banned or deleted, so a
+ * person who vanished drops out of this list (and every count built on it)
+ * on the next read, with nothing left to revoke.
  */
 export async function listSharesForSubject(subjectType: ShareSubjectType, subjectId: string): Promise<ShareRow[]> {
+  const ownerId = await currentUserId();
   const { data, error } = await supabase
     .from('shares')
     .select('*')
+    .eq('owner_id', ownerId)
     .eq('subject_type', subjectType)
     .eq('subject_id', subjectId)
     .order('created_at', { ascending: false });

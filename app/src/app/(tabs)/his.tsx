@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-
 import { router, useFocusEffect } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { dismissHi, hiBack, listReceivedHis, type ReceivedHi } from '../../api/his';
+import { isUnavailableError } from '../../api/errors';
 import { signedPhotoUrls } from '../../api/photos';
 import { tintForPhoto } from '../../photos/tint';
 import { Avatar, EmptyState, HisIcon, Text } from '../../ui';
@@ -13,7 +14,9 @@ const QUERY_KEY = ['his_received'];
 /**
  * The Hi's tab (decision 15, `docs/app-social-plan.md` §2): a minimal list of
  * received hi's with hi-back and dismiss. No realtime in v1 — refetch on
- * focus and pull-to-refresh only.
+ * focus, app foreground, reconnect (`query/lifecycle.ts`) and
+ * pull-to-refresh only. A hi from someone who was suspended, banned or
+ * deleted their account is simply not returned any more (decision 90).
  *
  * `docs/design/system.md` has no dedicated mockup for this screen — styled
  * here to match the grid's own header rhythm (56px top inset, `headline`
@@ -69,6 +72,13 @@ export default function HisScreen() {
     onSuccess: (conversationId, id) => {
       queryClient.setQueryData<ReceivedHi[]>(QUERY_KEY, (current) => (current ?? []).filter((h) => h.id !== id));
       router.push(`/chat/${conversationId}` as never);
+    },
+    // A hi whose sender has since vanished answers `hi not found` (decision
+    // 90), the same as a bad id: the row just goes, with no copy and no
+    // retry. The refetch in `onSettled` confirms it.
+    onError: (error, id) => {
+      if (!isUnavailableError(error)) return;
+      queryClient.setQueryData<ReceivedHi[]>(QUERY_KEY, (current) => (current ?? []).filter((h) => h.id !== id));
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });

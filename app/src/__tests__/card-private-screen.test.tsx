@@ -1,8 +1,18 @@
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+// useFocusEffect runs its callback once on mount (the first focus) and keeps
+// the latest one so a test can simulate coming back to the screen.
+let mockFocusCallback: (() => void) | null = null;
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn() },
+  useFocusEffect: (cb: () => void) => {
+    const { useEffect } = jest.requireActual('react');
+    useEffect(() => {
+      mockFocusCallback = cb;
+      cb();
+    }, [cb]);
+  },
 }));
 jest.mock('../api/identityWrite', () => ({ getMyCard: jest.fn() }));
 jest.mock('../api/profile', () => ({ getFirstName: jest.fn() }));
@@ -31,6 +41,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockFocusCallback = null;
   (currentUserId as jest.Mock).mockResolvedValue('me-1');
   (getFirstName as jest.Mock).mockResolvedValue('izaac');
 });
@@ -124,5 +135,25 @@ describe('PrivateCardScreen', () => {
     await fireEvent.press(takeBack);
 
     await findByTestId('private-card-shared-empty');
+  });
+});
+
+describe('PrivateCardScreen — vanishing (migration 0014, decision 90)', () => {
+  it('re-reads "shared with" when the screen is focused again, so someone who vanished just drops off', async () => {
+    (getMyCard as jest.Mock).mockResolvedValue({ ...EMPTY_CARD, into: ['men'] });
+    (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([
+      { shareId: 's1', userId: 'u1', firstName: 'maya', sentAt: '2026-09-20T10:00:00.000Z' },
+    ]);
+    const { findByTestId, queryByTestId, queryByText } = await renderScreen();
+    await findByTestId('private-card-shared-s1');
+    expect(listPrivateCardSharedWith).toHaveBeenCalledTimes(1);
+
+    (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([]);
+    await act(async () => mockFocusCallback?.());
+
+    await waitFor(() => expect(queryByTestId('private-card-shared-s1')).toBeNull());
+    expect(listPrivateCardSharedWith).toHaveBeenCalledTimes(2);
+    expect(await findByTestId('private-card-shared-empty')).toBeTruthy();
+    expect(queryByText(/banned|suspended|deleted|blocked/i)).toBeNull();
   });
 });

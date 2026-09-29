@@ -8,6 +8,7 @@ import { getIdentity } from '../../api/identity';
 import { sendHi } from '../../api/his';
 import { startConversation } from '../../api/conversations';
 import { sendMessage } from '../../api/messages';
+import { isUnavailableError } from '../../api/errors';
 import { signedPhotoUrls } from '../../api/photos';
 import { PhotoCarousel } from '../../card/PhotoCarousel';
 import { CtaButton } from '../../card/CtaButton';
@@ -19,6 +20,7 @@ import { tierWord } from '../../grid/tierLabel';
 import { tintForPhoto } from '../../photos/tint';
 import { ProfileTile, type ProfileTileData } from '../../profile/ProfileTile';
 import { goalLabel } from '../../profile/goalLabels';
+import { forgetGridRow, forgetProfile, useGoneLatch, useLeaveWhenGone } from '../../query/gone';
 import { BackIcon, Text } from '../../ui';
 import { colors, layout, radii, spacing } from '../../theme/tokens';
 
@@ -46,6 +48,13 @@ class ConversationCreatedSendFailedError extends Error {
  * in parallel — the identity fetch always fires alongside the card since the
  * card carries no `is_public`-equivalent flag to gate on, and a 404 there
  * just collapses the pronouns/orientation row (never rendered as an error).
+ *
+ * Gone (migration 0014, decision 90): a card that was on screen and then
+ * comes back empty on a refetch (focus, app foreground, reconnect, or the
+ * re-check after a refused hi or first message) drops out of the cache and
+ * the screen goes back, without a word. An empty *first* read keeps the
+ * neutral unavailable screen instead: a hi's sender who is only paused or
+ * away has no card either, and bouncing off a tap would read as a glitch.
  */
 export default function ProfileScreen() {
   const params = useLocalSearchParams<{ id: string | string[] }>();
@@ -55,20 +64,34 @@ export default function ProfileScreen() {
   const [messageSheetOpen, setMessageSheetOpen] = useState(false);
   const [detailsSheetOpen, setDetailsSheetOpen] = useState(false);
 
+  const { gone, latch } = useGoneLatch();
+
   const cardQuery = useQuery({
     queryKey: ['profile_card', targetId],
     queryFn: () => getProfileCard(targetId),
-    enabled: !!targetId,
+    enabled: !!targetId && !gone,
   });
 
   const identityQuery = useQuery({
     queryKey: ['identity', targetId],
     queryFn: () => getIdentity(targetId),
-    enabled: !!targetId,
+    enabled: !!targetId && !gone,
     retry: false,
   });
 
   const card = cardQuery.data ?? null;
+  const emptyRead = cardQuery.isSuccess && cardQuery.data === null;
+
+  const hadCard = useRef(false);
+  if (card) hadCard.current = true;
+  latch(hadCard.current && emptyRead);
+  useLeaveWhenGone(gone, () => forgetProfile(queryClient, targetId), '/grid');
+
+  // An empty first read: whoever this is, the grid would not return them
+  // now either, so a stale tile goes.
+  useEffect(() => {
+    if (emptyRead && !hadCard.current && targetId) forgetGridRow(queryClient, targetId);
+  }, [emptyRead, targetId, queryClient]);
 
   const photoPaths = card?.photos ?? [];
   const photoUrlsQuery = useQuery({
@@ -100,6 +123,12 @@ export default function ProfileScreen() {
       void cardQuery.refetch();
       void queryClient.invalidateQueries({ queryKey: ['his_received'] });
     },
+    // A hi to someone hidden or gone is refused like any other (decision
+    // 90). Re-read the card: if it comes back empty the screen leaves; if
+    // not, the neutral error line stays. Never retried automatically.
+    onError: (error) => {
+      if (isUnavailableError(error)) void cardQuery.refetch();
+    },
   });
 
   // Decision 49: Hi and Message are two equal openers. With no conversation yet
@@ -125,7 +154,11 @@ export default function ProfileScreen() {
       const conversationId = await startConversation(targetId);
       try {
         await sendMessage({ conversationId, body: draft });
-      } catch {
+      } catch (error) {
+        // The thread is unreadable or refused (the other person vanished in
+        // between, decision 90): landing in it would only bounce back, so
+        // this falls through to the card re-check below instead.
+        if (isUnavailableError(error)) throw error;
         throw new ConversationCreatedSendFailedError(conversationId, draft);
       }
       return conversationId;
@@ -165,6 +198,11 @@ export default function ProfileScreen() {
     messageMutation.mutate(draft);
   }
 
+  // Leaving (see `useLeaveWhenGone` above): nothing to show on the way out.
+  if (gone) {
+    return <View style={styles.center} testID="profile-gone" />;
+  }
+
   if (cardQuery.isPending) {
     return (
       <View style={styles.center} testID="profile-loading">
@@ -177,7 +215,7 @@ export default function ProfileScreen() {
     return (
       <View style={styles.center} testID="profile-unavailable">
         <Text variant="body" color={colors.muted} style={styles.unavailableText}>
-          This profile isn&apos;t available.
+          this profile isn&apos;t available.
         </Text>
       </View>
     );

@@ -117,9 +117,10 @@ export interface SendMessageInput {
  *
  * Every refusal `enforce_message_rules` can raise — unverified sender, not a
  * participant, opener already spoke, opener over 240 characters, media outside
- * an `open` thread, a blocker trying to send, a closed/expired thread — comes
- * back through `mapSupabaseError` as one generic error with no sub-reason
- * (decision 24). The composer predicts all of these via
+ * an `open` thread, a blocker trying to send, an expired thread, and
+ * `conversation not found` for a thread whose other participant has vanished
+ * (migration 0014, decision 90) — comes back through `mapSupabaseError` as one
+ * generic error with no sub-reason (decision 24). The composer predicts all of these via
  * `chat/rules.composerState`; this throw is the backstop for the races it
  * cannot predict.
  */

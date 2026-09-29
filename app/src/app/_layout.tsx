@@ -13,8 +13,15 @@ import {
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import { ThemeProvider } from '../theme';
 import { touchActivity } from '../api/presence';
+import { wireQueryLifecycle } from '../query/lifecycle';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// App foreground counts as a window focus and NetInfo drives online/offline,
+// so stale queries refetch on foreground and on reconnect (see
+// `query/lifecycle.ts`). Nothing is pushed when someone vanishes (decision
+// 90), so these refetches are how every screen finds out.
+wireQueryLifecycle();
 
 const queryClient = new QueryClient();
 

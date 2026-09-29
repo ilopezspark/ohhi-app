@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const CONV = 'cccccccc-0000-4000-8000-000000000003';
@@ -6,8 +6,13 @@ const ME = 'aaaaaaaa-0000-4000-8000-000000000001';
 const THEM = 'bbbbbbbb-0000-4000-8000-000000000002';
 
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), replace: jest.fn(), back: jest.fn() },
+  router: { push: jest.fn(), replace: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true) },
   useLocalSearchParams: () => ({ id: 'cccccccc-0000-4000-8000-000000000003' }),
+  // The thread is always the focused screen in these tests.
+  useFocusEffect: (cb: () => void) => {
+    const { useEffect } = jest.requireActual('react');
+    useEffect(() => cb(), [cb]);
+  },
 }));
 jest.mock('../api/client', () => ({ supabase: {}, SUPABASE_URL: 'https://example.test' }));
 jest.mock('../api/conversations', () => ({ getConversation: jest.fn() }));
@@ -63,6 +68,7 @@ import { getSharedPrivateCard } from '../api/identity';
 import { listShareFeed } from '../chat/shareFeed';
 import { checkVideo, generateVideoPoster } from '../chat/video';
 import ChatThreadScreen from '../app/chat/[id]';
+import { GoneError, RefusedError } from '../api/errors';
 
 const conversation = (overrides: Record<string, unknown> = {}) => ({
   id: CONV,
@@ -97,8 +103,7 @@ const message = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-function renderScreen() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+function renderScreen(client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })) {
   return render(
     <QueryClientProvider client={client}>
       <ChatThreadScreen />
@@ -197,7 +202,7 @@ describe('thread — composer gating', () => {
     }
   });
 
-  it('renders closed_deleted with the identical locked line as expired', async () => {
+  it('locks a closed_deleted row defensively with the same neutral line (never delivered since migration 0014)', async () => {
     (getConversation as jest.Mock).mockResolvedValue(conversation({ state: 'closed_deleted' }));
     const screen = await renderScreen();
     expect(await screen.findByTestId('composer-locked')).toHaveTextContent(
@@ -217,10 +222,95 @@ describe('thread — composer gating', () => {
     expect(screen.queryByTestId('composer-locked')).toBeNull();
   });
 
-  it('shows one neutral empty state for an unreadable conversation', async () => {
+});
+
+describe('thread — gone (migration 0014, decision 90)', () => {
+  const NO_REASON = /banned|suspended|deleted|blocked|available|closed/i;
+
+  it('leaves an unreadable conversation straight away, saying nothing', async () => {
     (getConversation as jest.Mock).mockResolvedValue(null);
     const screen = await renderScreen();
-    expect(await screen.findByTestId('thread-unavailable')).toBeTruthy();
+    await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('thread-gone')).toBeTruthy();
+    expect(screen.queryByText(NO_REASON)).toBeNull();
+  });
+
+  it('falls back to the chat list when there is nothing to go back to', async () => {
+    (router.canGoBack as jest.Mock).mockReturnValueOnce(false);
+    (getConversation as jest.Mock).mockResolvedValue(null);
+    await renderScreen();
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/chats'));
+    expect(router.back).not.toHaveBeenCalled();
+  });
+
+  it('when a refetch comes back empty: drops the thread and the person from the caches and leaves, once', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    client.setQueryData(['conversations'], [{ id: CONV, other: { id: THEM } }, { id: 'other-conv', other: { id: 'x' } }]);
+    client.setQueryData(['his_received'], [{ id: 'hi-1', fromUserId: THEM }, { id: 'hi-2', fromUserId: 'x' }]);
+    client.setQueryData(['grid_for_me'], [{ user_id: THEM }, { user_id: 'x' }]);
+
+    const screen = await renderScreen(client);
+    await screen.findByTestId('composer-input');
+    expect(router.back).not.toHaveBeenCalled();
+
+    (getConversation as jest.Mock).mockResolvedValue(null);
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['conversation', CONV] });
+    });
+
+    await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('thread-gone')).toBeTruthy();
+    expect(client.getQueryData(['conversations'])).toEqual([{ id: 'other-conv', other: { id: 'x' } }]);
+    expect(client.getQueryData(['his_received'])).toEqual([{ id: 'hi-2', fromUserId: 'x' }]);
+    expect(client.getQueryData(['grid_for_me'])).toEqual([{ user_id: 'x' }]);
+    // The data is gone (the still-mounted, disabled observer may hold an empty
+    // placeholder until the screen unmounts).
+    expect(client.getQueryData(['conversation', CONV])).toBeUndefined();
+    expect(client.getQueryData(['messages', CONV])).toBeUndefined();
+
+    // No loop: the dropped queries are disabled, so nothing re-reads them.
+    const calls = (getConversation as jest.Mock).mock.calls.length;
+    const messageCalls = (listMessages as jest.Mock).mock.calls.length;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect((getConversation as jest.Mock).mock.calls.length).toBe(calls);
+    expect((listMessages as jest.Mock).mock.calls.length).toBe(messageCalls);
+    expect(router.back).toHaveBeenCalledTimes(1);
+  });
+
+  it('a send answered with "conversation not found" leaves no failed bubble and no retry, and leaves the thread', async () => {
+    (sendMessage as jest.Mock).mockRejectedValue(new GoneError());
+    const screen = await renderScreen();
+    await fireEvent.changeText(await screen.findByTestId('composer-input'), 'still there?');
+    await fireEvent.press(screen.getByTestId('composer-send'));
+
+    await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(screen.queryAllByTestId(/^message-retry-/)).toHaveLength(0);
+    expect(screen.queryByText(NO_REASON)).toBeNull();
+  });
+
+  it('a refused share re-reads the thread, and leaves when the thread is gone', async () => {
+    (sharePrivateCard as jest.Mock).mockRejectedValue(new RefusedError());
+    const screen = await renderScreen();
+    await fireEvent.press(await screen.findByTestId('composer-attach'));
+    (getConversation as jest.Mock).mockResolvedValue(null);
+    await fireEvent.press(await screen.findByTestId('share-sheet-card'));
+
+    await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+    expect(sharePrivateCard).toHaveBeenCalledTimes(1);
+  });
+
+  it('a refused share in a live thread stays put, with the neutral line', async () => {
+    (sharePrivateCard as jest.Mock).mockRejectedValue(new RefusedError());
+    const screen = await renderScreen();
+    await fireEvent.press(await screen.findByTestId('composer-attach'));
+    await fireEvent.press(await screen.findByTestId('share-sheet-card'));
+
+    await waitFor(() => expect(screen.getByText("That didn't work.")).toBeTruthy());
+    await waitFor(() => expect((getConversation as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(2));
+    expect(router.back).not.toHaveBeenCalled();
   });
 });
 
@@ -694,6 +784,22 @@ describe('private card share bubbles', () => {
     await screen.findByTestId('private-card-sheet-card-group-hard_nos');
     expect(getSharedPrivateCard).toHaveBeenCalledWith(THEM);
     expect(router.push).not.toHaveBeenCalledWith(`/profile/${THEM}`);
+  });
+
+  it('closes the card sheet and drops the bubble when the card read comes back empty, without a word', async () => {
+    // The first read has the bubble; every later one (after the card read came
+    // back empty) no longer does.
+    (listShareFeed as jest.Mock).mockResolvedValueOnce([cardShare()]).mockResolvedValue([]);
+    (getSharedPrivateCard as jest.Mock).mockResolvedValue(null);
+    const screen = await renderScreen();
+
+    await fireEvent.press(await screen.findByTestId('share-bubble-press-share-card'));
+
+    await waitFor(() => expect(screen.queryByTestId('private-card-sheet')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('share-bubble-press-share-card')).toBeNull());
+    expect(screen.queryByText(/sharing|available/i)).toBeNull();
+    // The thread itself is still readable, so it stays.
+    expect(router.back).not.toHaveBeenCalled();
   });
 
   it('my own card bubble opens my private card screen', async () => {

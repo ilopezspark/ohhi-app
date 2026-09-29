@@ -21,7 +21,12 @@
  *    storage write policy checks the same thing).
  * 5. `closed_block` + sender is `blocked_by` -> refused. The *other* side
  *    (the blocked party) is accepted: decision 12's shadow-accept.
- * 6. `expired` / `closed_deleted` -> refused.
+ * 6. `expired` / `closed_deleted` -> refused. Only `expired` is modelled:
+ *    since migration 0014 (decision 90) a thread whose other participant
+ *    deleted their account is not readable at all (`can_read_conversation`
+ *    requires the other participant to be visible), so `closed_deleted` never
+ *    reaches this client. The state stays in the union only because the
+ *    database enum still has it; it falls through to the defensive default.
  *
  * One rule here is **stricter than the trigger on purpose**: `awaiting_opener`.
  * After `hi_back()` the conversation exists with the original sender as
@@ -126,9 +131,8 @@ export function composerState(
     case 'expired':
       return locked('expired');
 
-    case 'closed_deleted':
-      return locked('closed');
-
+    // `closed_deleted` included: unreachable since migration 0014 (see the
+    // file header), locked defensively rather than given its own handling.
     default:
       return locked('closed');
   }
@@ -138,9 +142,11 @@ export function composerState(
  * Copy for a locked composer.
  *
  * `closed` and `expired` deliberately share one string: plan §3 says an
- * expired/deleted thread shows "no reason … a distinguishing banner would leak
- * what decision 13 hides", and the same sentence must cover the (unreachable)
- * blocker case so no wording can ever be read back as "you blocked them".
+ * expired thread shows "no reason", and the same sentence must cover the
+ * (unreachable) blocker case so no wording can ever be read back as "you
+ * blocked them". A thread with someone who deleted their account, or was
+ * suspended or banned, has no locked state at all any more: it disappears
+ * (migration 0014, decision 90).
  */
 export const COMPOSER_LOCKED_COPY: Record<ComposerBlockedReason, string> = {
   awaiting_opener: 'Waiting for them to say hi first.',
@@ -153,11 +159,13 @@ export const COMPOSER_LOCKED_COPY: Record<ComposerBlockedReason, string> = {
  * The list chip for a conversation, or null for no chip.
  *
  * `closed_block` renders **no chip at all** for the blocked party — that is the
- * whole point of decision 12 — and the blocker never sees the row. All three
- * lockable states share one neutral word so the chip cannot be decoded.
+ * whole point of decision 12 — and the blocker never sees the row. Both
+ * chipped states share one neutral word so the chip cannot be decoded.
+ * `closed_deleted` gets no chip: since migration 0014 (decision 90) such a
+ * thread is never returned to the other participant, it vanishes instead.
  */
 export function conversationChip(conversation: ConversationRules, meId: string): string | null {
-  if (conversation.state === 'expired' || conversation.state === 'closed_deleted') return 'Closed';
+  if (conversation.state === 'expired') return 'Closed';
   if (conversation.state === 'closed_block' && meId === conversation.blocked_by) return 'Closed';
   return null;
 }

@@ -142,7 +142,7 @@ describe('composerState — every state x role x last-sender combination', () =>
       { blocked_by: RECIPIENT },
     ],
 
-    // ---- expired / closed_deleted ---------------------------------------
+    // ---- expired; closed_deleted (unreachable since migration 0014) ----
     [
       'expired / opener -> locked',
       'expired',
@@ -160,7 +160,7 @@ describe('composerState — every state x role x last-sender combination', () =>
       {},
     ],
     [
-      'closed_deleted / opener -> locked',
+      'closed_deleted / opener -> locked by the defensive default (never delivered since 0014)',
       'closed_deleted',
       OPENER,
       openerSent,
@@ -168,7 +168,7 @@ describe('composerState — every state x role x last-sender combination', () =>
       {},
     ],
     [
-      'closed_deleted / recipient -> locked',
+      'closed_deleted / recipient -> locked by the defensive default (never delivered since 0014)',
       'closed_deleted',
       RECIPIENT,
       openerSent,
@@ -234,12 +234,16 @@ describe('conversationChip', () => {
     ).toBeNull();
   });
 
-  it('uses one neutral word for expired, deleted and the blocker’s own row', () => {
+  it('uses one neutral word for expired and the blocker’s own row', () => {
     expect(conversationChip(conversation('expired'), OPENER)).toBe('Closed');
-    expect(conversationChip(conversation('closed_deleted'), OPENER)).toBe('Closed');
     expect(conversationChip(conversation('closed_block', { blocked_by: OPENER }), OPENER)).toBe(
       'Closed'
     );
+  });
+
+  it('gives closed_deleted no chip: since migration 0014 the thread vanishes instead of closing', () => {
+    expect(conversationChip(conversation('closed_deleted'), OPENER)).toBeNull();
+    expect(conversationChip(conversation('closed_deleted'), RECIPIENT)).toBeNull();
   });
 });
 

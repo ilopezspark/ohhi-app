@@ -75,7 +75,7 @@ export default function PhotoScreen() {
   async function pickFromLibrary() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setPermissionMessage('Allow photo library access to add a photo.');
+      setPermissionMessage('allow photo library access to add a photo.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -90,7 +90,7 @@ export default function PhotoScreen() {
   async function pickFromCamera() {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      setPermissionMessage('Allow camera access to take a photo.');
+      setPermissionMessage('allow camera access to take a photo.');
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -122,7 +122,7 @@ export default function PhotoScreen() {
       if (__DEV__) {
         console.error('[onboarding/photo] upload failed', err);
       }
-      setErrorMessage("That didn't work. Please try again.");
+      setErrorMessage("that didn't work. try again.");
       setPhase('error');
     }
   }
@@ -171,11 +171,11 @@ export default function PhotoScreen() {
         <View style={styles.pickerRow}>
           <Pressable testID="photo-pick-library" style={styles.pickButton} onPress={pickFromLibrary}>
             <PlusIcon size={18} color={colors.subtle} />
-            <Text variant="rowLabel">Choose from library</Text>
+            <Text variant="rowLabel">choose from library</Text>
           </Pressable>
           <Pressable testID="photo-pick-camera" style={styles.pickButton} onPress={pickFromCamera}>
             <PlusIcon size={18} color={colors.subtle} />
-            <Text variant="rowLabel">Take a photo</Text>
+            <Text variant="rowLabel">take a photo</Text>
           </Pressable>
         </View>
       ) : null}
@@ -191,7 +191,7 @@ export default function PhotoScreen() {
       {phase === 'preview' || phase === 'uploading' ? (
         <View style={styles.actionRow}>
           <Button
-            label="Retake"
+            label="retake"
             variant="secondary"
             fullWidth={false}
             style={styles.actionButton}
@@ -200,7 +200,7 @@ export default function PhotoScreen() {
             onPress={handleRetake}
           />
           <Button
-            label="Use this photo"
+            label="use this photo"
             fullWidth={false}
             style={styles.actionButton}
             loading={uploading}
@@ -219,18 +219,18 @@ export default function PhotoScreen() {
           <Text testID="photo-error" variant="helper" color={colors.danger}>
             {errorMessage}
           </Text>
-          <Button label="Try again" testID="photo-retry-button" onPress={handleUpload} />
+          <Button label="try again" testID="photo-retry-button" onPress={handleUpload} />
         </View>
       ) : null}
 
       {phase === 'pending' ? (
         <View style={{ gap: spacing.mdLg }}>
           <Text testID="photo-pending-copy" variant="helper">
-            Photo submitted — we&apos;ll check it; you&apos;ll be visible once it&apos;s approved.
+            photo sent. we&apos;ll check it; you&apos;ll be visible once it&apos;s approved.
           </Text>
           <View style={styles.actionRow}>
             <Button
-              label="Retake"
+              label="retake"
               variant="secondary"
               fullWidth={false}
               style={styles.actionButton}
@@ -238,7 +238,7 @@ export default function PhotoScreen() {
               onPress={handleRetake}
             />
             <Button
-              label="Continue"
+              label="continue"
               fullWidth={false}
               style={styles.actionButton}
               testID="photo-continue-button"

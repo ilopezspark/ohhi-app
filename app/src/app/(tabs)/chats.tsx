@@ -7,6 +7,7 @@ import { signedPhotoUrls } from '../../api/photos';
 import { me as fetchMe } from '../../api/me';
 import { ConversationRow } from '../../chat/ConversationRow';
 import { useMessageListRealtime } from '../../chat/useChatRealtime';
+import { useRefetchOnFocus } from '../../query/gone';
 import { colors, layout, spacing } from '../../theme/tokens';
 import { ChatIcon } from '../../ui/icons';
 import { EmptyState, Text } from '../../ui';
@@ -18,7 +19,11 @@ import { EmptyState, Text } from '../../ui';
  * simply isn't in the data for the blocker (`can_read_conversation` drops it),
  * and for the blocked party it renders exactly like any other thread. Nothing
  * on this screen may ever explain a thread's absence or its state — the chip
- * says one neutral word for expired/deleted and says nothing at all otherwise.
+ * says one neutral word for an expired thread and says nothing at all
+ * otherwise. A thread with someone who is suspended, banned or deleted their
+ * account is simply not in the data (migration 0014, decision 90); the list
+ * refetches on focus, app foreground and reconnect so it drops out without a
+ * push.
  *
  * Deviation from `Chat-List.html`: the mockup's row subtitle ("· on campus" /
  * "· nearby") is presence data `listConversations()` doesn't fetch (it isn't
@@ -38,6 +43,12 @@ export default function ChatsScreen() {
     refetch,
     isRefetching,
   } = useQuery({ queryKey: ['conversations'], queryFn: listConversations });
+
+  // Tab screens stay mounted, so refetch-on-mount alone would never drop a
+  // thread whose other participant vanished while this tab sat in the
+  // background. Foreground and reconnect are covered globally
+  // (`query/lifecycle.ts`); this covers switching back to the tab.
+  useRefetchOnFocus(refetch);
 
   // ---------------------------------------------------------------------
   // List-level realtime: one subscription across every readable `messages`

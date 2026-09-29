@@ -1,8 +1,18 @@
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+// useFocusEffect runs its callback once on mount (the first focus) and keeps
+// the latest one so a test can simulate coming back to the tab.
+let mockFocusCallback: (() => void) | null = null;
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), replace: jest.fn(), back: jest.fn() },
+  useFocusEffect: (cb: () => void) => {
+    const { useEffect } = jest.requireActual('react');
+    useEffect(() => {
+      mockFocusCallback = cb;
+      cb();
+    }, [cb]);
+  },
 }));
 jest.mock('../api/client', () => ({ supabase: {}, SUPABASE_URL: 'https://example.test' }));
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
@@ -110,6 +120,7 @@ function renderScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockFocusCallback = null;
   Object.assign(mockPresenceValue, {
     tier: 'on_campus',
     permission: 'granted',
@@ -437,5 +448,21 @@ describe('GridScreen — the in-app verify sheet (Grid-Verify.html)', () => {
 
     await waitFor(() => expect(queryByTestId('grid-verify-sheet')).toBeNull());
     expect(startAndOpenVerification).not.toHaveBeenCalled();
+  });
+});
+
+describe('GridScreen — vanishing (migration 0014, decision 90)', () => {
+  it('refetches when the tab is focused again, dropping someone who was suspended, banned or deleted', async () => {
+    (gridForMe as jest.Mock).mockResolvedValue([gridRow({ user_id: 'u1' }), gridRow({ user_id: 'u2', first_name: 'Bea' })]);
+    const screen = await renderScreen();
+    await waitFor(() => expect(screen.getByTestId('grid-tile-u2')).toBeTruthy());
+    expect(gridForMe).toHaveBeenCalledTimes(1);
+
+    (gridForMe as jest.Mock).mockResolvedValue([gridRow({ user_id: 'u1' })]);
+    await act(async () => mockFocusCallback?.());
+
+    await waitFor(() => expect(screen.queryByTestId('grid-tile-u2')).toBeNull());
+    expect(gridForMe).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('grid-tile-u1')).toBeTruthy();
   });
 });

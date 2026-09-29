@@ -8,10 +8,27 @@ const mockUpdate = jest.fn((..._args: unknown[]) => ({ eq: mockEqUpdate }));
 const mockOr = jest.fn();
 const mockEqConv = jest.fn((..._args: unknown[]) => ({ or: mockOr }));
 const mockInSelect = jest.fn();
+/** Every filter the shares select chain received, in order, and what it finally resolves to. */
+const mockSharesSelectCalls: Array<[string, unknown[]]> = [];
+const mockSharesSelectResult = jest.fn();
+function mockSharesSelectChain(): unknown {
+  const chain: Record<string, unknown> = {};
+  for (const op of ['eq', 'is', 'in']) {
+    chain[op] = (...args: unknown[]) => {
+      mockSharesSelectCalls.push([op, args]);
+      return chain;
+    };
+  }
+  chain.order = (...args: unknown[]) => {
+    mockSharesSelectCalls.push(['order', args]);
+    return mockSharesSelectResult();
+  };
+  return chain;
+}
 const mockFrom = jest.fn((table: string) => {
   if (table === 'conversations') return { select: jest.fn(() => ({ eq: mockEqConv })) };
   if (table === 'profiles') return { select: jest.fn(() => ({ in: mockInSelect })) };
-  return { insert: mockInsert, update: mockUpdate };
+  return { insert: mockInsert, update: mockUpdate, select: jest.fn(() => mockSharesSelectChain()) };
 });
 
 jest.mock('../api/client', () => ({
@@ -21,7 +38,7 @@ jest.mock('../api/client', () => ({
   },
 }));
 
-import { revokeShare, shareAlbum, sharePrivateCard, listShareCandidates } from '../api/shares';
+import { listSharesForSubject, revokeShare, shareAlbum, sharePrivateCard, listShareCandidates } from '../api/shares';
 
 const ME = '11111111-1111-4111-8111-111111111111';
 const VIEWER = '22222222-2222-4222-8222-222222222222';
@@ -30,6 +47,7 @@ const SHARE_ID = 'share-1';
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSharesSelectCalls.length = 0;
   mockGetUser.mockResolvedValue({ data: { user: { id: ME } } });
 });
 
@@ -114,5 +132,23 @@ describe('listShareCandidates', () => {
       ])
     );
     expect(candidates).toHaveLength(2);
+  });
+});
+
+describe('listSharesForSubject', () => {
+  it('filters on owner_id = the signed-in user: the shares select policy also admits rows where I am the viewer', async () => {
+    mockSharesSelectResult.mockResolvedValue({ data: [{ id: SHARE_ID }], error: null });
+
+    const rows = await listSharesForSubject('album', ALBUM_ID);
+
+    expect(rows).toEqual([{ id: SHARE_ID }]);
+    expect(mockFrom).toHaveBeenCalledWith('shares');
+    expect(mockSharesSelectCalls).toEqual(
+      expect.arrayContaining([
+        ['eq', ['owner_id', ME]],
+        ['eq', ['subject_type', 'album']],
+        ['eq', ['subject_id', ALBUM_ID]],
+      ])
+    );
   });
 });

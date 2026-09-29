@@ -534,7 +534,7 @@ security one.
 | `closed_block` | `blocked_by` (the blocker) | — | locked (unreachable: `can_read_conversation` hides the row) |
 | `closed_block` | the blocked party | — | **send, media enabled — identical to `open`** (decision 12 shadow-accept) |
 | `expired` | either | — | locked, read-only |
-| `closed_deleted` | either | — | locked, read-only |
+| `closed_deleted` | either | — | never delivered since migration 0014 (the whole thread vanishes); locked by the defensive default if it ever were |
 | any | non-participant | — | locked (defensive) |
 
 Two deliberate departures from a literal reading of the trigger:
@@ -550,8 +550,11 @@ Two deliberate departures from a literal reading of the trigger:
   generic "Couldn't send. Tap to retry." as a dropped connection.
 
 `closed` and `expired` share one locked string, and the list chip is the single word
-"Closed" for `expired`/`closed_deleted` and **nothing at all** for a shadow-accepted thread —
-a distinguishing banner would leak what decision 13 hides.
+"Closed" for `expired` and **nothing at all** for a shadow-accepted thread — a distinguishing
+banner would leak what decision 13 hides. There is no closed-on-deletion UI any more: since
+migration 0014 (decision 90) a thread whose other participant is suspended, banned or deleted
+their account is not returned at all, so it vanishes rather than closing (see "Vanishing
+accounts" below).
 
 ### Unread and previews: what one request can derive
 
@@ -671,8 +674,14 @@ grant), album-photo upload-then-insert (`album-photos` bucket, `{user_id}/{album
 uniqueness, since `album_photos.id` is server-assigned and not in the owner's insert grant),
 with `upsert: false` to a fresh name every time (migration 0012: no client storage UPDATE
 policy, and a name one of the owner's rows references can be neither re-uploaded nor deleted).
-Removing a photo deletes the row first and the object second; deleting an album deletes its
-photo rows, then the album (the `album_photos` foreign key has no cascade), then the objects.
+Removing a photo deletes the row first and the object second. Deleting an album is one RPC,
+`delete_my_album(p_album_id)` (migration 0014): in one transaction it deletes the photo rows,
+revokes the album's shares and deletes the album, and returns the storage paths no other album
+row of the owner still names; `deleteAlbum` then removes those objects from `album-photos`
+(skipped when the list is empty). A refusal (someone else's album, a bad id) is the generic
+`not allowed` / 42501 -> `RefusedError`. Once the RPC has succeeded the album is gone, so a
+storage failure afterwards is logged in dev and swallowed, never reported as "album not
+deleted".
 Album photos are **not moderated** (migration 0013, decision 89): there is no
 `moderation_state` column on `album_photos` any more, no "pending review" badge, and a share
 viewer sees every photo in the album while the share is active and neither side has blocked
@@ -806,7 +815,7 @@ design added.
   `composerState().canAttachMedia` (which is also `true` for a shadow-accepted `closed_block`
   thread, decision 12, where sharing is not actually mutual). Disabled rows show one neutral
   line — "you can share once you've both said something" — regardless of the real reason
-  (`awaiting_reply`, `expired`, `closed_deleted`, or the blocked-party case), never naming a
+  (`awaiting_reply`, `expired`, or the blocked-party case), never naming a
   block. "a photo" is unaffected: it keeps the existing `canAttachMedia` gate.
 - **Inline bubbles**: `chat/shareFeed.ts` reads every *active* album/private-card share between
   the two participants, either direction, merged into the message feed by `created_at` (a
@@ -1606,6 +1615,12 @@ special case), and on uppercase outside `UPPERCASE_ALLOWLIST` (`CLC` today) for 
 containing a space. The rule engine (`extractStringLiterals`, `checkLiteral`, `checkSource`) is
 exported and unit-tested directly against synthetic strings, separately from the real-tree scan.
 
+Since the migration 0014 pass the scan also covers `app/(onboarding)/photo.tsx`, whose copy was
+lowercased then. The rest of onboarding is not covered yet: it still has sentence-case copy
+(`finish.tsx`, `name.tsx`, `onboarding/validation.ts`) and the date picker's `mode="date"`,
+which need their own pass and an allow-list call first. Only string literals are scanned; JSX
+text children (`<Text>copy</Text>`) are not.
+
 ### Verification
 
 - `npx jest` — 86 suites / 849 tests pass (full repo, including this pass's own 8 new suites).
@@ -1857,8 +1872,10 @@ copies of one style) and `ui/VerificationPill` (Settings' verification row and
 
 Tapping a private-card bubble in a chat opens `chat/PrivateCardSheet.tsx`: the full card, read
 fresh through `api/identity.ts#getSharedPrivateCard` and rendered with the same
-`PrivateCardView` the owner previews. A card the owner has taken back answers 404 and the sheet
-says so. Your own outgoing bubble opens `/me/private-card`.
+`PrivateCardView` the owner previews. A card the owner has taken back, or whose owner has
+vanished (decision 90), answers 404; the sheet then closes without a word and the bubble drops
+out of the feed (see "Vanishing accounts" below). Your own outgoing bubble opens
+`/me/private-card`.
 
 ### Deviations
 
@@ -1879,3 +1896,87 @@ QuickStatus), `editor-photos-screen.test.tsx`, `editor-photo-slots.test.ts`,
 `chat-private-card-sheet.test.tsx`, two share-bubble cases in `chat-thread-screen.test.tsx`,
 `albums-no-overwrite.test.ts`, `storage-no-overwrite.test.ts`.
 <!-- END: Me redesign: profile editor, photo uploads and cleanups -->
+
+<!-- BEGIN: Vanishing accounts (migration 0014) -->
+## Vanishing accounts (migration 0014)
+
+Decision 90 (`docs/decisions.md`), migration `20260918000014_vanish_when_inactive.sql`: a
+suspended, banned, age-closed or deleted person disappears for everyone, everywhere (grid,
+card, hi's, whole chat threads and their media, albums and private cards they shared, shares
+made to them). Suspend and ban are read-time filters that reverse cleanly. **Nothing is pushed
+to clients** when someone vanishes: their rows simply stop being returned, so the app finds out
+by re-reading.
+
+### Refetching (`src/query/lifecycle.ts`, `src/query/gone.ts`)
+
+- `wireQueryLifecycle()` (called once from `app/_layout.tsx`) wires React Query to React Native:
+  `AppState` -> `focusManager` (app foreground counts as a window focus, so every mounted stale
+  query refetches) and `@react-native-community/netinfo` -> `onlineManager` (queries pause
+  offline and refetch on reconnect; a `null` "still checking" counts as online). Web keeps
+  React Query's own browser listeners.
+- `useRefetchOnFocus(refetch)` refetches when a screen regains focus, skipping the first focus
+  (the mount). Used by the chats and grid tabs and `/me/private-card`'s "shared with". The hi's
+  tab, Me (`useMeData`, which also covers the private-card and album counts) and
+  `settings/albums` (now all three of its lists) already refetched on focus.
+- `useOnAppActive(cb)` runs a callback on foreground/reconnect for the one screen that keeps
+  server data in local state (`settings/albums/[id].tsx`).
+
+### Gone: detail screens
+
+A detail screen whose read comes back empty drops what it held from the cache and goes back
+(`router.back()`, or the list if there is nothing to go back to), **saying nothing**. The same
+empty read covers a block, a revoke, a bad id and a vanished person, and none of them gets a
+reason. `useGoneLatch()` latches the state and disables the screen's own queries, so dropping
+them cannot trigger a refetch loop; `useLeaveWhenGone()` forgets the caches at once and leaves
+only while the screen is focused (a profile under its own thread must not pop the thread).
+
+| Screen | Gone when | Drops | Goes to |
+|---|---|---|---|
+| `chat/[id]` | `getConversation` is `null` (first load or any refetch), or a send answers `conversation not found` | the list row, the thread's own caches, and the other person: grid tile, card, their hi's, their shared card, every share list and count | back, else `/chats` |
+| `profile/[id]` | a card that was shown refetches as `null` | the grid tile and the card caches (not their hi's: a paused person has no card either) | back, else `/grid` |
+| `chat/[id]/album/[albumId]` | `getAlbum` is `null` (an album that exists but is empty is not gone) | the album caches and its bubble in the thread | back, else the thread |
+| `chat/PrivateCardSheet` | the identity function answers 404 | the sheet closes via `onGone`, the bubble drops, the thread re-reads itself | stays in the thread |
+| `settings/albums/[id]` | an album that was shown reloads as `null` | the album lists and counts are invalidated | back, else `/settings/albums` |
+
+An empty *first* read of a profile card still shows the neutral "this profile isn't
+available." screen (a hi's sender who is only paused or away has no card either), and drops
+that person's stale grid tile.
+
+Lists need nothing special: the row is just not in the next read. `listSharesForSubject` now
+also filters on `owner_id` (the shares policy admits the viewer side too), so "shared with"
+lists and the counts built on them only ever count my own shares to people still visible.
+
+### Writes toward someone who vanished
+
+`mapSupabaseError` now also maps `conversation not found` and `hi not found` to `GoneError`
+("this isn't available anymore.") and is idempotent for already-mapped errors;
+`isUnavailableError()` is true for `RefusedError` and `GoneError`. Screens use it only to decide
+to re-check, never to word copy.
+
+- A message into a vanished thread (`GoneError`): no failed bubble and no retry; the thread
+  leaves. Any other send failure keeps the retryable bubble and re-reads the thread, as does a
+  failed media upload (the storage policy refuses uploads into a hidden thread).
+- A hi or first message to a hidden or nonexistent user (42501): the neutral error line, then
+  one card re-check, which leaves if the card is now empty. A first message whose send answers
+  `conversation not found` after `start_conversation` succeeded does not route into the dead
+  thread.
+- A hi back to a vanished sender (`hi not found`): the row just goes. No copy, no navigation.
+- A share (album or private card) refused in a thread: the neutral error line, and the thread
+  re-reads itself. On the album screen the candidates reload.
+
+### Package
+
+`@react-native-community/netinfo` **12.0.1** (the version Expo SDK 57's
+`bundledNativeModules.json` pins) is a native module: **a new development build is needed**
+before this runs on a device (Expo Go already includes it).
+
+### Tests
+
+`query-lifecycle.test.ts` (AppState/NetInfo wiring, foreground refetch), the "gone" and
+"vanishing" blocks in `chat-thread-screen`, `card-screen`, `chat-list-screen`, `grid-screen`,
+`his-screen`, `card-private-screen` and `chat-private-card-sheet`, the new
+`chat-shared-album-screen.test.tsx`, `errors.test.ts` (`GoneError`, idempotence) and
+`albums-no-overwrite.test.ts` (`delete_my_album`: one RPC, paths removed after it, empty or
+`null` paths skip storage, 42501 -> `RefusedError`, a storage failure after the RPC still
+resolves).
+<!-- END: Vanishing accounts (migration 0014) -->

@@ -1,9 +1,14 @@
-import { render, waitFor, fireEvent } from '@testing-library/react-native';
+import { act, render, waitFor, fireEvent } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), replace: jest.fn(), back: jest.fn() },
+  router: { push: jest.fn(), replace: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true) },
   useLocalSearchParams: jest.fn(),
+  // The card is always the focused screen in these tests.
+  useFocusEffect: (cb: () => void) => {
+    const { useEffect } = jest.requireActual('react');
+    useEffect(() => cb(), [cb]);
+  },
 }));
 jest.mock('../api/client', () => ({ supabase: {}, SUPABASE_URL: 'https://example.test' }));
 jest.mock('../api/profileCard', () => ({ getProfileCard: jest.fn() }));
@@ -21,11 +26,11 @@ import { startConversation } from '../api/conversations';
 import { sendMessage } from '../api/messages';
 import { signedPhotoUrls } from '../api/photos';
 import ProfileScreen from '../app/profile/[id]';
+import { GoneError, RefusedError } from '../api/errors';
 
 const TARGET = '44444444-4444-4444-8444-444444444444';
 
-function renderScreen() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderScreen(client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(
     <QueryClientProvider client={client}>
       <ProfileScreen />
@@ -331,5 +336,95 @@ describe('ProfileScreen', () => {
     const reportItem = await findByTestId('profile-overflow-report');
     await fireEvent.press(reportItem);
     expect(router.push).toHaveBeenCalledWith(`/settings/report/${TARGET}?context=profile`);
+  });
+});
+
+describe('ProfileScreen — gone (migration 0014, decision 90)', () => {
+  const NO_REASON = /banned|suspended|deleted|blocked/i;
+
+  function clientWithGrid() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    client.setQueryData(['grid_for_me'], [{ user_id: TARGET }, { user_id: 'someone-else' }]);
+    return client;
+  }
+
+  it('an empty first read keeps the neutral screen (a paused person has no card either) and drops the stale tile', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(null);
+    const client = clientWithGrid();
+    const screen = await renderScreen(client);
+
+    expect(await screen.findByTestId('profile-unavailable')).toHaveTextContent("this profile isn't available.");
+    await waitFor(() => expect(client.getQueryData(['grid_for_me'])).toEqual([{ user_id: 'someone-else' }]));
+    expect(router.back).not.toHaveBeenCalled();
+    expect(screen.queryByText(NO_REASON)).toBeNull();
+  });
+
+  it('a card that was on screen and refetches empty leaves quietly and drops out of the cache', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card());
+    const client = clientWithGrid();
+    const screen = await renderScreen(client);
+    await screen.findByTestId('profile-screen');
+
+    (getProfileCard as jest.Mock).mockResolvedValue(null);
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['profile_card', TARGET] });
+    });
+
+    await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('profile-gone')).toBeTruthy();
+    expect(screen.queryByTestId('profile-unavailable')).toBeNull();
+    expect(client.getQueryData(['profile_card', TARGET])).toBeUndefined();
+    expect(client.getQueryData(['grid_for_me'])).toEqual([{ user_id: 'someone-else' }]);
+    expect(screen.queryByText(NO_REASON)).toBeNull();
+  });
+
+  it('falls back to the grid when there is nothing to go back to', async () => {
+    (router.canGoBack as jest.Mock).mockReturnValueOnce(false);
+    (getProfileCard as jest.Mock).mockResolvedValueOnce(card()).mockResolvedValue(null);
+    const client = clientWithGrid();
+    const screen = await renderScreen(client);
+    await screen.findByTestId('profile-screen');
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['profile_card', TARGET] });
+    });
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/grid'));
+  });
+
+  it('a refused hi re-checks the card once, and leaves when the person is gone; never retried', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValueOnce(card()).mockResolvedValue(null);
+    (sendHi as jest.Mock).mockRejectedValue(new RefusedError());
+    const screen = await renderScreen();
+    await fireEvent.press(await screen.findByTestId('profile-cta-hi'));
+
+    await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+    expect(sendHi).toHaveBeenCalledTimes(1);
+    expect(getProfileCard).toHaveBeenCalledTimes(2);
+  });
+
+  it('a refused hi toward someone still there keeps the neutral error line and stays', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card());
+    (sendHi as jest.Mock).mockRejectedValue(new RefusedError());
+    const screen = await renderScreen();
+    await fireEvent.press(await screen.findByTestId('profile-cta-hi'));
+
+    expect(await screen.findByTestId('profile-hi-error')).toHaveTextContent("That didn't work.");
+    await waitFor(() => expect(getProfileCard).toHaveBeenCalledTimes(2));
+    expect(router.back).not.toHaveBeenCalled();
+    expect(sendHi).toHaveBeenCalledTimes(1);
+  });
+
+  it('a first message answered "conversation not found" does not land in the dead thread; it re-checks the card', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValueOnce(card()).mockResolvedValue(null);
+    (startConversation as jest.Mock).mockResolvedValue('conv-new');
+    (sendMessage as jest.Mock).mockRejectedValue(new GoneError());
+    const screen = await renderScreen();
+    await fireEvent.press(await screen.findByTestId('profile-cta-message'));
+    await fireEvent.changeText(await screen.findByTestId('profile-message-sheet-input'), 'hey');
+    await fireEvent.press(await screen.findByTestId('profile-message-sheet-send'));
+
+    await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+    expect(router.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/chat/[id]' }));
+    expect(router.push).not.toHaveBeenCalledWith('/chat/conv-new');
+    expect(sendMessage).toHaveBeenCalledTimes(1);
   });
 });

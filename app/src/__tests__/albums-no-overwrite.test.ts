@@ -34,11 +34,16 @@ function mockChain(table: string): unknown {
 
 const mockUpload = jest.fn();
 const mockRemove = jest.fn();
+const mockRpc = jest.fn();
 
 jest.mock('../api/client', () => ({
   supabase: {
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'b6b6b6b6-1111-4b11-8b11-111111111111' } }, error: null }) },
     from: (table: string) => mockChain(table),
+    rpc: (...args: unknown[]) => {
+      mockCalls.push({ table: 'rpc', op: String(args[0]), args });
+      return mockRpc(...args);
+    },
     storage: {
       from: (bucket: string) => ({
         upload: (...args: unknown[]) => {
@@ -65,6 +70,7 @@ import {
   listSharedWithMeAlbums,
   removeAlbumPhoto,
 } from '../api/albums';
+import { RefusedError } from '../api/errors';
 
 const USER_ID = 'b6b6b6b6-1111-4b11-8b11-111111111111';
 const ALBUM_ID = 'a6a6a6a6-2222-4a22-8a22-222222222222';
@@ -79,6 +85,7 @@ beforeEach(() => {
   mockTableResults = {};
   mockUpload.mockReset().mockResolvedValue({ error: null });
   mockRemove.mockReset().mockResolvedValue({ error: null });
+  mockRpc.mockReset().mockResolvedValue({ data: [], error: null });
   (globalThis as unknown as { fetch: jest.Mock }).fetch = jest
     .fn()
     .mockResolvedValue({ blob: () => Promise.resolve('blob') });
@@ -121,40 +128,65 @@ describe('removeAlbumPhoto', () => {
 });
 
 describe('deleteAlbum', () => {
-  it('deletes the photo rows, then the album, then the objects', async () => {
-    mockTableResults.album_photos = {
-      data: [
-        { id: 'p1', storage_path: `${USER_ID}/${ALBUM_ID}/1.jpg` },
-        { id: 'p2', storage_path: `${USER_ID}/${ALBUM_ID}/2.jpg` },
-      ],
-      error: null,
-    };
-    mockTableResults.albums = { error: null };
+  it('deletes through delete_my_album (rows, shares and album in one transaction), never row by row', async () => {
+    await deleteAlbum(ALBUM_ID);
 
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(mockRpc).toHaveBeenCalledWith('delete_my_album', { p_album_id: ALBUM_ID });
+    expect(mockCalls.filter((c) => c.table !== 'rpc')).toEqual([]);
+  });
+
+  it('removes exactly the paths the RPC returned from album-photos, after the RPC', async () => {
+    const paths = [`${USER_ID}/${ALBUM_ID}/1.jpg`, `${USER_ID}/${ALBUM_ID}/2.jpg`];
     const order: string[] = [];
-    const originalPush = mockCalls.push.bind(mockCalls);
-    mockCalls.push = (...items: Call[]) => {
-      items.forEach((c) => c.op === 'delete' && order.push(`${c.table}.delete`));
-      return originalPush(...items);
-    };
+    mockRpc.mockImplementation(() => {
+      order.push('rpc');
+      return Promise.resolve({ data: paths, error: null });
+    });
     mockRemove.mockImplementation(() => {
       order.push('storage.remove');
       return Promise.resolve({ error: null });
     });
 
     await deleteAlbum(ALBUM_ID);
-    mockCalls.push = originalPush;
 
-    expect(order).toEqual(['album_photos.delete', 'albums.delete', 'storage.remove']);
-    expect(mockRemove).toHaveBeenCalledWith([`${USER_ID}/${ALBUM_ID}/1.jpg`, `${USER_ID}/${ALBUM_ID}/2.jpg`]);
-    expect(opsFor('albums')).toContainEqual({ table: 'albums', op: 'eq', args: ['owner_id', USER_ID] });
+    expect(order).toEqual(['rpc', 'storage.remove']);
+    expect(mockRemove).toHaveBeenCalledWith(paths);
+    expect(mockStorageCalls.map((c) => c.bucket)).toEqual(['album-photos']);
   });
 
-  it('removes no objects when the album delete fails', async () => {
-    mockTableResults.album_photos = { data: [{ id: 'p1', storage_path: 'x' }], error: null };
-    mockTableResults.albums = { error: { message: 'nope', code: '42501' } };
-    await expect(deleteAlbum(ALBUM_ID)).rejects.toBeTruthy();
+  it('skips storage entirely when the RPC returns no paths', async () => {
+    mockRpc.mockResolvedValue({ data: [], error: null });
+    await deleteAlbum(ALBUM_ID);
     expect(mockRemove).not.toHaveBeenCalled();
+  });
+
+  it('skips storage when the RPC returns null data', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: null });
+    await deleteAlbum(ALBUM_ID);
+    expect(mockRemove).not.toHaveBeenCalled();
+  });
+
+  it('maps a 42501 not allowed refusal to RefusedError and removes no objects', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'not allowed', code: '42501' } });
+    await expect(deleteAlbum(ALBUM_ID)).rejects.toBeInstanceOf(RefusedError);
+    expect(mockRemove).not.toHaveBeenCalled();
+  });
+
+  it('still resolves when the storage remove reports an error after the RPC succeeded', async () => {
+    mockRpc.mockResolvedValue({ data: ['x.jpg'], error: null });
+    mockRemove.mockResolvedValue({ error: { message: 'storage down' } });
+    const quiet = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(deleteAlbum(ALBUM_ID)).resolves.toBeUndefined();
+    quiet.mockRestore();
+  });
+
+  it('still resolves when the storage remove throws after the RPC succeeded', async () => {
+    mockRpc.mockResolvedValue({ data: ['x.jpg'], error: null });
+    mockRemove.mockRejectedValue(new Error('network'));
+    const quiet = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(deleteAlbum(ALBUM_ID)).resolves.toBeUndefined();
+    quiet.mockRestore();
   });
 });
 

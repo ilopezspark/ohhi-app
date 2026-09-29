@@ -95,34 +95,39 @@ export async function renameAlbum(albumId: string, name: string): Promise<void> 
 }
 
 /**
- * Deletes an album and everything in it, rows first and objects last
- * (migration 0012: the owner may delete an `album-photos` object only once
- * none of their rows references it). `album_photos.album_id` has no
- * `on delete cascade`, so the photo rows have to go before the album row or
- * the album delete fails on the foreign key. Object removal is best effort:
- * once the rows are gone nothing can show those objects, and a leftover is
- * only storage, never a visible photo.
+ * Deletes one of the caller's albums through `delete_my_album(p_album_id)`
+ * (migration 0014, decision 90): in one transaction the server locks the
+ * album, deletes its `album_photos` rows, revokes every active share of it
+ * and deletes the album, then returns the storage paths no other album row
+ * of the caller still names. Only then are those objects removed, rows
+ * before objects (migration 0012 / decision 85: the owner may delete an
+ * `album-photos` object only once none of their rows references it).
+ *
+ * Owner-scoped server-side: the RPC reads `auth.uid()` and refuses anything
+ * else (not signed in, a bad id, someone else's album) with the generic
+ * `not allowed` / 42501, which `mapSupabaseError` turns into `RefusedError`.
+ *
+ * Once the RPC has succeeded the album is gone, so the object removal is
+ * best effort and never throws: nothing can show those objects any more,
+ * and a leftover is only storage, never a visible photo. Surfacing a storage
+ * hiccup here would tell the owner "album not deleted" about an album that
+ * was.
  */
 export async function deleteAlbum(albumId: string): Promise<void> {
-  const uid = await currentUserId();
-  const photos = await listAlbumPhotos(albumId);
-
-  if (photos.length > 0) {
-    const { error: photosError } = await supabase.from('album_photos').delete().eq('album_id', albumId);
-    if (photosError) throw mapSupabaseError(photosError);
-  }
-
-  const { error } = await supabase.from('albums').delete().eq('id', albumId).eq('owner_id', uid);
+  const { data, error } = await supabase.rpc('delete_my_album', { p_album_id: albumId });
   if (error) throw mapSupabaseError(error);
-
-  await removeAlbumObjects(photos.map((photo) => photo.storage_path));
+  await removeAlbumObjects(data ?? []);
 }
 
 async function removeAlbumObjects(paths: string[]): Promise<void> {
   if (paths.length === 0) return;
-  const { error } = await supabase.storage.from('album-photos').remove(paths);
-  if (error && __DEV__) {
-    console.error('[api/albums] storage remove failed', error);
+  try {
+    const { error } = await supabase.storage.from('album-photos').remove(paths);
+    if (error && __DEV__) {
+      console.error('[api/albums] storage remove failed', error);
+    }
+  } catch (error) {
+    if (__DEV__) console.error('[api/albums] storage remove failed', error);
   }
 }
 

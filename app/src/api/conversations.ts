@@ -11,10 +11,11 @@ export type MessageRow = Database['public']['Tables']['messages']['Row'];
 export interface Participant {
   id: string;
   /**
-   * `null` when the `profiles` select policy refuses the row — a soft-deleted
-   * account (`close_threads_on_delete` flips the thread to `closed_deleted`
-   * and `status` to `deleted`, which drops out of `account_readable`), or a
-   * campus change. Render a neutral fallback, never a reason.
+   * `null` when the `profiles` select policy refuses the row, for example a
+   * campus change. Never because the other person was suspended, banned or
+   * deleted their account: since migration 0014 (decision 90) the whole
+   * conversation disappears in that case, so it is never listed at all.
+   * Render a neutral fallback, never a reason.
    */
   firstName: string | null;
   /** `profile-photos/{user_id}/0.jpg`, or null. Sign it with `photos.signedPhotoUrls`. */
@@ -137,8 +138,11 @@ async function participantsFor(ids: string[]): Promise<Map<string, Participant>>
  *
  * Ordering is `last_message_at desc nulls last` per plan §3. Rows the policies
  * hide never appear — including a `closed_block` thread for the *blocker*,
- * which `can_read_conversation` drops outright (decision 12); nothing here has
- * to filter for that, and nothing here may ever add copy explaining an absence.
+ * which `can_read_conversation` drops outright (decision 12), and every thread
+ * whose other participant is suspended, banned or deleted (migration 0014,
+ * decision 90: the thread comes back unchanged if a suspension or ban is
+ * lifted). Nothing here has to filter for that, and nothing here may ever add
+ * copy explaining an absence.
  *
  * **Unread is a boolean, not a count.** `message_reads` stores one
  * `last_read_at` timestamp per (user, conversation) and nothing else, so
@@ -201,8 +205,11 @@ export async function listConversations(): Promise<ConversationListItem[]> {
  * One conversation, for the thread header and the composer gate.
  *
  * Returns `null` rather than throwing when the row is not readable — the
- * blocker's own `closed_block` thread, a purged thread, or a bad id all look
- * identical here by design, and the screen renders one neutral empty state.
+ * blocker's own `closed_block` thread, a thread whose other participant is
+ * suspended, banned or deleted (migration 0014, decision 90), a purged
+ * thread, or a bad id all look identical here by design. The thread screen
+ * treats a `null` as "gone": it drops the thread from the cache and goes
+ * back to the list without saying why.
  */
 export async function getConversation(conversationId: string): Promise<ConversationDetail | null> {
   const meId = await currentUserId();
