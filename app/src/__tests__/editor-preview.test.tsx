@@ -63,7 +63,7 @@ describe('PreviewCard', () => {
     const { findByTestId } = await render(<PreviewCard />);
     await findByTestId('profile-editor-preview-tile');
     const name = await findByTestId('profile-editor-preview-name');
-    expect(name.props.children).toEqual(expect.arrayContaining(['izaac']));
+    expect(name).toHaveTextContent('izaac');
   });
 
   it('disables the say-hi/message footer (accessibilityElementsHidden, matching ProfileTile\'s own disabledActions wiring)', async () => {

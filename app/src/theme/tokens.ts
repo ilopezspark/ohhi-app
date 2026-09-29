@@ -176,6 +176,19 @@ export const colors = {
   /** Ruling 8: hard-nos chip fill, paired with `boundaryInk`. */
   boundaryBg: '#F7E3D8',
 
+  // -- Profile redesign additions (`docs/design/profile-redesign/`) --------
+  /** The `what you two share` card's pale sage fill (`03-profile-scrolled.png`). No existing counterpart: `tints.sage` is a placeholder-photo shade and reads too heavy behind text. */
+  sageSoft: '#EEF1E8',
+  /** The same card's olive header text. 5.4:1 on `sageSoft`, clearing WCAG AA for normal text. */
+  sageInk: '#4F6638',
+  /** Frosted dark circle behind icon buttons that sit on a photo (back, overflow, pager chevrons). `rgba(ink, .38)`. */
+  onPhotoButton: 'rgba(35,33,31,0.38)',
+  /** Frosted light fill + border for chips that sit on a photo (the hero's tag chips). `rgba(paper, …)`. */
+  onPhotoChip: 'rgba(247,243,236,0.16)',
+  onPhotoChipBorder: 'rgba(247,243,236,0.45)',
+  /** The hero's light round buttons over a photo (expand, message). `rgba(paper, .92)`. */
+  onPhotoLight: 'rgba(247,243,236,0.92)',
+
   /**
    * The brief's four "named tints" (peach/sky/sage/sand) — all four are
    * already present, unnamed, as the first four entries of `avatarTints`

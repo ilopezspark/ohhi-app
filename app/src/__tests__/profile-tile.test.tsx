@@ -132,11 +132,18 @@ describe('ProfileTile — hero size', () => {
     expect(queryByTestId('tier-pill')).toBeNull();
   });
 
-  it('appends campusShort to the on_campus tier pill', async () => {
-    const { getByText } = await render(
-      <ProfileTile size="hero" data={{ ...baseData, tier: 'on_campus', campusShort: 'CLC' }} testIDs={{ tier: 'tier-pill' }} />
+  it('shows the pin line as the tier word, then major and grad year (profile redesign; no campus suffix)', async () => {
+    const { getByTestId, getByText, queryByText } = await render(
+      <ProfileTile
+        size="hero"
+        data={{ ...baseData, tier: 'on_campus', campusShort: 'CLC', majorLabel: 'nursing' }}
+        testIDs={{ tier: 'tier-pill', name: 'name' }}
+      />
     );
-    expect(getByText(/on campus.*CLC/)).toBeTruthy();
+    expect(getByTestId('tier-pill')).toHaveTextContent('on campus');
+    expect(getByText("on campus · nursing '28")).toBeTruthy();
+    expect(queryByText(/CLC/)).toBeNull();
+    expect(getByTestId('name')).toHaveTextContent('Ada');
   });
 
   it('renders a single "here for a · b" pill from goals, using hereForLabel', async () => {
@@ -147,11 +154,11 @@ describe('ProfileTile — hero size', () => {
     expect(getByText('here for friends · study buddies')).toBeTruthy();
   });
 
-  it('omits the goals pill entirely when goals is empty', async () => {
-    const { queryByTestId } = await render(
+  it('falls back to "here for — still figuring it out" when goals is empty (05-profile-sparse.png)', async () => {
+    const { getByTestId } = await render(
       <ProfileTile size="hero" data={{ ...baseData, goals: [] }} testIDs={{ goals: 'goals-pill' }} />
     );
-    expect(queryByTestId('goals-pill')).toBeNull();
+    expect(getByTestId('goals-pill')).toHaveTextContent('here for — still figuring it out');
   });
 
   it('shows the online dot only when hereNow is false and isOnline is true (mirrors the tile)', async () => {

@@ -17,8 +17,12 @@ jest.mock('../api/his', () => ({ sendHi: jest.fn() }));
 jest.mock('../api/conversations', () => ({ startConversation: jest.fn() }));
 jest.mock('../api/messages', () => ({ sendMessage: jest.fn() }));
 jest.mock('../api/photos', () => ({ signedPhotoUrls: jest.fn() }));
+jest.mock('../api/me', () => ({ me: jest.fn() }));
+jest.mock('../api/tags', () => ({ getUserTags: jest.fn(), listTagsForCampus: jest.fn() }));
 
 import { router, useLocalSearchParams } from 'expo-router';
+import { me } from '../api/me';
+import { getUserTags, listTagsForCampus } from '../api/tags';
 import { getProfileCard } from '../api/profileCard';
 import { getIdentity } from '../api/identity';
 import { sendHi } from '../api/his';
@@ -61,6 +65,13 @@ beforeEach(() => {
   (useLocalSearchParams as jest.Mock).mockReturnValue({ id: TARGET });
   (signedPhotoUrls as jest.Mock).mockResolvedValue({});
   (getIdentity as jest.Mock).mockResolvedValue(null);
+  (me as jest.Mock).mockResolvedValue({ id: 'me-1', campus_id: 'campus-1', campus_slug: 'clc' });
+  (listTagsForCampus as jest.Mock).mockResolvedValue([
+    { id: 't-coffee', label: 'coffee', category: 'interest', campus_id: null },
+    { id: 't-gym', label: 'gym', category: 'interest', campus_id: null },
+    { id: 't-nursing', label: 'nursing', category: 'major', campus_id: null },
+  ]);
+  (getUserTags as jest.Mock).mockResolvedValue([]);
 });
 
 describe('ProfileScreen', () => {
@@ -79,9 +90,9 @@ describe('ProfileScreen', () => {
 
   it('renders the card fields for a visible card', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card());
-    const { findByTestId, getByText } = await renderScreen();
+    const { findByTestId } = await renderScreen();
     await findByTestId('profile-screen');
-    expect(getByText(/Ada/)).toBeTruthy();
+    expect(await findByTestId('profile-name')).toHaveTextContent('Ada');
     await findByTestId('profile-status-line');
   });
 
@@ -133,22 +144,12 @@ describe('ProfileScreen', () => {
     expect(queryByTestId('profile-identity')).toBeNull();
   });
 
-  it('shows the identity row when getIdentity resolves with data', async () => {
+  it('shows pronouns and orientation as rows in the basics card when getIdentity resolves with data', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card());
     (getIdentity as jest.Mock).mockResolvedValue({ pronouns: 'she/her', orientation: ['bi'] });
     const { findByTestId } = await renderScreen();
-    await findByTestId('profile-identity');
-  });
-
-  it('opens the "more about" details sheet (Profile-Details.html) from the identity row, gated the same way as the row itself', async () => {
-    (getProfileCard as jest.Mock).mockResolvedValue(card());
-    (getIdentity as jest.Mock).mockResolvedValue({ pronouns: 'she/her', orientation: ['bi'] });
-    const { findByTestId, queryByTestId } = await renderScreen();
-    await findByTestId('profile-identity');
-
-    expect(queryByTestId('profile-details-sheet')).toBeNull();
-    await fireEvent.press(await findByTestId('profile-identity-trigger'));
-    await findByTestId('profile-details-sheet');
+    expect(await findByTestId('profile-identity')).toHaveTextContent('she/her');
+    expect(await findByTestId('profile-identity-orientation')).toHaveTextContent(/bi/);
   });
 
   it('shows both Hi and Message as equal openers when there is no prior hi and no conversation', async () => {
@@ -336,6 +337,89 @@ describe('ProfileScreen', () => {
     const reportItem = await findByTestId('profile-overflow-report');
     await fireEvent.press(reportItem);
     expect(router.push).toHaveBeenCalledWith(`/settings/report/${TARGET}?context=profile`);
+  });
+});
+
+describe('ProfileScreen — profile redesign, phase 1', () => {
+  it('finds the major from the campus tag catalog: it goes in the pin line, not the chips or into', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ tag_labels: ['nursing', 'coffee'] }));
+    const screen = await renderScreen();
+    await waitFor(() => expect(screen.getByTestId('profile-meta')).toHaveTextContent("on campus · nursing '28"));
+    expect(screen.getByTestId('profile-tags')).not.toHaveTextContent(/nursing/);
+    expect(screen.getByTestId('profile-into')).not.toHaveTextContent(/nursing/);
+    expect(screen.getByTestId('profile-basics-major')).toHaveTextContent(/nursing/);
+  });
+
+  it('keeps every tag a chip when the catalog read fails (never blocks the screen)', async () => {
+    (listTagsForCampus as jest.Mock).mockRejectedValue(new Error('offline'));
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ tag_labels: ['nursing', 'coffee'] }));
+    const screen = await renderScreen();
+    await screen.findByTestId('profile-screen');
+    expect(screen.getByTestId('profile-tags')).toHaveTextContent(/nursing/);
+    await screen.findByTestId('profile-cta-hi');
+  });
+
+  it('what you two share: computed from my tags against theirs, hidden when nothing matches', async () => {
+    (getUserTags as jest.Mock).mockResolvedValue([{ tag_id: 't-coffee', position: 0 }]);
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ tag_labels: ['coffee', 'gym'] }));
+    const screen = await renderScreen();
+    expect(await screen.findByTestId('profile-shared')).toHaveTextContent(/you both tagged coffee/);
+    expect(screen.getByTestId('profile-shared')).not.toHaveTextContent(/gym/);
+  });
+
+  it('hides what you two share when nothing is shared', async () => {
+    (getUserTags as jest.Mock).mockResolvedValue([{ tag_id: 't-gym', position: 0 }]);
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ tag_labels: ['coffee'] }));
+    const screen = await renderScreen();
+    await waitFor(() => expect(getUserTags).toHaveBeenCalled());
+    await screen.findByTestId('profile-into');
+    expect(screen.queryByTestId('profile-shared')).toBeNull();
+  });
+
+  it('the footer names the campus and its report or block link opens the same sheet as the overflow', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card());
+    const screen = await renderScreen();
+    await waitFor(() => expect(screen.getByTestId('profile-footer-verified')).toHaveTextContent('verified student at CLC'));
+    await fireEvent.press(screen.getByTestId('profile-report-block'));
+    await fireEvent.press(await screen.findByTestId('profile-overflow-report'));
+    expect(router.push).toHaveBeenCalledWith(`/settings/report/${TARGET}?context=profile`);
+  });
+
+  it('the back button leaves the screen', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card());
+    const screen = await renderScreen();
+    await fireEvent.press(await screen.findByTestId('profile-back'));
+    expect(router.back).toHaveBeenCalledTimes(1);
+  });
+
+  it('the unavailable screen has its own back button (the stack header is off)', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(null);
+    const screen = await renderScreen();
+    await screen.findByTestId('profile-unavailable');
+    await fireEvent.press(screen.getByTestId('profile-plain-back'));
+    expect(router.back).toHaveBeenCalledTimes(1);
+  });
+
+  it('a sparse profile shows the notice and the goals fallback', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(
+      card({ first_name: 'luis', status_line: null, tag_labels: ['nursing'], goals: [], photos: ['p0'] })
+    );
+    const screen = await renderScreen();
+    expect(await screen.findByTestId('profile-sparse-notice')).toHaveTextContent("luis hasn't filled much in yet. not a red flag.");
+    expect(screen.getByTestId('profile-goals')).toHaveTextContent('here for — still figuring it out');
+  });
+
+  it('keeps the hi-sent state in the sticky bar after scrolling onto paper', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: 'sent' }));
+    const screen = await renderScreen();
+    await screen.findByTestId('profile-cta-hi');
+    await fireEvent.scroll(screen.getByTestId('profile-scroll'), {
+      nativeEvent: { contentOffset: { x: 0, y: 3000 }, contentSize: { height: 4000, width: 390 }, layoutMeasurement: { height: 844, width: 390 } },
+    });
+    await screen.findByTestId('profile-header');
+    expect(screen.getByTestId('profile-cta-hi').props.accessibilityState?.disabled).toBe(true);
+    expect(screen.getByTestId('profile-cta-hi')).toHaveTextContent('hi sent');
+    expect(screen.queryByTestId('profile-cta-message')).toBeNull();
   });
 });
 

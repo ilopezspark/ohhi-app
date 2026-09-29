@@ -1,6 +1,6 @@
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { ChatIcon, Text } from '../ui';
-import { colors, radii, spacing } from '../theme/tokens';
+import { colors, radii, shadows, spacing } from '../theme/tokens';
 import type { CardCta } from './cta';
 
 export interface CtaButtonProps {
@@ -17,6 +17,14 @@ export interface CtaButtonProps {
    * or call `startConversation` directly.
    */
   onMessage: () => void;
+  /**
+   * `photo` (default): the message button is a frosted light circle, for
+   * the row sitting on the hero photo. `paper`: a white circle with a float
+   * shadow, for the profile's sticky bar once it sits on paper
+   * (`03-profile-scrolled.png`). Only the look changes, never the states.
+   */
+  appearance?: 'photo' | 'paper';
+  style?: StyleProp<ViewStyle>;
   testID?: string;
 }
 
@@ -34,7 +42,16 @@ const HI_LABEL: Record<'hi' | 'hi_sent', string> = {
  * fail server-side; don't offer it," not a disabled button with no
  * explanation.
  */
-export function CtaButton({ cta, hiBusy = false, messageBusy = false, onHi, onMessage, testID }: CtaButtonProps) {
+export function CtaButton({
+  cta,
+  hiBusy = false,
+  messageBusy = false,
+  onHi,
+  onMessage,
+  appearance = 'photo',
+  style,
+  testID,
+}: CtaButtonProps) {
   if (cta.kind === 'none') return null;
 
   const prefix = testID ?? 'profile-cta';
@@ -51,11 +68,12 @@ export function CtaButton({ cta, hiBusy = false, messageBusy = false, onHi, onMe
   const messageDisabled = busy || cta.kind === 'message_pending';
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, style]}>
       {showHi ? (
         <Pressable
           testID={`${prefix}-hi`}
           accessibilityRole="button"
+          accessibilityLabel={cta.kind === 'hi_sent' ? 'hi sent' : 'say hi'}
           accessibilityState={{ disabled: hiDisabled }}
           disabled={hiDisabled}
           style={({ pressed }) => [
@@ -80,11 +98,12 @@ export function CtaButton({ cta, hiBusy = false, messageBusy = false, onHi, onMe
         <Pressable
           testID={`${prefix}-message`}
           accessibilityRole="button"
-          accessibilityLabel="Message"
+          accessibilityLabel="message"
           accessibilityState={{ disabled: messageDisabled }}
           disabled={messageDisabled}
           style={({ pressed }) => [
             styles.messageButton,
+            appearance === 'paper' && [styles.messageButtonPaper, shadows.float],
             messageDisabled && styles.disabled,
             pressed && !messageDisabled && styles.pressed,
           ]}
@@ -113,10 +132,11 @@ const styles = StyleSheet.create({
     width: 54,
     height: 54,
     borderRadius: radii.circle,
-    backgroundColor: 'rgba(247,243,236,0.92)',
+    backgroundColor: colors.onPhotoLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  messageButtonPaper: { backgroundColor: colors.paperRaised },
   disabled: { opacity: 0.5 },
   pressed: { opacity: 0.85 },
 });

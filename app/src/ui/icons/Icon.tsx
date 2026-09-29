@@ -59,7 +59,15 @@ export type IconName =
   | 'drag'
   | 'info'
   | 'chevronRight'
-  | 'x';
+  | 'x'
+  // -- Profile redesign additions (`docs/design/profile-redesign/`) --
+  | 'chevronUp'
+  | 'chevronDown'
+  | 'cap'
+  | 'tag'
+  | 'flag'
+  | 'shield'
+  | 'people';
 
 export interface IconProps {
   /** Rendered width/height — the design's icons are 24px (tab bar) or 18-20px (inline), scaled from a 24x24 viewBox. */
@@ -368,6 +376,80 @@ export function XIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }
   );
 }
 
+// ---------------------------------------------------------------------------
+// Profile redesign additions (`docs/design/profile-redesign/*.png`). Same
+// hand-drawn line style as the rest of this file; the artboards are PNGs, so
+// these are drawn to match, not ported.
+// ---------------------------------------------------------------------------
+
+/** Profile redesign — the hero's "see more" button (scrolls to the detail). stroke-width 2.4. */
+export function ChevronUpIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-chevron-up'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Path d="M6 15l6-6 6 6" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/** Profile redesign — the collapsed header's "back to the photos" button. stroke-width 2.4. */
+export function ChevronDownIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-chevron-down'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Path d="M6 9l6 6 6-6" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/** Profile redesign — graduation cap, the basics card's major row. stroke-width 2. */
+export function CapIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-cap'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Path d="M2.5 9.5L12 5l9.5 4.5L12 14z" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M6.5 11.5v4.5c0 1.5 2.5 3 5.5 3s5.5-1.5 5.5-3v-4.5" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/** Profile redesign — price-tag glyph, the `into` card's header. stroke-width 2.2. */
+export function TagIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-tag'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Path d="M3 12V4.5A1.5 1.5 0 0 1 4.5 3H12l9 9-9 9z" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+      <Circle cx={8} cy={8} r={1.5} fill={color} />
+    </Svg>
+  );
+}
+
+/** Profile redesign — the footer's `report or block` link. stroke-width 2.2. */
+export function FlagIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-flag'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Path d="M5 21V4h12l-2.5 4.5L17 13H5" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/** Profile redesign — the footer's `verified student at …` line. stroke-width 2.2. */
+export function ShieldIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-shield'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Path d="M12 3l7.5 3v5.5c0 4.5-3.2 8.2-7.5 9.5-4.3-1.3-7.5-5-7.5-9.5V6z" stroke={color} strokeWidth={2.2} strokeLinejoin="round" />
+      <Path d="M8.8 12l2.2 2.2 4.2-4.4" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/** Profile redesign — two people, the `what you two share` card's header. stroke-width 2.2. */
+export function PeopleIcon({ size = DEFAULT_SIZE, color = colors.ink, style, testID }: IconProps) {
+  return (
+    <Svg testID={testID ?? 'icon-people'} width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <Circle cx={9} cy={8} r={3.5} stroke={color} strokeWidth={2.2} />
+      <Path d="M2.5 20a6.5 6.5 0 0 1 13 0" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+      <Path d="M15.5 4.8a3.5 3.5 0 0 1 0 6.4M18 14.5a6.5 6.5 0 0 1 3.5 5.5" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 const ICONS: Record<IconName, (props: IconProps) => ReturnType<typeof BackIcon>> = {
   back: BackIcon,
   more: MoreIcon,
@@ -392,6 +474,13 @@ const ICONS: Record<IconName, (props: IconProps) => ReturnType<typeof BackIcon>>
   info: InfoIcon,
   chevronRight: ChevronRightIcon,
   x: XIcon,
+  chevronUp: ChevronUpIcon,
+  chevronDown: ChevronDownIcon,
+  cap: CapIcon,
+  tag: TagIcon,
+  flag: FlagIcon,
+  shield: ShieldIcon,
+  people: PeopleIcon,
 };
 
 export interface DispatchIconProps extends IconProps {

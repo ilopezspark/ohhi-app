@@ -88,7 +88,10 @@ export default function RootLayout() {
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(onboarding)" />
           <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="profile/[id]" options={{ headerShown: true, title: 'Profile' }} />
+          {/* The profile redesign is full-bleed: its own back button sits on
+              the photo, so the stack header is off. */}
+          <Stack.Screen name="profile/[id]" />
+
           {/* Me redesign (docs/design/me-redesign/brief.md, ruling 11): the
               profile editor is presented modally over the tabs; QuickStatus is
               its own standalone modal from Me's status row. Both need

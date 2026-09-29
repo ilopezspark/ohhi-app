@@ -416,6 +416,12 @@ const SCOPE_FILES: string[] = [
   // DateTimePicker's `mode="date"`, which want their own pass (and an
   // allow-list decision for that prop) before they can be linted.
   path.join(SRC, 'app', '(onboarding)', 'photo.tsx'),
+  // The profile redesign (docs/design/profile-redesign/): the screen and the
+  // card pieces it renders. `profile/view/*` is already covered by the
+  // `profile/` sweep above.
+  path.join(SRC, 'app', 'profile', '[id].tsx'),
+  path.join(SRC, 'card', 'CtaButton.tsx'),
+  path.join(SRC, 'card', 'OverflowMenu.tsx'),
 ].filter((file) => fs.existsSync(file));
 
 describe('voice rules — real source tree', () => {
@@ -431,6 +437,14 @@ describe('voice rules — real source tree', () => {
         path.join('profile', 'goalLabels.ts'),
         path.join('profile', 'ProfileTile.tsx'),
         path.join('app', '(onboarding)', 'photo.tsx'),
+        path.join('profile', 'view', 'model.ts'),
+        path.join('profile', 'view', 'PhotoPager.tsx'),
+        path.join('profile', 'view', 'ProfileHero.tsx'),
+        path.join('profile', 'view', 'ProfileView.tsx'),
+        path.join('profile', 'view', 'sections.tsx'),
+        path.join('app', 'profile', '[id].tsx'),
+        path.join('card', 'CtaButton.tsx'),
+        path.join('card', 'OverflowMenu.tsx'),
       ])
     );
   });

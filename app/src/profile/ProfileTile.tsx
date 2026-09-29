@@ -2,9 +2,9 @@ import { useState, type ReactNode } from 'react';
 import { Image, Pressable, StyleSheet, View, type ImageStyle, type StyleProp } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { TintedPlaceholder } from '../photos/TintedPlaceholder';
-import { Badge, CheckIcon, Dot, PinIcon, Text } from '../ui';
+import { Badge, CheckIcon, Dot, Text } from '../ui';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
-import { hereForLabel } from './goalLabels';
+import { ProfileHero } from './view/ProfileHero';
 
 export type ProfileTileSize = 'grid' | 'thumbnail' | 'hero';
 
@@ -24,16 +24,16 @@ export interface ProfileTileData {
   tagLabels?: string[];
   /** Already-mapped goal chip labels (`goalLabels.ts#goalLabel`) — `grid`/`thumbnail` never render these; `hero` joins them via `hereForLabel`. */
   goals?: string[];
+  /** `hero`: shown in the pin line after the tier word (`on campus · nursing '27`), never as a chip. */
   majorLabel?: string | null;
+  /** No longer rendered by any size: the profile redesign's hero line is the tier word plus major and year, with no campus suffix. Kept so existing callers still type-check. */
   campusShort?: string | null;
 }
 
 /**
- * Per-part testID overrides. Every existing call site (`GridTile.tsx`,
- * `profile/[id].tsx`) passes these explicitly so this refactor is a pure
- * render-through with **zero testID changes** — `grid-screen.test.tsx` and
- * `card-screen.test.tsx` pass unmodified. New call sites (the Me row,
- * Preview) can omit any of these; nothing internal depends on them being set.
+ * Per-part testID overrides. Every call site passes these explicitly (the
+ * grid tile, the editor's Preview) — nothing internal depends on them being
+ * set. The profile screen itself renders `profile/view/ProfileView.tsx`.
  */
 export interface ProfileTileTestIDs {
   root?: string;
@@ -92,10 +92,8 @@ export interface ProfileTileProps {
    */
   topLeft?: ReactNode;
   /**
-   * `hero` only — content overlaid top-right on the card (the profile
-   * screen's overflow/block-report menu). When `data.hereNow` is true,
-   * `ProfileTile` renders its own here-now badge immediately before this
-   * content, matching the pre-refactor layout exactly.
+   * `hero` only — content overlaid top-right on the card. The here-now pill
+   * now sits above the name (profile redesign), not in this row.
    */
   topRight?: ReactNode;
   testIDs?: ProfileTileTestIDs;
@@ -143,11 +141,11 @@ function TilePhoto({
 
 /**
  * `docs/design/me-redesign/brief.md` task 3: the one component the grid,
- * the profile screen, the Me identity row and the editor's Preview tab all
- * render through. `grid` reproduces `GridTile.tsx`'s existing tile exactly;
- * `hero` reproduces `profile/[id].tsx`'s existing full-bleed card (tier
- * pill, name, status, `here for …`/tags chip row, footer slot); `thumbnail`
- * is the new 76x95 tile for the Me row's identity block.
+ * the Me identity row and the editor's Preview tab render through. `grid`
+ * reproduces `GridTile.tsx`'s existing tile exactly; `hero` is the profile
+ * redesign's hero (`profile/view/ProfileHero.tsx`, the same component the
+ * profile screen renders full-bleed) in a rounded card; `thumbnail` is the
+ * 76x95 tile for the Me row's identity block.
  */
 export function ProfileTile({
   size,
@@ -334,7 +332,11 @@ function ThumbnailVariant({
 }
 
 // ---------------------------------------------------------------------------
-// hero — reproduces src/app/profile/[id].tsx's existing full-bleed card.
+// hero — the profile redesign's hero (`docs/design/profile-redesign/`),
+// rendered through `profile/view/ProfileHero.tsx` in its `card` frame. The
+// profile screen renders the same component in its `bleed` frame, so the
+// editor's Preview (which renders this size) and the real profile share one
+// hero and cannot drift.
 // ---------------------------------------------------------------------------
 
 function HeroVariant({
@@ -358,105 +360,31 @@ function HeroVariant({
   testIDs: ProfileTileTestIDs;
   testID?: string;
 }) {
-  const tierLabel = tierWord(data.tier);
-  const showOnlineDot = !data.hereNow && !!data.isOnline;
-  const hereFor = hereForLabel(data.goals ?? []);
-
   return (
-    <View testID={testID} style={[styles.heroCard, shadows.hero, { backgroundColor: data.tint }]}>
-      {photoSlot ?? (
-        <View style={styles.heroPhotoFrame}>
-          <TilePhoto
-            photoUrl={data.photoUrl}
-            tint={data.tint}
-            photoTestID={testIDs.photo}
-            placeholderTestID={testIDs.placeholder}
-            style={styles.heroPhoto}
-          />
-        </View>
-      )}
-
-      <View style={styles.heroGradient} pointerEvents="none" />
-
-      {topLeft || topRight ? (
-        <View style={styles.heroTopRow}>
-          {topLeft ?? <View />}
-          <View style={styles.heroTopRowRight}>
-            {data.hereNow ? <Badge testID={testIDs.hereNow} label="here now" dot tone="neutral" /> : null}
-            {topRight}
-          </View>
-        </View>
-      ) : null}
-
-      <View style={styles.heroBottom}>
-        {tierLabel ? (
-          <View style={styles.heroTierPill} testID={testIDs.tier}>
-            <PinIcon size={12} color={colors.onDark} />
-            <Text variant="caption" color={colors.onDark}>
-              {tierLabel}
-              {data.tier === 'on_campus' && data.campusShort ? ` · ${data.campusShort}` : ''}
-            </Text>
-          </View>
-        ) : null}
-
-        <View style={styles.heroNameRow}>
-          <Text variant="hero" color={colors.onDark} testID={testIDs.name}>
-            {data.firstName}
-            {data.gradYear ? (
-              <Text variant="hero" color={colors.onDark} style={styles.heroGradYear}>
-                {`  '${String(data.gradYear).slice(-2)}`}
-              </Text>
-            ) : null}
-          </Text>
-          {data.verified ? (
-            <View style={styles.heroVerifiedBadge} accessibilityLabel={GRID_VERIFIED_ACCESSIBILITY_LABEL} testID={testIDs.verified}>
-              <CheckIcon size={12} color={colors.ink} />
-            </View>
-          ) : null}
-          {showOnlineDot ? <Dot testID={testIDs.online} color={colors.success} size={8} /> : null}
-        </View>
-
-        {identitySlot}
-
-        {data.statusLine ? (
-          <Text variant="body" color={colors.onDark} testID={testIDs.statusLine} style={styles.heroStatusLine}>
-            {data.statusLine}
-          </Text>
-        ) : null}
-
-        <View style={styles.heroChipsRow}>
-          {hereFor ? (
-            <View style={styles.heroGoalPill} testID={testIDs.goals}>
-              <Text variant="captionMuted" color={colors.ink} numberOfLines={1}>
-                {hereFor}
-              </Text>
-            </View>
-          ) : null}
-          {data.tagLabels?.length ? (
-            <View style={styles.heroTagsRow} testID={testIDs.tags}>
-              {data.tagLabels.map((label) => (
-                <View key={label} style={styles.heroTagChip}>
-                  <Text variant="captionMuted" color={colors.onDark} numberOfLines={1}>
-                    {label}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-        </View>
-
-        {footer ? (
-          <View
-            style={disabledActions ? styles.heroFooterDisabled : undefined}
-            pointerEvents={disabledActions ? 'none' : 'auto'}
-            accessibilityElementsHidden={disabledActions}
-            importantForAccessibility={disabledActions ? 'no-hide-descendants' : 'auto'}
-          >
-            {footer}
-          </View>
-        ) : null}
-      </View>
-    </View>
+    <ProfileHero
+      frame="card"
+      data={{
+        firstName: data.firstName,
+        verified: !!data.verified,
+        hereNow: !!data.hereNow,
+        isOnline: !!data.isOnline,
+        tier: data.tier,
+        majorLabel: data.majorLabel ?? null,
+        gradYear: data.gradYear ?? null,
+        statusLine: data.statusLine ?? null,
+        goals: data.goals ?? [],
+        tagLabels: data.tagLabels ?? [],
+      }}
+      tint={data.tint}
+      photoUrl={data.photoUrl}
+      photoSlot={photoSlot}
+      topLeft={topLeft}
+      topRight={topRight}
+      identitySlot={identitySlot}
+      footer={footer}
+      disabledActions={disabledActions}
+      testIDs={{ ...testIDs, root: testID ?? testIDs.root }}
+    />
   );
 }
 
@@ -532,69 +460,4 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   thumbnailPhoto: { width: '100%', height: '100%' },
-
-  // -- hero --
-  heroCard: { flex: 1, borderRadius: radii.hero, overflow: 'hidden', position: 'relative' },
-  heroPhotoFrame: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  heroPhoto: { width: '100%', height: '100%' },
-  heroGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: '58%',
-    backgroundColor: colors.ink,
-    opacity: 0.5,
-  },
-  heroTopRow: {
-    position: 'absolute',
-    top: 48,
-    left: 14,
-    right: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  heroTopRowRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.smMd },
-  heroBottom: { position: 'absolute', left: 20, right: 20, bottom: 24, gap: spacing.mdLg },
-  heroTierPill: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: 'rgba(247,243,236,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(247,243,236,0.45)',
-    paddingHorizontal: spacing.mdLg,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.pill,
-  },
-  heroNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  heroGradYear: { fontSize: 22 },
-  heroVerifiedBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: radii.circle,
-    backgroundColor: colors.sage,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroStatusLine: { opacity: 0.92 },
-  heroChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, alignItems: 'center' },
-  heroGoalPill: {
-    paddingHorizontal: spacing.smMd,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.pill,
-    backgroundColor: colors.paperRaised,
-  },
-  heroTagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  heroTagChip: {
-    paddingHorizontal: spacing.smMd,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.pill,
-    backgroundColor: 'rgba(247,243,236,0.22)',
-    borderWidth: 1,
-    borderColor: 'rgba(247,243,236,0.5)',
-  },
-  heroFooterDisabled: { opacity: 0.4 },
 });
