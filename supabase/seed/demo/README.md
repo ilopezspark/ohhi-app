@@ -20,6 +20,7 @@ below turns it into SQL, uploads the images, keeps the demo alive, and removes i
    manifest when present (a missing manifest is a warning; names then follow the convention
    above) and reads each chat image's size and pixel dimensions for the message row, so run it
    again after the images change. It also prints what the schema could not represent as written.
+   It also writes `profile-fields.generated.sql` (see step 7).
 3. **`node supabase/seed/demo/upload.mjs --dry-run`**, then **`node supabase/seed/demo/upload.mjs`**:
    uploads every planned image with the service role (`upsert: true`, `image/jpeg`). The key comes
    from `SUPABASE_SERVICE_ROLE_KEY` or `supabase projects api-keys --project-ref
@@ -34,6 +35,12 @@ below turns it into SQL, uploads the images, keeps the demo alive, and removes i
 5. **Apply `seed.generated.sql`** with `apply_migration` (for example name `demo_seed`).
 6. **Remove the history row** it records: `supabase migration repair --status reverted
    <version>`, so the migration history stays a record of schema changes only.
+7. **Profile fields on an already-seeded demo** (migration 0015): apply
+   `profile-fields.generated.sql` with `apply_migration`, then remove its history row the same
+   way. It sets exactly the cast's place lines, usual places and prompt answers on the existing
+   demo users and nothing else, and is idempotent. A place line shows for 2 hours from the run
+   (only for demo users on campus at that moment) until the seed is re-applied, which installs
+   the heartbeat that keeps demo place lines fresh; re-running the file also refreshes them.
 
 ## What the seed writes
 
@@ -138,6 +145,9 @@ The sections below describe the content files.
   domain), `date_of_birth`, `grad_year`, `status_line`, `goals`, `tags`, `presence_profile`,
   `photo_count`, `portrait_prompt` (main photo) and `extra_photo_prompts` (0-2 more, same person,
   other settings). `photo_count` always equals `1 + extra_photo_prompts.length`.
+  Optional (migration 0015): `place_line` (null or 1-40 chars), `usual_places` (0-3 entries,
+  1-30 chars each) and `prompts` (0-3 `{prompt_id, answer}`, ids from the 0015 prompt list,
+  answers 1-140 chars); `validate.mjs` checks them against the limits the RPCs enforce.
 - `interactions.json` — scripted state for the two real test accounts, keyed `izaac` and
   `debbie` (their first names; the seed script looks up the real user ids). For each account:
   `hi_received`, `hi_sent`, `conversations` (with full message histories, including inline `media`

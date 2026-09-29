@@ -6,6 +6,22 @@
     "date_of_birth": "2006-02-11",
     "grad_year": 2027,
     "status_line": "clinicals till 6, don't @ me",
+    "place_line": "nursing building, 2nd floor",
+    "usual_places": [
+      "library 2nd floor",
+      "the nursing lab",
+      "campus cafe"
+    ],
+    "prompts": [
+      {
+        "prompt_id": "ruining_my_life",
+        "answer": "anatomy. i have named every bone in my hand and none of them answer back"
+      },
+      {
+        "prompt_id": "find_me_on_campus",
+        "answer": "the second floor of the library, third table from the window. the only outlet that works"
+      }
+    ],
     "goals": [
       "study",
       "friends"
@@ -29,6 +45,22 @@
     "date_of_birth": "2003-04-18",
     "grad_year": 2027,
     "status_line": "welding lab always smells like a campfire",
+    "place_line": "welding shop",
+    "usual_places": [
+      "the gym",
+      "welding shop",
+      "the courtyard"
+    ],
+    "prompts": [
+      {
+        "prompt_id": "take_again",
+        "answer": "welding 1. i would pay to take it twice"
+      },
+      {
+        "prompt_id": "ask_me_about",
+        "answer": "the difference between mig and tig. i will not stop talking"
+      }
+    ],
     "goals": [
       "friends",
       "whatever"
@@ -50,6 +82,21 @@
     "date_of_birth": "2007-01-09",
     "grad_year": 2028,
     "status_line": "pulling an all nighter in the c wing, send snacks",
+    "place_line": "c wing, the good couch",
+    "usual_places": [
+      "c wing",
+      "the esports lounge"
+    ],
+    "prompts": [
+      {
+        "prompt_id": "last_googled",
+        "answer": "why does my code only work when i print things"
+      },
+      {
+        "prompt_id": "on_repeat",
+        "answer": "whatever lo-fi playlist is at the top. i do not pick"
+      }
+    ],
     "goals": [
       "study",
       "friends"
@@ -74,6 +121,9 @@
     "date_of_birth": "2005-06-30",
     "grad_year": 2027,
     "status_line": null,
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "dates",
       "friends"
@@ -94,6 +144,21 @@
     "date_of_birth": "2006-03-02",
     "grad_year": 2028,
     "status_line": "at the library till 10 if anyone wants to pretend to study",
+    "place_line": "library, 2nd floor",
+    "usual_places": [
+      "library 2nd floor",
+      "bio lab"
+    ],
+    "prompts": [
+      {
+        "prompt_id": "ruining_my_life",
+        "answer": "bio 121. the cell is not the powerhouse of my motivation"
+      },
+      {
+        "prompt_id": "secret_study_spot",
+        "answer": "third floor stacks behind the atlases. silent and warm"
+      }
+    ],
     "goals": [
       "study"
     ],
@@ -113,6 +178,9 @@
     "date_of_birth": "2002-05-14",
     "grad_year": 2027,
     "status_line": "student teaching this semester, tiny humans are exhausting",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "friends",
       "whatever"
@@ -134,6 +202,9 @@
     "date_of_birth": "2000-07-22",
     "grad_year": 2028,
     "status_line": "working nights at the county, days are for class",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "whatever",
       "friends"
@@ -154,6 +225,21 @@
     "date_of_birth": "2007-02-25",
     "grad_year": 2029,
     "status_line": "in the print studio, ink everywhere as usual",
+    "place_line": "print studio",
+    "usual_places": [
+      "print studio",
+      "campus cafe"
+    ],
+    "prompts": [
+      {
+        "prompt_id": "unpopular_opinion",
+        "answer": "the art building is the nicest building on campus and it is not close"
+      },
+      {
+        "prompt_id": "ask_me_about",
+        "answer": "linocuts. i have ink under my nails permanently"
+      }
+    ],
     "goals": [
       "friends",
       "dates"
@@ -176,6 +262,14 @@
     "date_of_birth": "2004-01-17",
     "grad_year": 2027,
     "status_line": "grinding leetcode in the c wing",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [
+      {
+        "prompt_id": "late_excuse",
+        "answer": "the bus. it is always the bus"
+      }
+    ],
     "goals": [
       "study",
       "group"
@@ -196,6 +290,9 @@
     "date_of_birth": "2005-04-09",
     "grad_year": 2027,
     "status_line": null,
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "study",
       "friends"
@@ -216,6 +313,9 @@
     "date_of_birth": "1997-08-03",
     "grad_year": 2027,
     "status_line": "back in school after the army, feels weird being the old guy",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "friends",
       "whatever"
@@ -235,6 +335,14 @@
     "date_of_birth": "2006-06-11",
     "grad_year": 2028,
     "status_line": "parking lot 5 again, why is it always full",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [
+      {
+        "prompt_id": "cafe_order",
+        "answer": "large iced coffee, extra ice, do not ask"
+      }
+    ],
     "goals": [
       "dates",
       "friends"
@@ -255,6 +363,9 @@
     "date_of_birth": "2003-03-29",
     "grad_year": 2027,
     "status_line": "microbio lab ran long, smell like agar",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "study"
     ],
@@ -274,6 +385,9 @@
     "date_of_birth": "2007-05-06",
     "grad_year": 2029,
     "status_line": "practicum at the daycare on belvidere, send coffee",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "friends",
       "whatever"
@@ -293,6 +407,17 @@
     "date_of_birth": "2001-09-01",
     "grad_year": 2028,
     "status_line": null,
+    "place_line": null,
+    "usual_places": [
+      "the soccer field",
+      "the gym"
+    ],
+    "prompts": [
+      {
+        "prompt_id": "ask_me_about",
+        "answer": "intramural soccer standings. i keep a spreadsheet"
+      }
+    ],
     "goals": [
       "friends",
       "whatever"
@@ -313,6 +438,9 @@
     "date_of_birth": "1993-02-19",
     "grad_year": 2027,
     "status_line": "second career, clinicals with people half my age lol",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "friends",
       "whatever"
@@ -332,6 +460,9 @@
     "date_of_birth": "2006-04-23",
     "grad_year": 2028,
     "status_line": "esports club practice tonight, come watch us lose",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "friends",
       "group"
@@ -354,6 +485,17 @@
     "date_of_birth": "2004-02-14",
     "grad_year": 2027,
     "status_line": "cafe before my 9am, always",
+    "place_line": "campus cafe",
+    "usual_places": [
+      "campus cafe",
+      "business wing"
+    ],
+    "prompts": [
+      {
+        "prompt_id": "cafe_order",
+        "answer": "chai with oat milk, same one every morning before my 9am"
+      }
+    ],
     "goals": [
       "dates",
       "friends"
@@ -374,6 +516,9 @@
     "date_of_birth": "2005-05-27",
     "grad_year": 2027,
     "status_line": null,
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "whatever"
     ],
@@ -392,6 +537,9 @@
     "date_of_birth": "2002-01-30",
     "grad_year": 2028,
     "status_line": "ceramics studio till the kiln room closes",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "friends",
       "dates"
@@ -413,6 +561,18 @@
     "date_of_birth": "2008-03-15",
     "grad_year": 2029,
     "status_line": "first semester, still finding the c wing",
+    "place_line": "c wing, somewhere",
+    "usual_places": [],
+    "prompts": [
+      {
+        "prompt_id": "ruining_my_life",
+        "answer": "english 101. i have never written this many words about one poem"
+      },
+      {
+        "prompt_id": "after_this",
+        "answer": "figuring out where the c wing actually ends"
+      }
+    ],
     "goals": [
       "study",
       "friends"
@@ -434,6 +594,9 @@
     "date_of_birth": "1999-06-08",
     "grad_year": 2027,
     "status_line": "clinicals at advocate this rotation",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "whatever"
     ],
@@ -452,6 +615,21 @@
     "date_of_birth": "2007-04-02",
     "grad_year": 2029,
     "status_line": "in the library grinding on a group project, send help",
+    "place_line": "library, group room 4",
+    "usual_places": [
+      "library group rooms",
+      "c wing"
+    ],
+    "prompts": [
+      {
+        "prompt_id": "find_me_on_campus",
+        "answer": "the library group rooms, usually 4, usually stressed"
+      },
+      {
+        "prompt_id": "last_googled",
+        "answer": "how to split a group project when one person vanished"
+      }
+    ],
     "goals": [
       "study",
       "group",
@@ -473,6 +651,9 @@
     "date_of_birth": "2006-08-12",
     "grad_year": 2028,
     "status_line": null,
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "friends",
       "whatever"
@@ -495,6 +676,9 @@
     "date_of_birth": "1996-03-05",
     "grad_year": 2027,
     "status_line": "working full time at the sheriff's office, night classes only",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "whatever"
     ],
@@ -513,6 +697,9 @@
     "date_of_birth": "2005-02-08",
     "grad_year": 2028,
     "status_line": "field placement at the elementary school this week",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "friends",
       "dates"
@@ -532,6 +719,9 @@
     "date_of_birth": "2007-06-19",
     "grad_year": 2029,
     "status_line": "shop class then soccer intramurals",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "friends",
       "whatever"
@@ -552,6 +742,9 @@
     "date_of_birth": "2004-05-21",
     "grad_year": 2027,
     "status_line": "gallery show for the intro painting class, come judge my work",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "friends",
       "dates"
@@ -572,6 +765,9 @@
     "date_of_birth": "1990-01-11",
     "grad_year": 2027,
     "status_line": "back in school while my kids are at school, wild timing",
+    "place_line": null,
+    "usual_places": [],
+    "prompts": [],
     "goals": [
       "study",
       "whatever"
@@ -591,6 +787,21 @@
     "date_of_birth": "2006-07-04",
     "grad_year": 2028,
     "status_line": "c wing basement has the best outlets, fight me",
+    "place_line": null,
+    "usual_places": [
+      "c wing basement",
+      "esports lounge"
+    ],
+    "prompts": [
+      {
+        "prompt_id": "secret_study_spot",
+        "answer": "c wing basement. best outlets on campus, fight me"
+      },
+      {
+        "prompt_id": "on_repeat",
+        "answer": "the same three songs since august"
+      }
+    ],
     "goals": [
       "study",
       "friends",

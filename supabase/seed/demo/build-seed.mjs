@@ -592,6 +592,19 @@ begin
      and ${DEMO_EMAIL_PRED("u.email")}
      and (pl.here_now or p.here_now_until is not null);
 
+  -- Place lines (migration 0015): shown to others for 2 hours after they are
+  -- saved, and never while away. A demo user with a place line has it kept
+  -- fresh while the plan has them on campus; otherwise its expiry is cleared
+  -- (the text stays, as it would for a real user who walked off).
+  update public.profiles p
+     set place_line_until = case when pl.tier = 'on_campus' then v_now + interval '2 hours' end
+    from private.demo_presence_plan(v_now) pl
+    join auth.users u on u.id = pl.user_id
+   where p.id = pl.user_id
+     and ${DEMO_EMAIL_PRED("u.email")}
+     and p.place_line is not null
+     and (pl.tier = 'on_campus' or p.place_line_until is not null);
+
   -- Keep the scripted pending state alive. A seeded hi still 'sent' that is
   -- within a day of expiring, and a seeded conversation still 'awaiting_reply'
   -- that is over six days old, are re-anchored to their scripted age, so the
@@ -637,6 +650,24 @@ revoke execute on function private.demo_heartbeat() from public, anon, authentic
 }
 
 // -----------------------------------------------------------------------------
+// Profile fields (migration 0015): place line, usual places, prompt answers.
+// Optional in cast.json; validate.mjs checks them against the RPCs' limits.
+// -----------------------------------------------------------------------------
+
+function profileFields(p) {
+  return {
+    place_line: p.place_line ?? null,
+    usual_places: p.usual_places ?? [],
+    prompts: (p.prompts ?? []).map((x) => ({ prompt_id: x.prompt_id, answer: x.answer })),
+  };
+}
+const profileFieldTotals = {
+  placeLines: people.filter((p) => profileFields(p).place_line !== null).length,
+  usualPlaces: people.reduce((n, p) => n + profileFields(p).usual_places.length, 0),
+  prompts: people.reduce((n, p) => n + profileFields(p).prompts.length, 0),
+};
+
+// -----------------------------------------------------------------------------
 // SQL: seed
 // -----------------------------------------------------------------------------
 
@@ -648,6 +679,7 @@ function seedPlan() {
     status_line: p.status_line, dob: p.date_of_birth, created_days: p.createdDaysAgo,
     presence_profile: p.presence_profile, goals: p.goals, tags: p.tags,
     photos: p.photos.map((ph) => ({ id: ph.id, pos: ph.position, path: ph.path, tint: ph.tint })),
+    ...profileFields(p),
   }));
   const accts = accounts.map((A) => ({
     key: A.key,
@@ -851,6 +883,28 @@ begin
   select (ph ->> 'id')::uuid, (p ->> 'id')::uuid, (ph ->> 'pos')::smallint, ph ->> 'path', 'ok', ph ->> 'tint',
          v_now - make_interval(days => (p ->> 'created_days')::int)
     from jsonb_array_elements(v_plan -> 'people') p, jsonb_array_elements(p -> 'photos') ph
+  on conflict do nothing;
+
+  -- Profile fields (migration 0015), written as the table owner. Only filled
+  -- where the demo user has none yet, so a re-run changes nothing. The place
+  -- line's 2-hour expiry (place_line_until) is kept by demo_heartbeat().
+  update public.profiles pr
+     set place_line = pp ->> 'place_line'
+    from jsonb_array_elements(v_plan -> 'people') pp
+   where pr.id = (pp ->> 'id')::uuid
+     and pp ->> 'place_line' is not null
+     and pr.place_line is null;
+
+  insert into public.user_usual_places (user_id, position, label)
+  select (pp ->> 'id')::uuid, (x.ord - 1)::smallint, x.label
+    from jsonb_array_elements(v_plan -> 'people') pp
+    cross join lateral jsonb_array_elements_text(coalesce(pp -> 'usual_places', '[]'::jsonb)) with ordinality as x(label, ord)
+  on conflict do nothing;
+
+  insert into public.user_prompts (user_id, position, prompt_id, answer)
+  select (pp ->> 'id')::uuid, (x.ord - 1)::smallint, x.value ->> 'prompt_id', x.value ->> 'answer'
+    from jsonb_array_elements(v_plan -> 'people') pp
+    cross join lateral jsonb_array_elements(coalesce(pp -> 'prompts', '[]'::jsonb)) with ordinality as x(value, ord)
   on conflict do nothing;
 
   -- ---------------------------------------------------------------------------
@@ -1156,6 +1210,7 @@ const BASELINE_TABLES = [
   "public.message_reads", "public.message_media_views", "public.albums", "public.album_photos",
   "public.shares", "public.consents", "public.notification_prefs", "public.blocks", "public.reports",
   "public.campuses", "private.storage_purge_queue",
+  "public.user_prompts", "public.user_usual_places",
 ];
 
 function rehearsalSql(seed, unseed) {
@@ -1188,6 +1243,10 @@ insert into _demo_baseline select * from pg_temp._demo_snapshot();
   push(`  perform pg_temp._chk((select count(*) from public.users_private where user_id = any(v_demo) and date_of_birth is not null) = ${people.length}, 'demo users_private rows carry a DOB');`);
   push(`  perform pg_temp._chk((select count(*) from cron.job where jobname = '${JOB_NAME}' and schedule = '*/10 * * * *') = 1, 'cron job ${JOB_NAME} scheduled every 10 minutes');`);
   push(`  perform pg_temp._chk(current_setting('app.bypass_profiles_guard', true) is distinct from 'on', 'bypass flag restored after the seed');`);
+  push(`  perform pg_temp._chk((select count(*) from public.profiles where id = any(v_demo) and place_line is not null) = ${profileFieldTotals.placeLines}, 'demo place lines: ${profileFieldTotals.placeLines}');`);
+  push(`  perform pg_temp._chk((select count(*) from public.user_usual_places where user_id = any(v_demo)) = ${profileFieldTotals.usualPlaces}, 'demo usual places: ${profileFieldTotals.usualPlaces}');`);
+  push(`  perform pg_temp._chk((select count(*) from public.user_prompts where user_id = any(v_demo)) = ${profileFieldTotals.prompts}, 'demo prompt answers: ${profileFieldTotals.prompts}');`);
+  push(`  perform pg_temp._chk(not exists (select 1 from public.profiles p join public.user_presence up on up.user_id = p.id where p.id = any(v_demo) and p.place_line_until is not null and up.tier <> 'on_campus'), 'no demo place line is live while its owner is not on campus');`);
 
   accounts.forEach((A, i) => {
     const e = exp[i];
@@ -1366,9 +1425,97 @@ ${final}`;
 }
 
 // -----------------------------------------------------------------------------
+// SQL: profile fields only, for a demo that is already seeded (migration 0015)
+// -----------------------------------------------------------------------------
+// Sets exactly the cast's place lines, usual places and prompt answers on the
+// existing demo users and touches nothing else. Idempotent: it replaces those
+// three things for every demo user in the cast, so a second run ends in the
+// same state. It does not change demo_heartbeat(); until the seed (which
+// carries the updated heartbeat) is re-applied, a place line shows for 2 hours
+// from this file's run and only while its owner is on campus. Re-running this
+// file refreshes them.
+
+function profileFieldsSql() {
+  const rows = people.map((p) => JSON.stringify({ id: p.uid, key: p.key, ...profileFields(p) }));
+  const body = "[\n" + rows.join(",\n") + "\n]";
+  if (body.includes("$plan$")) throw new Error("content contains the $plan$ delimiter");
+  return `${header("OhHi demo: profile fields only (migration 0015) for the already-seeded demo users")}
+-- Fills public.profiles.place_line / place_line_until, public.user_usual_places
+-- and public.user_prompts for the ${people.length} demo users on @${DEMO_DOMAIN}, from cast.json.
+-- Demo users only: every id is checked against auth.users on the demo domain
+-- first, and the block raises (changing nothing) if any is missing or is not
+-- a demo account. No other row is read or written. Needs migration 0015.
+--
+-- Idempotent: each run replaces these three fields for the demo users with
+-- the cast's values. place_line_until is set to now() + 2 hours for the demo
+-- users whose effective tier is on_campus right now, null for the rest; the
+-- hosted demo_heartbeat() does not refresh it until seed.generated.sql (which
+-- carries the updated heartbeat) is re-applied, so re-run this file to
+-- refresh place lines in the meantime.
+--
+-- Apply with apply_migration, then remove the history row it records:
+--   supabase migration repair --status reverted <version>
+-- Expected: ${profileFieldTotals.placeLines} place lines, ${profileFieldTotals.usualPlaces} usual places, ${profileFieldTotals.prompts} prompt answers.
+
+do $pf$
+declare
+  v_plan jsonb := $plan$${body}$plan$::jsonb;
+  v_ids  uuid[];
+  v_n    integer;
+begin
+  select array_agg((x ->> 'id')::uuid) into v_ids from jsonb_array_elements(v_plan) x;
+
+  select count(*) into v_n
+    from unnest(v_ids) as d(id)
+    join auth.users u on u.id = d.id
+    join public.profiles p on p.id = d.id
+   where ${DEMO_EMAIL_PRED("u.email")};
+  if v_n <> cardinality(v_ids) then
+    raise exception 'profile fields: expected % demo users on @${DEMO_DOMAIN}, found %; is the demo seeded?', cardinality(v_ids), v_n;
+  end if;
+
+  delete from public.user_prompts where user_id = any(v_ids);
+  delete from public.user_usual_places where user_id = any(v_ids);
+
+  insert into public.user_usual_places (user_id, position, label)
+  select (pp ->> 'id')::uuid, (x.ord - 1)::smallint, x.label
+    from jsonb_array_elements(v_plan) pp
+    cross join lateral jsonb_array_elements_text(pp -> 'usual_places') with ordinality as x(label, ord);
+
+  insert into public.user_prompts (user_id, position, prompt_id, answer)
+  select (pp ->> 'id')::uuid, (x.ord - 1)::smallint, x.value ->> 'prompt_id', x.value ->> 'answer'
+    from jsonb_array_elements(v_plan) pp
+    cross join lateral jsonb_array_elements(pp -> 'prompts') with ordinality as x(value, ord);
+
+  update public.profiles pr
+     set place_line = pp ->> 'place_line',
+         place_line_until = case
+           when pp ->> 'place_line' is not null
+            and private.effective_tier(up.tier, up.tier_computed_at) = 'on_campus'
+             then now() + interval '2 hours'
+         end
+    from jsonb_array_elements(v_plan) pp
+    left join public.user_presence up on up.user_id = (pp ->> 'id')::uuid
+   where pr.id = (pp ->> 'id')::uuid
+     and (pp ->> 'place_line' is not null or pr.place_line is not null or pr.place_line_until is not null);
+
+  if (select count(*) from public.profiles where id = any(v_ids) and place_line is not null) <> ${profileFieldTotals.placeLines}
+     or (select count(*) from public.user_usual_places where user_id = any(v_ids)) <> ${profileFieldTotals.usualPlaces}
+     or (select count(*) from public.user_prompts where user_id = any(v_ids)) <> ${profileFieldTotals.prompts} then
+    raise exception 'profile fields: counts after the write do not match the cast';
+  end if;
+  raise notice 'profile fields: % place lines, % usual places, % prompt answers on % demo users',
+    ${profileFieldTotals.placeLines}, ${profileFieldTotals.usualPlaces}, ${profileFieldTotals.prompts}, cardinality(v_ids);
+end;
+$pf$;
+`;
+}
+
+// -----------------------------------------------------------------------------
 // Write
 // -----------------------------------------------------------------------------
 
+writeFileSync(join(HERE, "profile-fields.generated.sql"), profileFieldsSql());
 const seed = seedSql();
 const unseed = unseedSql();
 writeFileSync(join(HERE, "seed.generated.sql"), seed);
@@ -1397,4 +1544,5 @@ if (adjustments.length) {
   for (const a of adjustments) console.log(" - " + a);
 }
 if (warnings.length) console.log(`\n${warnings.length} warning(s)`);
-console.log("\nwrote seed.generated.sql, unseed.generated.sql, rehearsal.generated.sql, upload-plan.json");
+console.log(`profile fields (0015): ${JSON.stringify(profileFieldTotals)}`);
+console.log("\nwrote seed.generated.sql, unseed.generated.sql, rehearsal.generated.sql, upload-plan.json, profile-fields.generated.sql");

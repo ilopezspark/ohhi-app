@@ -128,18 +128,21 @@ select plan(37);
 -- A. Shape and privileges
 -- -----------------------------------------------------------------------------
 
--- 1
+-- 1 — amended by migration 0015: grid_for_me() also returns place_line,
+--     right after status_line; the 0009 columns are otherwise unchanged.
 select is(
   pg_get_function_result('public.grid_for_me()'::regprocedure),
-  'TABLE(user_id uuid, first_name text, grad_year smallint, status_line text, tier presence_tier, here_now boolean, is_online boolean, last_active_at timestamp with time zone, photo_path text, tag_labels text[], goals user_goal[], visible_count integer, here_now_count integer)',
-  'grid_for_me() returns the 0009 column list (is_online added after here_now)'
+  'TABLE(user_id uuid, first_name text, grad_year smallint, status_line text, place_line text, tier presence_tier, here_now boolean, is_online boolean, last_active_at timestamp with time zone, photo_path text, tag_labels text[], goals user_goal[], visible_count integer, here_now_count integer)',
+  'grid_for_me() returns the 0009 column list (is_online added after here_now), plus 0015''s place_line'
 );
 
--- 2
+-- 2 — amended by migration 0015: profile_card_for() appends joined_month,
+--     joined_recency, place_line, prompts, usual_places and gate_open; the
+--     0009 columns and their order are unchanged.
 select is(
   pg_get_function_result('public.profile_card_for(uuid)'::regprocedure),
-  'TABLE(user_id uuid, first_name text, grad_year smallint, status_line text, tier presence_tier, here_now boolean, is_online boolean, photos text[], tag_labels text[], goals user_goal[], my_hi_state hi_state, conversation_id uuid)',
-  'profile_card_for() returns the 0009 column list (is_online added after here_now)'
+  'TABLE(user_id uuid, first_name text, grad_year smallint, status_line text, tier presence_tier, here_now boolean, is_online boolean, photos text[], tag_labels text[], goals user_goal[], my_hi_state hi_state, conversation_id uuid, joined_month date, joined_recency text, place_line text, prompts jsonb, usual_places text[], gate_open boolean)',
+  'profile_card_for() returns the 0009 column list (is_online added after here_now), plus 0015''s six appended columns'
 );
 
 -- 3

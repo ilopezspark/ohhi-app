@@ -31,6 +31,12 @@ const TAG_LABELS = new Set([
 
 const GOALS = new Set(["friends", "study", "dates", "group", "whatever"]);
 
+// public.prompts ids seeded by migration 0015 (20260918000015_profile_fields.sql).
+const PROMPT_IDS = new Set([
+  "ruining_my_life", "find_me_on_campus", "secret_study_spot", "last_googled", "take_again",
+  "cafe_order", "unpopular_opinion", "on_repeat", "late_excuse", "ask_me_about", "after_this",
+]);
+
 const PRESENCE_PROFILES = new Set([
   "regular_on_campus", "commuter_nearby", "mostly_away", "night_owl", "rarely_active",
 ]);
@@ -88,6 +94,37 @@ for (const person of cast) {
     (typeof person.status_line !== "string" || person.status_line.length > 140)
   ) {
     warn(`${tag}: status_line exceeds 140 chars or is not null/string`);
+  }
+
+  // Migration 0015 profile fields (all optional; same limits the RPCs enforce).
+  const blank = (s) => typeof s !== "string" || s.trim() === "";
+  if (
+    person.place_line !== undefined && person.place_line !== null &&
+    (blank(person.place_line) || person.place_line.length > 40)
+  ) {
+    warn(`${tag}: place_line must be null or 1-40 chars`);
+  }
+  if (person.usual_places !== undefined) {
+    const up = person.usual_places;
+    if (!Array.isArray(up) || up.length > 3) {
+      warn(`${tag}: usual_places must have 0-3 entries`);
+    } else {
+      for (const x of up) if (blank(x) || x.length > 30) warn(`${tag}: usual place "${x}" must be 1-30 chars`);
+      if (new Set(up.map((x) => String(x).trim().toLowerCase())).size !== up.length) warn(`${tag}: duplicate usual places`);
+    }
+  }
+  if (person.prompts !== undefined) {
+    const pr = person.prompts;
+    if (!Array.isArray(pr) || pr.length > 3) {
+      warn(`${tag}: prompts must have 0-3 entries`);
+    } else {
+      for (const x of pr) {
+        if (!x || !PROMPT_IDS.has(x.prompt_id)) warn(`${tag}: prompt_id "${x?.prompt_id}" not in the 0015 prompt list`);
+        if (blank(x?.answer) || x.answer.length > 140) warn(`${tag}: answer to "${x?.prompt_id}" must be 1-140 chars`);
+        if (x && Object.keys(x).some((k) => k !== "prompt_id" && k !== "answer")) warn(`${tag}: a prompt has keys other than prompt_id/answer`);
+      }
+      if (new Set(pr.map((x) => x?.prompt_id)).size !== pr.length) warn(`${tag}: a prompt is answered twice`);
+    }
   }
 
   if (!Array.isArray(person.goals) || person.goals.length < 1 || person.goals.length > 3) {
