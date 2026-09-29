@@ -18,6 +18,10 @@
 //                            comparison, then a raise so nothing persists. Run
 //                            it with apply_migration (name tmp_demo_rehearsal).
 //   upload-plan.json         one entry per image: local file, bucket, object path.
+//   profile-fields.generated.sql  migration 0015's profile fields only, for an
+//                            already-seeded demo.
+//   heartbeat.generated.sql  the liveness functions only (as the seed installs
+//                            them), for an already-seeded demo.
 //
 // Every seeded row id is a UUID v5 of a fixed namespace and a content key, so
 // the seed, the unseed and the upload plan agree without a tracking table.
@@ -593,17 +597,18 @@ begin
      and (pl.here_now or p.here_now_until is not null);
 
   -- Place lines (migration 0015): shown to others for 2 hours after they are
-  -- saved, and never while away. A demo user with a place line has it kept
-  -- fresh while the plan has them on campus; otherwise its expiry is cleared
-  -- (the text stays, as it would for a real user who walked off).
+  -- saved, and only while the effective tier is on campus or nearby
+  -- (private.visible_place_line). A demo user with a place line has it kept
+  -- fresh while the plan has them on campus or nearby; while away its expiry
+  -- is cleared (the text stays, as it would for a real user who walked off).
   update public.profiles p
-     set place_line_until = case when pl.tier = 'on_campus' then v_now + interval '2 hours' end
+     set place_line_until = case when pl.tier in ('on_campus', 'nearby') then v_now + interval '2 hours' end
     from private.demo_presence_plan(v_now) pl
     join auth.users u on u.id = pl.user_id
    where p.id = pl.user_id
      and ${DEMO_EMAIL_PRED("u.email")}
      and p.place_line is not null
-     and (pl.tier = 'on_campus' or p.place_line_until is not null);
+     and (pl.tier in ('on_campus', 'nearby') or p.place_line_until is not null);
 
   -- Keep the scripted pending state alive. A seeded hi still 'sent' that is
   -- within a day of expiring, and a seeded conversation still 'awaiting_reply'
@@ -644,7 +649,7 @@ begin
   perform set_config('app.bypass_profiles_guard', v_prev, true);
 end;
 $fn$;
-comment on function private.demo_heartbeat() is 'DEMO ONLY (remove before launch). Run every 10 minutes by the ${JOB_NAME} pg_cron job: rotates presence for the @${DEMO_DOMAIN} demo users only, and keeps the seeded pending hi''s and awaiting_reply conversations from expiring.';
+comment on function private.demo_heartbeat() is 'DEMO ONLY (remove before launch). Run every 10 minutes by the ${JOB_NAME} pg_cron job: rotates presence for the @${DEMO_DOMAIN} demo users only, keeps their place lines fresh while on campus or nearby (migration 0015), and keeps the seeded pending hi''s and awaiting_reply conversations from expiring.';
 revoke execute on function private.demo_heartbeat() from public, anon, authenticated;
 `;
 }
@@ -1188,6 +1193,8 @@ begin
        + (select count(*) from public.messages where id = any(v_seeded_messages))
        + (select count(*) from public.albums where id = any(v_seeded_albums))
        + (select count(*) from public.shares where id = any(v_seeded_shares))
+       + (select count(*) from public.user_prompts where user_id = any(v_demo_fixed))
+       + (select count(*) from public.user_usual_places where user_id = any(v_demo_fixed))
     into v_left;
   if v_left <> 0 then
     raise exception 'demo unseed: % seeded row(s) remain', v_left;
@@ -1246,7 +1253,8 @@ insert into _demo_baseline select * from pg_temp._demo_snapshot();
   push(`  perform pg_temp._chk((select count(*) from public.profiles where id = any(v_demo) and place_line is not null) = ${profileFieldTotals.placeLines}, 'demo place lines: ${profileFieldTotals.placeLines}');`);
   push(`  perform pg_temp._chk((select count(*) from public.user_usual_places where user_id = any(v_demo)) = ${profileFieldTotals.usualPlaces}, 'demo usual places: ${profileFieldTotals.usualPlaces}');`);
   push(`  perform pg_temp._chk((select count(*) from public.user_prompts where user_id = any(v_demo)) = ${profileFieldTotals.prompts}, 'demo prompt answers: ${profileFieldTotals.prompts}');`);
-  push(`  perform pg_temp._chk(not exists (select 1 from public.profiles p join public.user_presence up on up.user_id = p.id where p.id = any(v_demo) and p.place_line_until is not null and up.tier <> 'on_campus'), 'no demo place line is live while its owner is not on campus');`);
+  push(`  perform pg_temp._chk(not exists (select 1 from public.profiles p join public.user_presence up on up.user_id = p.id where p.id = any(v_demo) and p.place_line_until is not null and up.tier not in ('on_campus', 'nearby')), 'no demo place line is live while its owner is away');`);
+  push(`  perform pg_temp._chk(not exists (select 1 from public.profiles p join public.user_presence up on up.user_id = p.id where p.id = any(v_demo) and p.place_line is not null and up.tier in ('on_campus', 'nearby') and (p.place_line_until is null or p.place_line_until <= now())), 'every demo place line is live while its owner is on campus or nearby');`);
 
   accounts.forEach((A, i) => {
     const e = exp[i];
@@ -1430,10 +1438,9 @@ ${final}`;
 // Sets exactly the cast's place lines, usual places and prompt answers on the
 // existing demo users and touches nothing else. Idempotent: it replaces those
 // three things for every demo user in the cast, so a second run ends in the
-// same state. It does not change demo_heartbeat(); until the seed (which
-// carries the updated heartbeat) is re-applied, a place line shows for 2 hours
-// from this file's run and only while its owner is on campus. Re-running this
-// file refreshes them.
+// same state. It does not change demo_heartbeat(); heartbeat.generated.sql
+// (below) installs the heartbeat that keeps demo place lines fresh without
+// re-applying the seed.
 
 function profileFieldsSql() {
   const rows = people.map((p) => JSON.stringify({ id: p.uid, key: p.key, ...profileFields(p) }));
@@ -1448,10 +1455,10 @@ function profileFieldsSql() {
 --
 -- Idempotent: each run replaces these three fields for the demo users with
 -- the cast's values. place_line_until is set to now() + 2 hours for the demo
--- users whose effective tier is on_campus right now, null for the rest; the
--- hosted demo_heartbeat() does not refresh it until seed.generated.sql (which
--- carries the updated heartbeat) is re-applied, so re-run this file to
--- refresh place lines in the meantime.
+-- users whose effective tier is on_campus or nearby right now, null for the
+-- rest. From then on demo_heartbeat() keeps it fresh, once it carries the
+-- place-line step (seed.generated.sql, or heartbeat.generated.sql on its own
+-- for an already-seeded demo).
 --
 -- Apply with apply_migration, then remove the history row it records:
 --   supabase migration repair --status reverted <version>
@@ -1491,7 +1498,7 @@ begin
      set place_line = pp ->> 'place_line',
          place_line_until = case
            when pp ->> 'place_line' is not null
-            and private.effective_tier(up.tier, up.tier_computed_at) = 'on_campus'
+            and private.effective_tier(up.tier, up.tier_computed_at) in ('on_campus', 'nearby')
              then now() + interval '2 hours'
          end
     from jsonb_array_elements(v_plan) pp
@@ -1512,10 +1519,31 @@ $pf$;
 }
 
 // -----------------------------------------------------------------------------
+// SQL: the liveness functions only, for a demo that is already seeded
+// -----------------------------------------------------------------------------
+// Exactly the functions seed.generated.sql installs (create or replace), with
+// no rows, no cron change and no campus change: the existing demo-heartbeat
+// job picks the new body up on its next run. Removed by the unseed like the
+// seed's copy.
+
+function heartbeatOnlySql() {
+  return `${header("OhHi demo: liveness functions only, for the already-seeded demo")}
+-- Replaces private.demo_hash, private.demo_presence_plan and private.demo_heartbeat
+-- with the definitions seed.generated.sql installs. Writes no rows and does not
+-- touch the ${JOB_NAME} cron job (it keeps calling private.demo_heartbeat()).
+--
+-- Apply with apply_migration, then remove the history row it records:
+--   supabase migration repair --status reverted <version>
+
+${heartbeatSql()}`;
+}
+
+// -----------------------------------------------------------------------------
 // Write
 // -----------------------------------------------------------------------------
 
 writeFileSync(join(HERE, "profile-fields.generated.sql"), profileFieldsSql());
+writeFileSync(join(HERE, "heartbeat.generated.sql"), heartbeatOnlySql());
 const seed = seedSql();
 const unseed = unseedSql();
 writeFileSync(join(HERE, "seed.generated.sql"), seed);
@@ -1545,4 +1573,4 @@ if (adjustments.length) {
 }
 if (warnings.length) console.log(`\n${warnings.length} warning(s)`);
 console.log(`profile fields (0015): ${JSON.stringify(profileFieldTotals)}`);
-console.log("\nwrote seed.generated.sql, unseed.generated.sql, rehearsal.generated.sql, upload-plan.json, profile-fields.generated.sql");
+console.log("\nwrote seed.generated.sql, unseed.generated.sql, rehearsal.generated.sql, upload-plan.json, profile-fields.generated.sql, heartbeat.generated.sql");

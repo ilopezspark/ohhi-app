@@ -36,11 +36,15 @@ below turns it into SQL, uploads the images, keeps the demo alive, and removes i
 6. **Remove the history row** it records: `supabase migration repair --status reverted
    <version>`, so the migration history stays a record of schema changes only.
 7. **Profile fields on an already-seeded demo** (migration 0015): apply
-   `profile-fields.generated.sql` with `apply_migration`, then remove its history row the same
-   way. It sets exactly the cast's place lines, usual places and prompt answers on the existing
-   demo users and nothing else, and is idempotent. A place line shows for 2 hours from the run
-   (only for demo users on campus at that moment) until the seed is re-applied, which installs
-   the heartbeat that keeps demo place lines fresh; re-running the file also refreshes them.
+   `profile-fields.generated.sql` and `heartbeat.generated.sql` with `apply_migration` (one call
+   or two), then remove the history row(s) the same way. Do not re-apply `seed.generated.sql`
+   for this: it is idempotent, but the point is to leave the demo chats exactly as the owner left
+   them. `profile-fields.generated.sql` sets exactly the cast's place lines, usual places and
+   prompt answers on the existing demo users and nothing else, and is idempotent (a place line
+   goes live at once for demo users on campus or nearby at that moment).
+   `heartbeat.generated.sql` replaces the three liveness functions with the seed's definitions
+   (no rows, no cron change), so the `demo-heartbeat` job keeps place lines fresh from then on.
+   Applied on hosted on 29 September 2026.
 
 ## What the seed writes
 
@@ -96,6 +100,9 @@ names demo users (it raises if its plan contains any user off `@demo.sayohhi.com
   overnight. Membership drifts hourly with a small 10-minute jitter, so the grid shifts believably;
   non-online people age naturally, capped per profile (`rarely_active` up to 4 days,
   `mostly_away` 12 hours, others 5 hours).
+- keeps place lines live (migration 0015): a demo user with a place line gets
+  `place_line_until = now + 2 hours` while the plan has them on campus or nearby, and a cleared
+  expiry while away (the text stays), matching `private.visible_place_line`.
 - keeps the scripted pending state alive: a seeded hi still `sent` within a day of expiring, and a
   seeded `awaiting_reply` conversation older than six days, are re-anchored to their scripted age
   so the hourly `expire-stale` job never closes them. Only the seeded ids, only while untouched.
@@ -112,10 +119,12 @@ Apply `unseed.generated.sql` with `apply_migration`, then remove its history row
    albums and album photos, media views, reads, messages, conversations, hi's);
 4. runs `private.purge_user` for every `@demo.sayohhi.com` user (their conversations, hi's and
    shares in either direction, including any made live during the demo; their albums, photos,
-   tags, goals, presence, devices, prefs, consents; it enqueues their storage objects itself);
+   tags, goals, presence, devices, prefs, consents, and since migration 0015 their place line,
+   usual places and prompt answers; it enqueues their storage objects itself);
 5. deletes what `purge_user` deliberately leaves: blocks, reports and moderation rows that name a
    demo user, then the `users_private`, `profiles` and `auth.users` rows;
-6. removes `demo.sayohhi.com` from CLC, and raises if any seeded row remains.
+6. removes `demo.sayohhi.com` from CLC, and raises if any seeded row remains (including any
+   demo user's `user_prompts` / `user_usual_places` row).
 
 **Storage objects cannot be deleted from SQL** (`storage.protect_delete()`): the unseed only
 enqueues them. The deployed `purge-drain` edge function removes them on its daily run (03:15
@@ -157,7 +166,8 @@ The sections below describe the content files.
   conversation, and no album relationship, left over so blocking can be demoed live).
 - `validate.mjs` — a standalone Node script (no dependencies) that checks both files against the
   schema limits and the task's consistency rules. Run with `node supabase/seed/demo/validate.mjs`.
-- `build-seed.mjs` — the generator (standard library only); writes the four generated files.
+- `build-seed.mjs` — the generator (standard library only); writes the generated files
+  (`seed`, `unseed`, `rehearsal`, `profile-fields`, `heartbeat`, and `upload-plan.json`).
 - `upload.mjs` — the image uploader (uses `@supabase/supabase-js` from `app/node_modules`).
 - `seed.generated.sql`, `unseed.generated.sql`, `rehearsal.generated.sql`, `upload-plan.json` —
   generated; never edit by hand.
