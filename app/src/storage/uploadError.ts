@@ -113,16 +113,45 @@ export interface UploadFailureContext {
   step: UploadStep;
   bucket?: string;
   path?: string;
+  /**
+   * `warn` (default) for a failure the person sees. `info` for a best-effort
+   * step whose failure is handled (a video poster: the video is sent without
+   * it), so it doesn't pop a LogBox banner on the phone.
+   */
+  level?: 'warn' | 'info';
 }
 
-/** Development builds only: one console line naming the step and the underlying error. */
+/**
+ * Development builds only: the step, the reason, and the underlying error's
+ * name, status, storage status code, code and full message, as plain text.
+ * Plain text rather than an object: the Expo CLI truncates long string fields
+ * inside a logged object, which hid the actual cause of the first poster
+ * failure behind `...(truncated)...`.
+ */
 export function logUploadFailure(context: UploadFailureContext, error: unknown): void {
   if (typeof __DEV__ === 'undefined' || !__DEV__) return;
+  const details = describeUploadError(error);
+  const where = [context.bucket, context.path].filter(Boolean).join('/');
+  const fields = [
+    `reason=${classifyUploadFailure(error)}`,
+    details.name ? `name=${details.name}` : null,
+    details.status != null ? `status=${details.status}` : null,
+    details.statusCode ? `statusCode=${details.statusCode}` : null,
+    details.code ? `code=${details.code}` : null,
+    where ? `object=${where}` : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const line = `[upload] ${context.what} failed at ${context.step}: ${fields}\n  message: ${details.message ?? '(none)'}`;
   // eslint-disable-next-line no-console
-  console.warn(`[upload] ${context.what} failed at ${context.step}`, {
-    bucket: context.bucket,
-    path: context.path,
-    reason: classifyUploadFailure(error),
-    ...describeUploadError(error),
-  });
+  if (context.level === 'info') console.log(line);
+  // eslint-disable-next-line no-console
+  else console.warn(line);
+}
+
+/** Development builds only: a plain-text line for non-failure diagnostics (what the picker handed us, a skipped step). */
+export function logUploadInfo(message: string): void {
+  if (typeof __DEV__ === 'undefined' || !__DEV__) return;
+  // eslint-disable-next-line no-console
+  console.log(`[upload] ${message}`);
 }

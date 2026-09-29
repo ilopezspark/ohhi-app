@@ -67,17 +67,34 @@ describe('describeUploadError / logUploadFailure', () => {
     });
   });
 
-  it('logs the step and the underlying error in development', () => {
+  it('logs the step and the full underlying error in development, as plain text (nothing truncated)', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const long = `Call to function 'FileSystemFile.bytes' has been rejected.
+→ Caused by: Missing 'READ' permission for accessing the file ${'x'.repeat(300)}`;
     logUploadFailure(
       { what: 'chat media', step: 'upload', bucket: 'chat-media', path: 'c/m.jpg' },
-      storageApiError('mime type text/plain is not supported', 400, '415')
+      Object.assign(storageApiError(long, 400, '415'), { code: 'ERR_INVALID_PERMISSION' })
     );
-    expect(warn).toHaveBeenCalledWith(
-      '[upload] chat media failed at upload',
-      expect.objectContaining({ bucket: 'chat-media', path: 'c/m.jpg', reason: 'unsupported', statusCode: '415', status: 400 })
-    );
+    expect(warn).toHaveBeenCalledTimes(1);
+    const line = warn.mock.calls[0]![0] as string;
+    expect(typeof line).toBe('string');
+    expect(line).toContain('[upload] chat media failed at upload:');
+    expect(line).toContain('status=400');
+    expect(line).toContain('statusCode=415');
+    expect(line).toContain('code=ERR_INVALID_PERMISSION');
+    expect(line).toContain('object=chat-media/c/m.jpg');
+    expect(line).toContain(long);
     warn.mockRestore();
+  });
+
+  it('logs a handled best-effort failure quietly (console.log, no LogBox warning)', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    logUploadFailure({ what: 'chat video poster', step: 'poster', level: 'info' }, new Error('nope'));
+    expect(warn).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('[upload] chat video poster failed at poster'));
+    warn.mockRestore();
+    log.mockRestore();
   });
 
   it('stays silent outside development', () => {

@@ -1,7 +1,8 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
 import { resizeForUpload } from '../photos/resize';
-import { readUploadBody, type UploadBody } from '../storage/readUpload';
+import { readUploadBody, UploadTooLargeError, type UploadBody } from '../storage/readUpload';
+import { uploadLocalFile } from '../storage/uploadLocalFile';
 import { logUploadFailure } from '../storage/uploadError';
 import { MAX_VIDEO_BYTES } from '../chat/video';
 
@@ -103,12 +104,23 @@ export async function uploadChatMedia({
     contentType = 'image/jpeg';
   }
 
-  // Video is uploaded as-is, so it is also where the 50 MB cap matters: a
-  // picker that didn't report `fileSize` is still stopped here, before the
-  // file is read into memory.
+  if (kind === 'video') {
+    // Video streams from disk through a signed upload URL
+    // (`storage/uploadLocalFile.ts`) instead of being read into JS memory;
+    // the 50 MB cap is checked against the file before anything is sent, so
+    // a picker that didn't report `fileSize` is still stopped here.
+    try {
+      await uploadLocalFile({ bucket, path, uri: uploadUri, contentType, maxBytes: MAX_VIDEO_BYTES });
+    } catch (error) {
+      logUploadFailure({ what: 'chat video', step: 'upload', bucket, path }, error);
+      throw error instanceof UploadTooLargeError ? error : mapSupabaseError(error);
+    }
+    return path;
+  }
+
   let body: UploadBody;
   try {
-    body = await readUploadBody(uploadUri, kind === 'video' ? { maxBytes: MAX_VIDEO_BYTES } : {});
+    body = await readUploadBody(uploadUri);
   } catch (error) {
     logUploadFailure({ what: 'chat media', step: 'read', bucket, path }, error);
     throw error;
@@ -148,7 +160,8 @@ export async function uploadChatMediaPoster({
   try {
     body = await readUploadBody(uri);
   } catch (error) {
-    logUploadFailure({ what: 'chat media poster', step: 'read', bucket, path }, error);
+    // Best-effort (the caller sends the video without it): not a warning.
+    logUploadFailure({ what: 'chat media poster', step: 'read', bucket, path, level: 'info' }, error);
     throw error;
   }
 
@@ -157,7 +170,7 @@ export async function uploadChatMediaPoster({
     upsert: false,
   });
   if (error) {
-    logUploadFailure({ what: 'chat media poster', step: 'poster', bucket, path }, error);
+    logUploadFailure({ what: 'chat media poster', step: 'poster', bucket, path, level: 'info' }, error);
     throw mapSupabaseError(error);
   }
 

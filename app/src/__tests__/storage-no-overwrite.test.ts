@@ -61,7 +61,10 @@ describe('storage writes never overwrite in place (migration 0012)', () => {
     'every upload in %s passes upsert: false',
     (_file, source) => {
       for (const call of uploadCalls(source as string)) {
-        expect(call).toMatch(/upsert:\s*false/);
+        // supabase-js `.upload(path, body, { upsert: false })`, or the native
+        // expo-file-system upload to a signed upload URL, which sends the
+        // same flag as the `x-upsert` header (`storage/uploadLocalFile.ts`).
+        expect(call).toMatch(/upsert:\s*false|'x-upsert':\s*'false'/);
       }
     }
   );
@@ -69,7 +72,8 @@ describe('storage writes never overwrite in place (migration 0012)', () => {
   it('nothing passes upsert: true to storage, or calls a storage update() or move()', () => {
     const offenders = files
       .filter(({ source }) =>
-        /upsert:\s*true/.test(source) || /storage[\s\S]{0,80}?\.from\([^)]*\)\s*\.(update|move)\(/.test(source)
+        /upsert:\s*true/.test(source) ||
+        /'x-upsert':\s*'true'/.test(source) || /storage[\s\S]{0,80}?\.from\([^)]*\)\s*\.(update|move)\(/.test(source)
       )
       .map(({ file }) => file);
     expect(offenders).toEqual([]);

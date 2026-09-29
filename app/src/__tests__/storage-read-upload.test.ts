@@ -17,26 +17,45 @@ jest.mock('react-native', () => ({
   },
 }));
 
-const mockFileBytes = jest.fn<Promise<Uint8Array>, []>();
+const mockFileBytes = jest.fn<Promise<Uint8Array>, [string]>();
 const mockFileCtor = jest.fn();
+const mockFileCopy = jest.fn<Promise<void>, [string, string]>();
+const mockFileDelete = jest.fn();
 let mockFileSize = 0;
 jest.mock('expo-file-system', () => ({
+  Paths: { cache: { uri: 'file:///scoped/cache/' } },
   File: class {
     uri: string;
-    constructor(uri: string) {
-      this.uri = uri;
-      mockFileCtor(uri);
+    constructor(first: string | { uri: string }, name?: string) {
+      this.uri = typeof first === 'string' ? first : `${first.uri}${name ?? ''}`;
+      mockFileCtor(this.uri);
     }
     get size() {
       return mockFileSize;
     }
+    get exists() {
+      return true;
+    }
     bytes() {
-      return mockFileBytes();
+      return mockFileBytes(this.uri);
+    }
+    copy(destination: { uri: string }) {
+      return mockFileCopy(this.uri, destination.uri);
+    }
+    delete() {
+      mockFileDelete(this.uri);
     }
   },
 }));
 
-import { readUploadBody, UploadTooLargeError } from '../storage/readUpload';
+import { normalizeLocalUri, readUploadBody, UploadTooLargeError } from '../storage/readUpload';
+
+function permissionError() {
+  return Object.assign(
+    new Error("Call to function 'FileSystemFile.bytes' has been rejected. Caused by: Missing 'READ' permission for accessing the file."),
+    { code: 'ERR_INVALID_PERMISSION' }
+  );
+}
 
 const fetchMock = jest.fn();
 (globalThis as unknown as { fetch: jest.Mock }).fetch = fetchMock;
@@ -45,6 +64,8 @@ beforeEach(() => {
   mockPlatform.OS = 'ios';
   mockFileBytes.mockReset();
   mockFileCtor.mockReset();
+  mockFileCopy.mockReset().mockResolvedValue(undefined);
+  mockFileDelete.mockReset();
   fetchMock.mockReset();
   mockFileSize = 0;
 });
@@ -98,6 +119,47 @@ describe.each(['ios', 'android'])('readUploadBody on %s', (os) => {
     await expect(readUploadBody('file:///empty.jpg')).rejects.toBeTruthy();
   });
 
+  it('reads a file expo-file-system is not permitted to read through expo fetch instead (the Expo Go video poster case)', async () => {
+    // expo-video-thumbnails writes to the unscoped cache on Android, which
+    // Expo Go's file permissions refuse.
+    mockFileSize = 3;
+    mockFileBytes.mockRejectedValue(permissionError());
+    const buffer = new Uint8Array([4, 5, 6]).buffer;
+    fetchMock.mockResolvedValue({ ok: true, status: 200, arrayBuffer: () => Promise.resolve(buffer) });
+
+    const body = await readUploadBody('file:///data/user/0/host.exp.exponent/cache/VideoThumbnails/t.jpg');
+
+    expect(fetchMock).toHaveBeenCalledWith('file:///data/user/0/host.exp.exponent/cache/VideoThumbnails/t.jpg');
+    expect(body).toBe(buffer);
+  });
+
+  it('reports the original permission refusal when the fallback cannot read it either', async () => {
+    mockFileBytes.mockRejectedValue(permissionError());
+    fetchMock.mockResolvedValue({ ok: false, status: 404, arrayBuffer: jest.fn() });
+    await expect(readUploadBody('file:///elsewhere/t.jpg')).rejects.toMatchObject({ code: 'ERR_INVALID_PERMISSION' });
+  });
+
+  it('normalises a bare path before reading it', async () => {
+    mockFileSize = 1;
+    mockFileBytes.mockResolvedValue(new Uint8Array([1]));
+    await readUploadBody('/data/cache/p.jpg');
+    expect(mockFileCtor).toHaveBeenCalledWith('file:///data/cache/p.jpg');
+  });
+
+  it('copies a content:// file it cannot read directly into the app cache, reads the copy, and removes it', async () => {
+    mockFileSize = 2;
+    mockFileBytes.mockImplementation((uri: string) =>
+      uri.startsWith('content:') ? Promise.reject(new Error('cannot open')) : Promise.resolve(new Uint8Array([3, 3]))
+    );
+
+    const body = (await readUploadBody('content://media/external/video/7')) as ArrayBuffer;
+
+    expect(mockFileCopy).toHaveBeenCalledWith('content://media/external/video/7', expect.stringMatching(/^file:\/\/\/scoped\/cache\/upload-/));
+    expect(Array.from(new Uint8Array(body))).toEqual([3, 3]);
+    expect(mockFileDelete).toHaveBeenCalledWith(expect.stringMatching(/^file:\/\/\/scoped\/cache\/upload-/));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('reads a remote signed URL with arrayBuffer(), not blob()', async () => {
     const blob = jest.fn();
     const buffer = new Uint8Array([5, 6]).buffer;
@@ -143,5 +205,18 @@ describe('readUploadBody on web', () => {
   it('applies maxBytes to the blob size', async () => {
     fetchMock.mockResolvedValue({ blob: () => Promise.resolve({ size: 11, type: 'video/mp4' }) });
     await expect(readUploadBody('blob:x', { maxBytes: 10 })).rejects.toBeInstanceOf(UploadTooLargeError);
+  });
+});
+
+describe('normalizeLocalUri', () => {
+  it.each([
+    ['/data/user/0/x/cache/a.jpg', 'file:///data/user/0/x/cache/a.jpg'],
+    ['file:/data/a.jpg', 'file:///data/a.jpg'],
+    ['file:////data/a.jpg', 'file:///data/a.jpg'],
+    ['file:///data/a.jpg', 'file:///data/a.jpg'],
+    ['content://media/external/video/1', 'content://media/external/video/1'],
+    ['ph://ABC', 'ph://ABC'],
+  ])('%s -> %s', (input, expected) => {
+    expect(normalizeLocalUri(input)).toBe(expected);
   });
 });

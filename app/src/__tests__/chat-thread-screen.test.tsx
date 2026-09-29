@@ -44,7 +44,10 @@ jest.mock('expo-image-picker', () => ({
 }));
 jest.mock('../chat/video', () => ({
   checkVideo: jest.fn(() => ({ ok: true })),
-  VIDEO_REJECTION_COPY: { duration: 'Videos can be up to 30 seconds.', size: 'Videos can be up to 50 MB.' },
+  VIDEO_REJECTION_COPY: {
+    duration: 'that video is too long to send. try one under 30 seconds.',
+    size: 'that video is too big to send. try a shorter one.',
+  },
   generateVideoPoster: jest.fn(() => Promise.resolve(null)),
 }));
 
@@ -491,6 +494,75 @@ describe('thread — chat media send flow', () => {
     expect(sendArgs.mediaPosterPath).toBe(`${CONV}/mid-poster.jpg`);
   });
 
+  it('asks the picker for the chat options (30 s cap; iOS 720p H.264 export)', async () => {
+    const screen = await renderScreen();
+    await pickFromLibrary(screen, { uri: 'file:///pick.jpg', width: 10, height: 10, type: 'image' });
+    expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ mediaTypes: ['images', 'videos'], videoMaxDuration: 30, videoExportPreset: 6 })
+    );
+  });
+
+  it('still sends a video when its poster cannot be uploaded, without a poster, quietly', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const screen = await renderScreen();
+    (uploadChatMedia as jest.Mock).mockResolvedValue(`${CONV}/mid.mp4`);
+    (uploadChatMediaPoster as jest.Mock).mockRejectedValue(
+      Object.assign(new Error("Call to function 'FileSystemFile.bytes' has been rejected."), { code: 'ERR_INVALID_PERMISSION' })
+    );
+    (generateVideoPoster as jest.Mock).mockResolvedValue({ uri: 'file:///poster.jpg' });
+
+    await pickFromLibrary(screen, { uri: 'file:///pick.mp4', width: 1080, height: 1920, type: 'video', duration: 4_000, fileSize: 4_486_337 });
+    await screen.findByTestId('media-preview-sheet');
+    await fireEvent.press(screen.getByTestId('media-preview-send'));
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+    const sendArgs = (sendMessage as jest.Mock).mock.calls[0]![0];
+    expect(sendArgs.mediaPath).toBe(`${CONV}/mid.mp4`);
+    expect(sendArgs.mediaPosterPath).toBeNull();
+    expect(screen.queryByTestId('media-preview-error')).toBeNull();
+    // Logged in dev at a level that doesn't raise a LogBox banner.
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('poster'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('ERR_INVALID_PERMISSION'));
+    warn.mockRestore();
+    log.mockRestore();
+  });
+
+  it('logs what the picker handed over, in dev, at the start of a send', async () => {
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const screen = await renderScreen();
+    await pickFromLibrary(screen, {
+      uri: 'content://media/external/video/1',
+      width: 1080,
+      height: 1920,
+      type: 'video',
+      duration: 4_000,
+      fileSize: 4_486_337,
+      mimeType: 'video/mp4',
+    });
+    await screen.findByTestId('media-preview-sheet');
+    expect(log).toHaveBeenCalledWith(
+      expect.stringMatching(/picked type=video mime=video\/mp4 size=4486337 dims=1080x1920 durationMs=4000 uri=content:/)
+    );
+    log.mockRestore();
+  });
+
+  it('says a video is too big, and what to do, when the server refuses its size', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    (uploadChatMedia as jest.Mock).mockRejectedValue(
+      mapSupabaseError(Object.assign(new Error('The object exceeded the maximum allowed size'), { status: 400, statusCode: '413' }))
+    );
+    const screen = await renderScreen();
+    await pickFromLibrary(screen, { uri: 'file:///pick.mp4', width: 10, height: 10, type: 'video', duration: 4_000 });
+    await screen.findByTestId('media-preview-sheet');
+    await fireEvent.press(screen.getByTestId('media-preview-send'));
+    await waitFor(() =>
+      expect(screen.getByTestId('media-preview-error')).toHaveTextContent('that video is too big to send. try a shorter one.')
+    );
+    expect(sendMessage).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('rejects an over-long video before any upload, with plain copy', async () => {
     (checkVideo as jest.Mock).mockReturnValue({ ok: false, reason: 'duration' });
     const screen = await renderScreen();
@@ -510,7 +582,7 @@ describe('thread — chat media send flow', () => {
 
     await pickFromLibrary(screen, { uri: 'file:///big.mp4', width: 100, height: 100, type: 'video', fileSize: 99_000_000 });
 
-    expect(await screen.findByTestId('media-pick-error')).toHaveTextContent(/50 MB/);
+    expect(await screen.findByTestId('media-pick-error')).toHaveTextContent('that video is too big to send. try a shorter one.');
     expect(uploadChatMedia).not.toHaveBeenCalled();
   });
 
@@ -549,10 +621,7 @@ describe('thread — chat media send flow', () => {
     expect(screen.queryByText(/mime|text\/plain/i)).toBeNull();
     expect(sendMessage).not.toHaveBeenCalled();
     // Development builds name the step and the underlying error.
-    expect(warn).toHaveBeenCalledWith(
-      '[upload] chat media failed at upload',
-      expect.objectContaining({ statusCode: '415', reason: 'unsupported' })
-    );
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/\[upload\] chat media failed at upload: reason=unsupported .*statusCode=415/));
     warn.mockRestore();
   });
 

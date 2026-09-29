@@ -9,6 +9,14 @@ jest.mock('expo-video-thumbnails', () => ({
   getThumbnailAsync: (...args: unknown[]) => mockGetThumbnailAsync(...args),
 }));
 
+// The poster is re-encoded into the app's own cache through the photo
+// resize step (expo-image-manipulator).
+const mockResizeForUpload = jest.fn();
+jest.mock('../photos/resize', () => ({
+  resizeForUpload: (...args: unknown[]) => mockResizeForUpload(...args),
+}));
+jest.mock('expo-file-system', () => ({ File: jest.fn(), Paths: { cache: {} } }));
+
 import {
   checkVideo,
   generateVideoPoster,
@@ -40,20 +48,49 @@ describe('checkVideo', () => {
     });
   });
 
-  it('has plain, non-technical copy for each rejection reason', () => {
-    expect(VIDEO_REJECTION_COPY.duration).toMatch(/30 seconds/);
-    expect(VIDEO_REJECTION_COPY.size).toMatch(/50 MB/);
+  it('has plain, lowercase copy for each rejection reason that says what to do', () => {
+    expect(VIDEO_REJECTION_COPY.duration).toBe('that video is too long to send. try one under 30 seconds.');
+    expect(VIDEO_REJECTION_COPY.size).toBe('that video is too big to send. try a shorter one.');
+    for (const copy of Object.values(VIDEO_REJECTION_COPY)) {
+      expect(copy).toBe(copy.toLowerCase());
+      expect(copy).not.toMatch(/!/);
+    }
   });
 });
 
 describe('generateVideoPoster', () => {
-  beforeEach(() => mockGetThumbnailAsync.mockReset());
+  beforeEach(() => {
+    mockGetThumbnailAsync.mockReset();
+    mockResizeForUpload.mockReset();
+  });
 
-  it('returns the thumbnail uri on success, at the ~0.5s mark', async () => {
-    mockGetThumbnailAsync.mockResolvedValue({ uri: 'file:///poster.jpg' });
+  it('takes the frame at ~0.5s and re-encodes it into the app cache (where uploads can read it)', async () => {
+    // expo-video-thumbnails on Android writes to the unscoped cache, which
+    // Expo Go's file permissions refuse to read.
+    mockGetThumbnailAsync.mockResolvedValue({ uri: 'file:///data/user/0/host.exp.exponent/cache/VideoThumbnails/t.jpg', width: 1920, height: 1080 });
+    mockResizeForUpload.mockResolvedValue({ uri: 'file:///scoped/cache/ImageManipulator/p.jpg', width: 1600, height: 900 });
+
     const result = await generateVideoPoster('file:///video.mp4');
-    expect(result).toEqual({ uri: 'file:///poster.jpg' });
+
     expect(mockGetThumbnailAsync).toHaveBeenCalledWith('file:///video.mp4', { time: 500 });
+    expect(mockResizeForUpload).toHaveBeenCalledWith({
+      uri: 'file:///data/user/0/host.exp.exponent/cache/VideoThumbnails/t.jpg',
+      width: 1920,
+      height: 1080,
+    });
+    expect(result).toEqual({ uri: 'file:///scoped/cache/ImageManipulator/p.jpg' });
+  });
+
+  it('normalises a bare path from the thumbnail module to a file:// uri', async () => {
+    mockGetThumbnailAsync.mockResolvedValue({ uri: '/cache/VideoThumbnails/t.jpg', width: 10, height: 10 });
+    mockResizeForUpload.mockRejectedValue(new Error('manipulator unavailable'));
+    expect(await generateVideoPoster('file:///video.mp4')).toEqual({ uri: 'file:///cache/VideoThumbnails/t.jpg' });
+  });
+
+  it('keeps the raw frame when the re-encode fails', async () => {
+    mockGetThumbnailAsync.mockResolvedValue({ uri: 'file:///poster.jpg', width: 10, height: 10 });
+    mockResizeForUpload.mockRejectedValue(new Error('nope'));
+    expect(await generateVideoPoster('file:///video.mp4')).toEqual({ uri: 'file:///poster.jpg' });
   });
 
   it('degrades to null rather than throwing on failure', async () => {

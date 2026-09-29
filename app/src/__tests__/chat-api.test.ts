@@ -91,6 +91,14 @@ jest.mock('../photos/resize', () => ({
 const mockReadUploadBody = jest.fn((_uri: string, _options?: { maxBytes?: number }) => Promise.resolve('BLOB'));
 jest.mock('../storage/readUpload', () => ({
   readUploadBody: (uri: string, options?: { maxBytes?: number }) => mockReadUploadBody(uri, options),
+  UploadTooLargeError: class UploadTooLargeError extends Error {},
+}));
+
+// Video streams from disk through a signed upload URL; that route's own
+// behavior is covered in `storage-upload-local-file.test.ts`.
+const mockUploadLocalFile = jest.fn((_input: Record<string, unknown>) => Promise.resolve());
+jest.mock('../storage/uploadLocalFile', () => ({
+  uploadLocalFile: (input: Record<string, unknown>) => mockUploadLocalFile(input),
 }));
 
 import { getConversation, listConversations, startConversation } from '../api/conversations';
@@ -129,6 +137,7 @@ beforeEach(() => {
   mockStorageSignedUrls.mockReset();
   mockRpc.mockReset();
   mockReadUploadBody.mockClear();
+  mockUploadLocalFile.mockClear();
 });
 
 // ---------------------------------------------------------------------------
@@ -467,7 +476,7 @@ describe('chatMedia', () => {
 
     expect(path).toBe(`${CONV}/mmmm.jpg`);
     // The resized (EXIF-stripped) file is what gets read, never the original pick.
-    expect(mockReadUploadBody).toHaveBeenCalledWith('file:///resized.jpg', {});
+    expect(mockReadUploadBody).toHaveBeenCalledWith('file:///resized.jpg', undefined);
     expect(mockStorageUpload).toHaveBeenCalledWith('chat-media', `${CONV}/mmmm.jpg`, 'BLOB', {
       contentType: 'image/jpeg',
       upsert: false,
@@ -520,12 +529,17 @@ describe('chatMedia', () => {
     });
 
     expect(path).toBe(`${CONV}/vid1.mp4`);
-    // Read as-is, with the 50 MB cap enforced before the file is loaded.
-    expect(mockReadUploadBody).toHaveBeenCalledWith('file:///pick.mp4', { maxBytes: 50 * 1024 * 1024 });
-    expect(mockStorageUpload).toHaveBeenCalledWith('chat-media', `${CONV}/vid1.mp4`, 'BLOB', {
+    // Streamed from disk as-is (never read into JS memory), with the 50 MB
+    // cap checked against the file before anything is sent.
+    expect(mockUploadLocalFile).toHaveBeenCalledWith({
+      bucket: 'chat-media',
+      path: `${CONV}/vid1.mp4`,
+      uri: 'file:///pick.mp4',
       contentType: 'video/mp4',
-      upsert: false,
+      maxBytes: 50 * 1024 * 1024,
     });
+    expect(mockReadUploadBody).not.toHaveBeenCalled();
+    expect(mockStorageUpload).not.toHaveBeenCalled();
   });
 
   it('uploads to chat-media-limited when a limited bucket is requested', async () => {

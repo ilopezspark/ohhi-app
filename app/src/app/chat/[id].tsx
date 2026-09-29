@@ -46,13 +46,19 @@ import { forgetConversation, forgetPerson, useGoneLatch, useLeaveWhenGone } from
 import { useConversationRealtime } from '../../chat/useChatRealtime';
 import { messageId as newMessageId } from '../../chat/uuid';
 import { checkVideo, generateVideoPoster, VIDEO_REJECTION_COPY } from '../../chat/video';
-import { UploadTooLargeError } from '../../storage/readUpload';
 import {
   CHAT_MEDIA_FAILURE_COPY,
   classifyUploadFailure,
   logUploadFailure,
+  logUploadInfo,
   type UploadStep,
 } from '../../storage/uploadError';
+import {
+  CHAT_MEDIA_PICK_OPTIONS,
+  compressVideo,
+  describePickedAsset,
+  videoSourceFromAsset,
+} from '../../chat/videoPrep';
 import { tintForPhoto } from '../../photos/tint';
 import { colors, layout, radii, shadows, spacing } from '../../theme/tokens';
 import { BackIcon, MoreIcon } from '../../ui/icons';
@@ -530,27 +536,35 @@ export default function ChatThreadScreen() {
 
   const handlePickedAsset = useCallback(async (asset: ImagePicker.ImagePickerAsset) => {
     const kind: 'photo' | 'video' = asset.type === 'video' ? 'video' : 'photo';
+    // Development builds: what the picker handed us, so a failure report
+    // always says what was being sent.
+    logUploadInfo(`picked ${describePickedAsset(asset)}`);
 
+    let source = { uri: asset.uri, width: asset.width, height: asset.height, durationMs: asset.duration ?? null, bytes: asset.fileSize ?? null };
     if (kind === 'video') {
-      const check = checkVideo({ durationMs: asset.duration ?? null, bytes: asset.fileSize ?? null });
+      // The compression seam (a passthrough in Expo Go, see chat/videoPrep.ts);
+      // the limits below apply to what it returns.
+      const prepared = await compressVideo(videoSourceFromAsset(asset));
+      source = prepared;
+      const check = checkVideo({ durationMs: prepared.durationMs, bytes: prepared.bytes });
       if (!check.ok && check.reason) {
         setMediaError(VIDEO_REJECTION_COPY[check.reason]);
         return;
       }
     }
 
-    const poster = kind === 'video' ? await generateVideoPoster(asset.uri) : null;
+    const poster = kind === 'video' ? await generateVideoPoster(source.uri) : null;
 
     setPendingMedia({
       kind,
-      width: asset.width,
-      height: asset.height,
-      durationMs: asset.duration ?? null,
-      bytes: asset.fileSize ?? null,
-      localUri: asset.uri,
+      width: source.width,
+      height: source.height,
+      durationMs: source.durationMs,
+      bytes: source.bytes,
+      localUri: source.uri,
       posterUri: poster?.uri ?? null,
     });
-    setPreviewAsset({ kind, uri: asset.uri, posterUri: poster?.uri ?? null, width: asset.width, height: asset.height });
+    setPreviewAsset({ kind, uri: source.uri, posterUri: poster?.uri ?? null, width: source.width, height: source.height });
     setMediaError(null);
     setMediaStep('preview');
   }, []);
@@ -559,11 +573,7 @@ export default function ChatThreadScreen() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) return;
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
-      quality: 1,
-      videoMaxDuration: 30,
-    });
+    const result = await ImagePicker.launchImageLibraryAsync(CHAT_MEDIA_PICK_OPTIONS);
     const asset = result.canceled ? null : result.assets?.[0];
     if (!asset) return;
     await handlePickedAsset(asset);
@@ -573,11 +583,7 @@ export default function ChatThreadScreen() {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) return;
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images', 'videos'],
-      quality: 1,
-      videoMaxDuration: 30,
-    });
+    const result = await ImagePicker.launchCameraAsync(CHAT_MEDIA_PICK_OPTIONS);
     const asset = result.canceled ? null : result.assets?.[0];
     if (!asset) return;
     await handlePickedAsset(asset);
@@ -643,13 +649,21 @@ export default function ChatThreadScreen() {
             bucket,
           });
           if (pendingMedia.kind === 'video' && pendingMedia.posterUri) {
-            step = 'poster';
-            posterPath = await uploadChatMediaPoster({
-              conversationId,
-              messageId: id,
-              uri: pendingMedia.posterUri,
-              bucket,
-            });
+            // Best-effort: a video without a poster shows a plain
+            // placeholder, so a poster that can't be read or uploaded never
+            // fails the send. A failed poster upload wrote no object, so
+            // nothing is left behind.
+            try {
+              posterPath = await uploadChatMediaPoster({
+                conversationId,
+                messageId: id,
+                uri: pendingMedia.posterUri,
+                bucket,
+              });
+            } catch (posterError) {
+              posterPath = null;
+              logUploadFailure({ what: 'chat video poster (sending without it)', step: 'poster', bucket, level: 'info' }, posterError);
+            }
           }
         } else {
           throw new Error('no media source');
@@ -680,7 +694,7 @@ export default function ChatThreadScreen() {
         // (`storage/uploadError.ts`).
         const reason = classifyUploadFailure(error);
         setMediaError(
-          error instanceof UploadTooLargeError && pendingMedia.kind === 'video'
+          reason === 'too_large' && pendingMedia.kind === 'video'
             ? VIDEO_REJECTION_COPY.size
             : CHAT_MEDIA_FAILURE_COPY[reason]
         );

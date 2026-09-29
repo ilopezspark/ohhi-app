@@ -27,6 +27,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
  */
 export const SUPABASE_URL: string = supabaseUrl;
 
+/**
+ * The public anon/publishable key (it ships in the bundle by design, see the
+ * note on `createClient` below). Exported for requests made outside
+ * `supabase-js`, e.g. `storage/uploadLocalFile.ts`'s native upload to a
+ * signed upload URL, which the API gateway expects to carry it.
+ */
+export const SUPABASE_ANON_KEY: string = supabaseAnonKey;
+
 // Session persistence over expo-secure-store, per docs/app-architecture-plan.md §3.
 // SecureStore has a ~2KB per-key limit on some platforms; a Supabase session JSON can
 // exceed that under some token payloads. This adapter does NOT chunk `setItem` across
