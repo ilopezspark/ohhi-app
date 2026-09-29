@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listBlockedUsers, unblockUser } from '../../api/blocks';
 import { mapSupabaseError } from '../../api/errors';
 import { Header, RowCard, SettingsRow, Text } from '../../ui';
+import { displayName } from '../../ui/displayName';
 import { colors, spacing } from '../../theme/tokens';
 import { queryKeys } from '../../me/queryKeys';
 
@@ -53,7 +54,7 @@ export default function BlockedScreen() {
               <SettingsRow
                 key={row.blocked_id}
                 testID={`blocked-row-${row.blocked_id}`}
-                title={row.blocked?.first_name ?? 'blocked user'}
+                title={displayName(row.blocked?.first_name) || 'blocked user'}
                 accessory={{ kind: 'value', text: 'unblock' }}
                 onPress={() => onUnblock(row.blocked_id)}
               />

@@ -92,6 +92,13 @@ export default function RootLayout() {
               the photo, so the stack header is off. */}
           <Stack.Screen name="profile/[id]" />
 
+          {/* Album stories (`albums/StoryViewer.tsx`): fade in like a story
+              rather than sliding in like a page, and no iOS edge swipe back,
+              which would fight the story's own drag to the previous photo
+              (close is the x, a downward drag, or hardware back). */}
+          <Stack.Screen name="chat/[id]/album/[albumId]" options={{ animation: 'fade', gestureEnabled: false }} />
+          <Stack.Screen name="settings/albums/[id]" options={{ animation: 'fade', gestureEnabled: false }} />
+
           {/* Me redesign (docs/design/me-redesign/brief.md, ruling 11): the
               profile editor is presented modally over the tabs; QuickStatus is
               its own standalone modal from Me's status row. Both need

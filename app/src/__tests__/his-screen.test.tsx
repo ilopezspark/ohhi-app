@@ -59,7 +59,7 @@ describe('HisScreen', () => {
     (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
     const { findByTestId, getByText } = await renderScreen();
     await findByTestId('his-row-hi-1');
-    expect(getByText('Bea')).toBeTruthy();
+    expect(getByText('bea')).toBeTruthy();
   });
 
   it('refetches when the screen regains focus (§2: no realtime in v1)', async () => {

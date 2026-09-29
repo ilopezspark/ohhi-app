@@ -1,3 +1,4 @@
+import { displayName } from '../../ui/displayName';
 import { identityLine } from '../identityLine';
 import {
   parseCardPrompts,
@@ -161,8 +162,9 @@ const RECENCY_WORDS: Record<JoinedRecency, string> = {
  * without it, it claims nothing about when. Never a year in school.
  */
 export function sparseNotice(firstName: string, recency: JoinedRecency | null = null): string {
-  if (recency) return `${firstName} joined ${RECENCY_WORDS[recency]} and hasn't filled much in. not a red flag.`;
-  return `${firstName} hasn't filled much in yet. not a red flag.`;
+  const name = displayName(firstName);
+  if (recency) return `${name} joined ${RECENCY_WORDS[recency]} and hasn't filled much in. not a red flag.`;
+  return `${name} hasn't filled much in yet. not a red flag.`;
 }
 
 /** The `here for` chip text, falling back when no goals are set. */

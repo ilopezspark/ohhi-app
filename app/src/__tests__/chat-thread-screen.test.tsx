@@ -68,7 +68,7 @@ import { getSharedPrivateCard } from '../api/identity';
 import { listShareFeed } from '../chat/shareFeed';
 import { checkVideo, generateVideoPoster } from '../chat/video';
 import ChatThreadScreen from '../app/chat/[id]';
-import { GoneError, RefusedError } from '../api/errors';
+import { GoneError, RefusedError, mapSupabaseError } from '../api/errors';
 
 const conversation = (overrides: Record<string, unknown> = {}) => ({
   id: CONV,
@@ -524,6 +524,36 @@ describe('thread — chat media send flow', () => {
 
     await waitFor(() => expect(screen.getByTestId('media-preview-error')).toBeTruthy());
     expect(sendMessage).not.toHaveBeenCalled();
+    // A refusal reads exactly like a dropped network (decision 24).
+    expect(screen.getByTestId('media-preview-error')).toHaveTextContent("couldn't send. try again.");
+  });
+
+  it('says so when the server refuses the file type, without the server text', async () => {
+    // The shape storage-js rejects with, wrapped the way api/chatMedia wraps it.
+    const storageError = Object.assign(new Error('mime type text/plain is not supported'), {
+      name: 'StorageApiError',
+      status: 400,
+      statusCode: '415',
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    (uploadChatMedia as jest.Mock).mockRejectedValue(mapSupabaseError(storageError));
+    const screen = await renderScreen();
+
+    await pickFromLibrary(screen, { uri: 'file:///pick.jpg', width: 10, height: 10, type: 'image' });
+    await screen.findByTestId('media-preview-sheet');
+    await fireEvent.press(screen.getByTestId('media-preview-send'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('media-preview-error')).toHaveTextContent("that file type can't be sent.")
+    );
+    expect(screen.queryByText(/mime|text\/plain/i)).toBeNull();
+    expect(sendMessage).not.toHaveBeenCalled();
+    // Development builds name the step and the underlying error.
+    expect(warn).toHaveBeenCalledWith(
+      '[upload] chat media failed at upload',
+      expect.objectContaining({ statusCode: '415', reason: 'unsupported' })
+    );
+    warn.mockRestore();
   });
 
   it('does nothing when the picker is cancelled — stays on the pick sheet', async () => {

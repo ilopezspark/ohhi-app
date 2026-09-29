@@ -696,7 +696,7 @@ blocked. `advance_conversation()`'s trigger flips a conversation's `state` from
 `awaiting_reply` to `open` at exactly the moment the non-opener sends their first message —
 which is precisely the mutual condition — so `listShareCandidates()` scopes the picker to the
 caller's own `state = 'open'` conversations rather than counting distinct senders per
-candidate client-side. `settings/albums/[id].tsx`'s "Share with" list only offers candidates
+candidate client-side. `settings/albums/[id]/edit.tsx`'s "Share with" list only offers candidates
 not already actively shared with; revoke is optimistic (single-column, guard-enforced) and a
 repeat revoke is a no-op success (the `.is('revoked_at', null)` filter matches zero rows,
 never an error).
@@ -706,31 +706,85 @@ never an error).
 id), so `listSharedWithMeAlbums` is two queries (active album shares, then the matching
 `albums` rows) rather than one PostgREST embed.
 
-#### Viewing an album: the story viewer
+#### Viewing an album: the story
 
-Album photos are viewed full screen, story style (`src/albums/StoryViewer.tsx`, rules in
-`src/albums/storyNav.ts`). The photo is shown whole on black, edge to edge. Tapping the left
-third goes back and the right two thirds go forward. Back on the first photo does nothing, and
-forward on the last one closes the viewer. A horizontal drag moves one photo and a downward drag
-closes it. Press and hold hides the bars, the name and the buttons. There is **no auto-advance**:
-the segmented bars only show position. The next photo is prefetched. A photo that fails to load
-re-signs its URL once on its own (they last 60s), then shows `try again`. There is no save,
-download or share-out action, and screen capture is prevented while the viewer is open
-(it takes effect on Android only). For screen readers, the photo area is one adjustable element
-(`photo 2 of 5`): increment and decrement move, and activate taps forward. Hardware back closes.
+Owner rulings, 2026-09-29: opening an album is "a snapchat story experience not a photos app
+experience", and "the only ui where it should open as a gallery is when editing it, that can be
+done in the albums page not within chat". Every way of viewing an album lands directly in the
+story (`src/albums/StoryViewer.tsx`, rules in `src/albums/storyNav.ts`):
 
-- **Recipient from chat** (`app/chat/[id]/album/[albumId].tsx`): opens straight into the viewer.
-  The title row shows the album name and the owner's first name, taken from the thread's
-  conversation read. URLs re-sign every 45s while it is open.
-- **Shared with me, from the albums list** (`app/settings/albums/[id].tsx`, when the caller is
-  not the owner): opens straight into the viewer too. The owner's name comes from
-  `api/albumOwner.ts`, and closing goes back to the list.
-- **Owner** (`app/settings/albums/[id].tsx`): stays the management view, a thumbnail grid with
-  rename, add, remove, share, stop sharing and delete. Tapping a thumbnail opens the viewer at
-  that photo in a full-screen `Modal`. Its `…` offers `remove this photo`, which uses the same
-  `removeAlbumPhoto` as the grid.
+- **Full bleed.** Each photo covers the screen, centred and cropped, never letterboxed or
+  stretched (`resizeMode="cover"` plus `objectFit: 'cover'`). Phones, including a fold phone's
+  tall cover screen (360x880), fill edge to edge. A clearly wider screen (unfolded foldable,
+  tablet, desktop browser) gets a centred 9:16 column of the full height over a blurred,
+  darkened copy of the photo (`storyColumnWidth`).
+- **Auto-advance.** Each photo shows for 5 s with its bar filling (`useStoryTimer.ts`: a
+  `setTimeout` decides, an `Animated.timing` on the native driver draws the bar). The clock
+  starts only once the photo has loaded; the story closes after the last photo. It pauses while
+  a finger is down (a hold also hides the chrome), during a drag, while the reply field has
+  focus, while the `…` sheet or a confirm is open, while the app is in the background and while
+  another screen is on top. With a screen reader or reduced motion on it never moves by itself
+  (`useSystemPauses.ts`; on web only `prefers-reduced-motion` counts, because
+  react-native-web's `isScreenReaderEnabled` always answers `true`).
+- **Taps and drags.** Right two thirds forward at once; left third back (the previous photo
+  starts its 5 s again; on the first photo it restarts it). A horizontal drag moves one photo, a
+  downward drag closes, and a drag never also counts as a tap. Hardware back and Escape close (an
+  open sheet first).
+- **Header** (`StoryHeader.tsx`): the bars, then the owner's round photo (their first approved
+  profile photo, `api/albumOwner.ts#getAlbumOwner`, signed through `photos.signedPhotoUrls`; a
+  neutral initial circle without one), their first name in lowercase (`ui/displayName`), the
+  album's name smaller beside it, `…` for the owner and close. A soft top gradient keeps it
+  readable. Tapping the owner opens their profile (recipient only).
+- **Reply bar** (`StoryReplyBar.tsx`, `useStoryReply.ts`, rules in `storyReply.ts`): recipient
+  only, and only when there is a conversation with the owner that the viewer may write to right
+  now (`chat/rules.composerState`, so closed/expired/waiting threads get no bar; the blocked
+  side of a `closed_block` thread keeps it, like its composer, decision 12). From a thread the
+  id comes with the route; from the albums list it is looked up
+  (`albumOwner.ts#findConversationIdWith`). A reply is an ordinary `sendMessage` with a plain
+  `body`: the schema has no way for a message to point at an album or one of its photos, so
+  none is invented. `sent` shows briefly and the story carries on; a failure keeps the text and
+  says only `that didn't send. try again.` A "not there any more" refusal re-reads the
+  conversation, and the bar goes if it has gone.
+- Loading, failure and URL refresh are as before: the next photo is prefetched, a failed photo
+  re-signs once on its own then offers `try again`, and a loaded photo keeps its URL. No save,
+  download or share-out; screen capture is prevented where the platform allows it (Android;
+  skipped on web). Screen readers get one adjustable element (`photo 2 of 5`) with next and
+  previous; the bars are hidden from them; close and the reply field are labelled.
 
-Gone handling (decision 90) is unchanged on both screens.
+Routes:
+
+- **From chat** (`app/chat/[id]/album/[albumId].tsx`): the album share bubble's tap
+  (`openSharedAlbum` in `app/chat/[id].tsx`) is the only way into an album from chat, and it
+  opens this story. Recipient: owner's face and name, reply bar into this thread. The owner
+  tapping their own bubble: their own face, no reply bar, no `…`. Nothing in chat links to the
+  albums page or the grid (`chat-shared-album-screen.test.tsx` guards this by reading the chat
+  sources).
+- **Albums page** (`app/settings/albums/index.tsx`): tapping any album (mine or shared with me)
+  opens `app/settings/albums/[id].tsx`, the story. Mine: my own face, `…` with `edit album` and
+  `remove this photo` (asks first), `add photos` on an empty album. Shared with me: the owner's
+  face and name (the list row also says `from maya`), reply bar when we have a writable
+  conversation.
+- **Editing** (`app/settings/albums/[id]/edit.tsx`): the management grid, the only gallery.
+  Reached only by the `edit` pill on one of my album tiles or `edit album` in my story's `…`.
+  Rename, add, remove (asks first: `remove this photo?`), share, stop sharing, delete. Tapping a
+  thumbnail opens that photo in the story over the grid. Anyone else landing here is sent to the
+  story.
+- Both story routes fade in and have no iOS edge swipe back (`app/_layout.tsx`), which would
+  fight the drag to the previous photo.
+
+Gone handling (decision 90) is unchanged on every screen.
+
+**Replying to one photo, what the backend would need.** Today a reply is plain text. A real
+"reply to this photo" reference would need a nullable reference column on `messages` (for
+example `reply_album_photo_id uuid references album_photos(id) on delete set null`, or a
+generic `reply_to_kind` + `reply_to_id` pair), added to the `authenticated` column-list insert
+grant; a rule in `enforce_message_rules` that the sender may see that photo right now (an
+active, unrevoked album share from the other participant to the sender, no block either way,
+the photo in that album) and that the photo's owner is the other participant; a way for the
+thread to render it without leaking it after a revoke (the bubble resolves the photo through
+the same share-scoped read and shows a neutral "no longer shared" when it cannot, and
+`album-photos` signing stays share-gated); and `on delete set null` so removing the photo or
+album never takes the message down with it.
 
 ### Identity and private-card editors
 
@@ -1945,7 +1999,7 @@ by re-reading.
   tab, Me (`useMeData`, which also covers the private-card and album counts) and
   `settings/albums` (now all three of its lists) already refetched on focus.
 - `useOnAppActive(cb)` runs a callback on foreground/reconnect for the one screen that keeps
-  server data in local state (`settings/albums/[id].tsx`).
+  server data in local state (`settings/albums/[id]/edit.tsx`).
 
 ### Gone: detail screens
 
@@ -1962,7 +2016,7 @@ only while the screen is focused (a profile under its own thread must not pop th
 | `profile/[id]` | a card that was shown refetches as `null` | the grid tile and the card caches (not their hi's: a paused person has no card either) | back, else `/grid` |
 | `chat/[id]/album/[albumId]` | `getAlbum` is `null` (an album that exists but is empty is not gone) | the album caches and its bubble in the thread | back, else the thread |
 | `chat/PrivateCardSheet` | the identity function answers 404 | the sheet closes via `onGone`, the bubble drops, the thread re-reads itself | stays in the thread |
-| `settings/albums/[id]` | an album that was shown reloads as `null` | the album lists and counts are invalidated | back, else `/settings/albums` |
+| `settings/albums/[id]` (story) and `settings/albums/[id]/edit` (grid) | an album that was shown reloads as `null` | the album lists and counts are invalidated | back, else `/settings/albums` |
 
 An empty *first* read of a profile card still shows the neutral "this profile isn't
 available." screen (a hi's sender who is only paused or away has no card either), and drops

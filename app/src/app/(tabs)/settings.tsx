@@ -3,6 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { CompletionBar, Header, PillButton, RowCard, SectionLabel, SettingsRow, Text } from '../../ui';
 import { CheckIcon, EyeIcon, PencilIcon, SettingsIcon } from '../../ui/icons';
+import { displayName } from '../../ui/displayName';
 import { ProfileTile } from '../../profile/ProfileTile';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 import { useMeData } from '../../me/root/useMeData';
@@ -73,7 +74,7 @@ export default function MeScreen() {
           <View style={styles.identityCol}>
             <View style={styles.nameRow}>
               <Text variant="display" numberOfLines={1} style={styles.name} testID="me-name">
-                {firstName}
+                {displayName(firstName)}
               </Text>
               {verified ? (
                 <View style={styles.verifiedBadge} accessibilityLabel="verified student" testID="me-verified-check">

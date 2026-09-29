@@ -40,6 +40,13 @@ interface Props {
 const INLINE_MEDIA_MAX_WIDTH = 300;
 const INLINE_MEDIA_WIDTH_FRACTION = 0.7;
 const INLINE_MEDIA_MAX_HEIGHT = 360;
+/**
+ * Only truly extreme shapes are clamped (and cropped to the frame): a full
+ * phone screenshot (9:19.5 to 9:21) and a normal panorama crop still show
+ * whole at their real aspect ratio, at any window width.
+ */
+const INLINE_MEDIA_MIN_ASPECT = 0.4;
+const INLINE_MEDIA_MAX_ASPECT = 2.5;
 
 /**
  * `.bubble`/`.me`/`.them` (`Chat-Thread.html`). Same testIDs as before this pass — only the visual language changed.
@@ -132,13 +139,16 @@ function InlineMedia({ message, kind, mediaUrl, onOpenMedia }: InlineMediaProps)
     setFailed(false);
   }, [mediaUrl]);
 
+  // The loaded image's own pixels are the truth once they arrive; the row's
+  // stored size (the picker's report, which can disagree with the uploaded
+  // pixels, and is missing on older rows) only sizes the frame before that.
   const rowSize = { width: message.media_width ?? undefined, height: message.media_height ?? undefined };
-  const frame = fitMedia(aspectOf(rowSize) != null ? rowSize : loadedSize, {
+  const frame = fitMedia(loadedSize ?? (aspectOf(rowSize) != null ? rowSize : null), {
     maxWidth: Math.min(INLINE_MEDIA_MAX_WIDTH, Math.round(windowWidth * INLINE_MEDIA_WIDTH_FRACTION)),
     maxHeight: INLINE_MEDIA_MAX_HEIGHT,
     fallbackAspect: 1,
-    minAspect: 0.5,
-    maxAspect: 2,
+    minAspect: INLINE_MEDIA_MIN_ASPECT,
+    maxAspect: INLINE_MEDIA_MAX_ASPECT,
   });
   const showImage = !!mediaUrl && !failed;
 

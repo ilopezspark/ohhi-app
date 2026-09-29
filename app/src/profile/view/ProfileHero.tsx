@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { useId, useState, type ReactNode } from 'react';
+import { Image, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { CheckIcon, ChevronUpIcon, Dot, InfoIcon, PinIcon, Text } from '../../ui';
+import { displayName } from '../../ui/displayName';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 import { hereForChipLabel } from '../goalLabels';
 import { HERE_FOR_FALLBACK, metaParts, type ProfileViewData } from './model';
@@ -24,6 +25,8 @@ export interface ProfileHeroTestIDs {
   tags?: string;
   notice?: string;
   expand?: string;
+  topScrim?: string;
+  bottomScrim?: string;
 }
 
 export interface ProfileHeroProps {
@@ -66,9 +69,89 @@ export interface ProfileHeroProps {
   disabledActions?: boolean;
   /** `bleed` frame: space kept clear at the bottom for the floating action bar. */
   bottomSpace?: number;
-  /** `bleed` frame: the hero's height (a full screen). */
+  /** `bleed` frame: the hero's height (the screen's measured height). */
   height?: number;
+  /** `bleed` frame: the hero's width, used until its own layout is measured. */
+  width?: number;
   testIDs?: ProfileHeroTestIDs;
+}
+
+/** The bottom scrim never covers less than this share of the hero (the artboards' fade). */
+export const BOTTOM_SCRIM_SHARE = 0.62;
+/** Clear fade kept above the overlaid text, so the text never sits on the scrim's faint top. */
+export const BOTTOM_SCRIM_FADE = 120;
+/** The top scrim reaches this far below the status bar. */
+export const TOP_SCRIM_BELOW_INSET = 110;
+
+/**
+ * The two scrims' heights, in points, for a hero `heroHeight` tall whose
+ * bottom block (here now … chips, plus the space kept for the action bar)
+ * is `contentHeight` tall. The bottom scrim is anchored to the hero's bottom
+ * edge and reaches at least `BOTTOM_SCRIM_SHARE` of the way up, or higher
+ * when the text needs it; neither is ever taller than the hero.
+ */
+export function heroScrimHeights(heroHeight: number, topInset: number, contentHeight: number): { top: number; bottom: number } {
+  const h = Math.max(0, Math.round(heroHeight));
+  return {
+    top: Math.min(h, Math.round(topInset + TOP_SCRIM_BELOW_INSET)),
+    bottom: Math.min(h, Math.max(Math.round(h * BOTTOM_SCRIM_SHARE), Math.ceil(contentHeight) + BOTTOM_SCRIM_FADE)),
+  };
+}
+
+type ScrimStop = { offset: number; opacity: number };
+const TOP_STOPS: ScrimStop[] = [
+  { offset: 0, opacity: 0.35 },
+  { offset: 1, opacity: 0 },
+];
+const BOTTOM_STOPS: ScrimStop[] = [
+  { offset: 0, opacity: 0 },
+  { offset: 0.45, opacity: 0.45 },
+  { offset: 1, opacity: 0.85 },
+];
+
+/**
+ * One scrim: an ink gradient in an absolutely placed box of a known size.
+ * The SVG is given plain numbers for its size, never percentages, and is
+ * remounted whenever that size changes. On Android a percentage-sized `Svg`
+ * kept the gradient it drew on the first frame (sized from the window,
+ * which leaves out the system bars) after the hero grew to the full screen,
+ * so the scrim stopped short of the hero's bottom edge with a hard line and
+ * bare photo under it.
+ */
+function Scrim({
+  width,
+  height,
+  stops,
+  style,
+  testID,
+}: {
+  width: number;
+  height: number;
+  stops: ScrimStop[];
+  style: object;
+  testID?: string;
+}) {
+  // Unique per instance: on the web every SVG shares one document, and two
+  // heroes (a screen kept mounted under the next) must not share a gradient.
+  const id = `scrim${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
+  const w = Math.round(width);
+  const h = Math.round(height);
+  return (
+    <View style={[style, { height: h }]} pointerEvents="none" testID={testID}>
+      {w > 0 && h > 0 ? (
+        <Svg key={`${w}x${h}`} width={w} height={h} testID={testID ? `${testID}-svg` : undefined}>
+          <Defs>
+            <LinearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+              {stops.map((stop) => (
+                <Stop key={stop.offset} offset={stop.offset} stopColor={colors.ink} stopOpacity={stop.opacity} />
+              ))}
+            </LinearGradient>
+          </Defs>
+          <Rect x={0} y={0} width={w} height={h} fill={`url(#${id})`} />
+        </Svg>
+      ) : null}
+    </View>
+  );
 }
 
 /** The single-photo layer for callers without a pager (the grid's `photoUrl` shape). */
@@ -77,7 +160,9 @@ function SinglePhoto({ photoUrl, tint, testIDs }: { photoUrl?: string | null; ti
   if (!photoUrl || failed) {
     return <TintedPlaceholder testID={testIDs.placeholder} tint={tint} style={styles.flatPlaceholder} />;
   }
-  return <Image testID={testIDs.photo} source={{ uri: photoUrl }} style={styles.fill} onError={() => setFailed(true)} />;
+  return (
+    <Image testID={testIDs.photo} source={{ uri: photoUrl }} style={styles.fill} resizeMode="cover" onError={() => setFailed(true)} />
+  );
 }
 
 /**
@@ -105,6 +190,7 @@ export function ProfileHero({
   disabledActions = false,
   bottomSpace = 0,
   height,
+  width,
   testIDs = {},
 }: ProfileHeroProps) {
   // The place line replaces the tier word (`library, 2nd floor · nursing
@@ -115,10 +201,31 @@ export function ProfileHero({
   const tags = data.tagLabels ?? [];
   const bleed = frame === 'bleed';
   const side = bleed ? sideInset : 0;
+  const name = displayName(data.firstName);
+
+  // The hero's own size (the `card` frame has no height prop, and both need
+  // the width for the scrims) and the bottom block's height, so the bottom
+  // scrim always reaches above the text however much of it there is.
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const [contentHeight, setContentHeight] = useState(0);
+  const heroHeight = bleed && height !== undefined ? height : (size?.height ?? 0);
+  const heroWidth = size?.width ?? (bleed ? (width ?? 0) : 0);
+  const scrims = heroScrimHeights(heroHeight, topInset, contentHeight);
+
+  function onHeroLayout(event: LayoutChangeEvent) {
+    const { width: w, height: h } = event.nativeEvent.layout;
+    if (w > 0 && h > 0 && (w !== size?.width || h !== size?.height)) setSize({ width: w, height: h });
+  }
+
+  function onContentLayout(event: LayoutChangeEvent) {
+    const h = Math.ceil(event.nativeEvent.layout.height);
+    if (h > 0 && h !== contentHeight) setContentHeight(h);
+  }
 
   return (
     <View
       testID={testIDs.root}
+      onLayout={onHeroLayout}
       style={[
         styles.base,
         { backgroundColor: tint },
@@ -127,30 +234,16 @@ export function ProfileHero({
     >
       <View style={StyleSheet.absoluteFill}>{photoSlot ?? <SinglePhoto photoUrl={photoUrl} tint={tint} testIDs={testIDs} />}</View>
 
-      <View style={[styles.topScrim, { height: topInset + 110 }]} pointerEvents="none">
-        <Svg width="100%" height="100%">
-          <Defs>
-            <LinearGradient id="profileHeroTop" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={colors.ink} stopOpacity={0.35} />
-              <Stop offset="1" stopColor={colors.ink} stopOpacity={0} />
-            </LinearGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100%" height="100%" fill="url(#profileHeroTop)" />
-        </Svg>
-      </View>
-
-      <View style={styles.bottomScrim} pointerEvents="none">
-        <Svg width="100%" height="100%">
-          <Defs>
-            <LinearGradient id="profileHeroBottom" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={colors.ink} stopOpacity={0} />
-              <Stop offset="0.45" stopColor={colors.ink} stopOpacity={0.45} />
-              <Stop offset="1" stopColor={colors.ink} stopOpacity={0.85} />
-            </LinearGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100%" height="100%" fill="url(#profileHeroBottom)" />
-        </Svg>
-      </View>
+      {/* Under the status bar, so its icons stay readable on a light photo. */}
+      <Scrim width={heroWidth} height={scrims.top} stops={TOP_STOPS} style={styles.topScrim} testID={testIDs.topScrim} />
+      {/* Anchored to the hero's bottom edge, behind the text and the action bar. */}
+      <Scrim
+        width={heroWidth}
+        height={scrims.bottom}
+        stops={BOTTOM_STOPS}
+        style={styles.bottomScrim}
+        testID={testIDs.bottomScrim}
+      />
 
       {topLeft || topRight ? (
         <View
@@ -163,6 +256,7 @@ export function ProfileHero({
       ) : null}
 
       <View
+        onLayout={onContentLayout}
         style={[
           styles.bottom,
           { paddingBottom: bleed ? bottomSpace + spacing.lgXl : spacing.xxl, paddingHorizontal: spacing.xlXxl + side },
@@ -189,7 +283,7 @@ export function ProfileHero({
                 testID={testIDs.name}
                 accessibilityRole="header"
               >
-                {data.firstName}
+                {name}
               </Text>
               {data.verified ? (
                 <View style={styles.verified} accessibilityLabel="verified student" testID={testIDs.verified}>
@@ -231,7 +325,7 @@ export function ProfileHero({
             <Pressable
               testID={testIDs.expand}
               accessibilityRole="button"
-              accessibilityLabel={`more about ${data.firstName}`}
+              accessibilityLabel={`more about ${name}`}
               onPress={onExpand}
               style={({ pressed }) => [styles.expand, shadows.float, pressed && styles.pressed]}
             >
@@ -321,7 +415,7 @@ const styles = StyleSheet.create({
   fill: { width: '100%', height: '100%' },
   flatPlaceholder: { borderRadius: 0 },
   topScrim: { position: 'absolute', top: 0, left: 0, right: 0 },
-  bottomScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '62%' },
+  bottomScrim: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   topRow: {
     position: 'absolute',
     flexDirection: 'row',

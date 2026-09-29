@@ -7,6 +7,7 @@ import { EditSections } from '../../me/editor/EditSections';
 import { PreviewCard } from '../../me/editor/PreviewCard';
 import { useProfileEditorDraftContext } from '../../me/editor/ProfileEditorDraftContext';
 import { Text } from '../../ui';
+import { displayName } from '../../ui/displayName';
 import { colors, spacing } from '../../theme/tokens';
 
 type EditorTab = 'edit' | 'preview';
@@ -127,7 +128,7 @@ export default function ProfileEditorScreen() {
           </Text>
         </Pressable>
         <Text variant="title" numberOfLines={1} style={styles.headerName}>
-          {draftState.firstName}
+          {displayName(draftState.firstName)}
         </Text>
         <Pressable
           testID="profile-editor-done"

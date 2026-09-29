@@ -5,29 +5,43 @@ import {
   Animated,
   BackHandler,
   Image,
+  Keyboard,
+  KeyboardAvoidingView,
   PanResponder,
   Platform,
   Pressable,
   StyleSheet,
+  useWindowDimensions,
   View,
   type AccessibilityActionEvent,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as ScreenCapture from 'expo-screen-capture';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { Sheet, Text } from '../ui';
-import { MoreIcon, XIcon } from '../ui/icons';
 import { colors, radii, spacing } from '../theme/tokens';
 import { useInsets } from './useInsets';
+import { useStoryTimer } from './useStoryTimer';
+import { useSystemPauses } from './useSystemPauses';
+import { StoryHeader, type StoryOwner } from './StoryHeader';
+import { StoryReplyBar, type StoryReply } from './StoryReplyBar';
 import {
   clampIndex,
   classifyDrag,
   isDragging,
   positionLabel,
+  STORY_PHOTO_MS,
   stepBack,
+  stepDecrement,
   stepForward,
   stepIncrement,
+  storyColumnWidth,
+  storyTimerRuns,
   type StoryStep,
 } from './storyNav';
+
+export type { StoryOwner } from './StoryHeader';
+export type { StoryReply } from './StoryReplyBar';
 
 export interface StoryPhoto {
   id: string;
@@ -35,22 +49,37 @@ export interface StoryPhoto {
   uri: string | null;
 }
 
-/** One row in the owner's `…` sheet, acting on the photo on screen. */
+/** Asks before an action runs (removing a photo is permanent). */
+export interface StoryConfirm {
+  title: string;
+  body?: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+}
+
+/** One row in the owner's `…` sheet. */
 export interface StoryAction {
   key: string;
   label: string;
   destructive?: boolean;
-  onPress: (photo: StoryPhoto) => void;
+  /** Needs a photo on screen (acts on it). Without this the row is offered even on an empty album. */
+  needsPhoto?: boolean;
+  /** Ask first, in a second sheet, before `onPress` runs. */
+  confirm?: StoryConfirm;
+  /** The photo on screen, or `null` on an empty album. */
+  onPress: (photo: StoryPhoto | null) => void;
 }
 
 export interface StoryViewerProps {
   photos: StoryPhoto[];
   /** Where to open. Clamped into the album; out of range opens the nearest end. */
   initialIndex?: number;
-  /** The album's name. */
+  /** The album's name, shown smaller beside the owner's. */
   title?: string | null;
-  /** The owner's first name, for the recipient. The owner sees their own album without it. */
-  ownerName?: string | null;
+  /** Whose album it is: round photo and first name at the top. */
+  owner?: StoryOwner | null;
+  /** Tapping the owner's photo or name opens their profile. */
+  onOpenOwner?: () => void;
   /** The album itself is still loading: a quiet spinner, nothing else. */
   loading?: boolean;
   /** Photo URLs are still being signed: a photo without one shows as loading, not failed. */
@@ -62,59 +91,76 @@ export interface StoryViewerProps {
   actions?: StoryAction[];
   /** A short line along the bottom, e.g. a failed removal. */
   notice?: string | null;
+  /** The reply bar (recipient only, and only where they may write to the owner). None without it. */
+  reply?: StoryReply | null;
+  /** Holds the timer from outside, e.g. while another screen is on top. */
+  paused?: boolean;
+  /** A button under an empty album's `no photos here yet.` (the owner's `add photos`). */
+  emptyAction?: { label: string; onPress: () => void } | null;
+  /** How long each photo shows, in ms. */
+  photoDurationMs?: number;
   testID?: string;
 }
 
 /**
- * The album viewer, story style (the owner's ask: "like an instagram or
- * snapchat story where it's a fullscreen tap right to advance or left to go
- * back"). Used by the recipient opening a shared album from chat
- * (`app/chat/[id]/album/[albumId].tsx`), by anyone opening an album shared
- * with them from the albums list, and by the owner tapping a photo in their
- * own album's grid (`app/settings/albums/[id].tsx`).
+ * The album viewer, as a story (the owner's rulings, 2026-09-29: "the
+ * opening of an album should be a snapchat story experience not a photos app
+ * experience"; photos fill the screen, advance on their own, the owner's
+ * face and name on top, a reply bar at the bottom).
  *
- * - Full screen, black, the photo whole (`contain`) edge to edge under the
- *   status bar; on a wide screen it sits centred and the tap zones still
- *   split the full width.
- * - Left third goes back, right two thirds go forward (`storyNav.ts`). Back
- *   on the first photo does nothing; forward on the last closes.
- * - A horizontal drag moves one photo; a downward drag closes. Plain
- *   `PanResponder`, which only takes over once a finger has actually moved
- *   (`isDragging`), so a still tap always reaches the tap zones.
- * - Press and hold hides the bars, the name and the buttons; letting go
- *   brings them back.
- * - No timer. The bars are position only.
- * - The next photo is prefetched. Each photo shows a quiet spinner until it
- *   has loaded, and a neutral failure with `try again` if it cannot load.
- *   Signed URLs last 60 seconds, so the first failure of a photo re-signs
- *   once on its own before saying anything, and a photo that has loaded
- *   keeps the URL it loaded with even when newer ones arrive, so a refresh
- *   never flickers the photo on screen.
+ * - **Full bleed.** Each photo covers the screen, centred, cropped rather
+ *   than letterboxed. On a clearly wider screen (foldable, tablet, desktop
+ *   browser) the story is a 9:16 column of the full height, centred, over a
+ *   blurred and darkened copy of the same photo (`storyNav.storyColumnWidth`).
+ * - **Auto-advance.** Each photo shows for `photoDurationMs` (5 s) with its bar
+ *   filling (`useStoryTimer`); the clock only starts once the photo has
+ *   loaded, and the story closes after the last one. It pauses while a
+ *   finger is down (a hold also hides the chrome), during a drag, while the
+ *   reply field has focus, while the `…` sheet or a confirm is open, while
+ *   the app is in the background and while `paused` is set. With a screen
+ *   reader or reduced motion on it never moves by itself
+ *   (`useSystemPauses`).
+ * - **Taps.** Left third goes back (and starts that photo again; on the first
+ *   photo it restarts it), right two thirds go forward at once. A
+ *   horizontal drag moves one photo and a downward drag closes; a drag never
+ *   also counts as a tap. Hardware back and Escape close (a sheet first).
+ * - **Header** (`StoryHeader`): bars, then the owner's round photo, first
+ *   name and the album's name, `…` for the owner, close.
+ * - **Reply bar** (`StoryReplyBar`), when `reply` is given: a plain text
+ *   message to the owner, lifted by the keyboard.
+ * - The next photo is prefetched. A photo shows a quiet spinner until it has
+ *   loaded and a neutral failure with `try again` if it cannot. Signed URLs
+ *   last 60 seconds, so the first failure of a photo re-signs once on its own,
+ *   and a loaded photo keeps its URL when newer ones arrive (no flicker).
  * - Albums are private and unmoderated (decision 89): nothing here saves,
- *   downloads or shares a photo out, and `preventScreenCaptureAsync` blocks
- *   screenshots and recording where the platform allows it (Android; a
- *   no-op on iOS and web).
+ *   downloads or shares a photo out, and screen capture is prevented where
+ *   the platform allows it (Android; skipped on web, a no-op on iOS).
  * - Screen readers: the photo area is one adjustable element announcing
- *   `photo 2 of 5`; increment and decrement move (never closing), activate
- *   acts as a tap forward. The bars are hidden from them; close is labelled.
- *   Hardware back closes (the `…` sheet first, when open).
+ *   `photo 2 of 5`, with next/previous (increment/decrement, never closing)
+ *   and activate (forward). The bars are hidden from them.
  */
 export function StoryViewer({
   photos,
   initialIndex = 0,
   title,
-  ownerName,
+  owner,
+  onOpenOwner,
   loading = false,
   resolving = false,
   onRetry,
   onClose,
   actions,
   notice,
+  reply,
+  paused = false,
+  emptyAction,
+  photoDurationMs = STORY_PHOTO_MS,
   testID = 'album-viewer',
 }: StoryViewerProps) {
   const p = testID;
   const insets = useInsets();
   const count = photos.length;
+  const system = useSystemPauses();
 
   // Not `usePreventScreenCapture`: on web that hook rejects with "not
   // available on web", which surfaces as an uncaught error. Same native
@@ -127,15 +173,30 @@ export function StoryViewer({
     };
   }, []);
 
+  // --- size -------------------------------------------------------------------
+  const win = useWindowDimensions();
+  const [measured, setMeasured] = useState<{ width: number; height: number } | null>(null);
+  const width = measured?.width ?? win.width;
+  const height = measured?.height ?? win.height;
+  const columnWidth = storyColumnWidth(width, height);
+  const wide = columnWidth < width;
+  const columnStyle = { left: (width - columnWidth) / 2, width: columnWidth };
+
   // Kept unclamped and clamped on every read, so a start index given while
   // the photos are still loading still lands once they arrive, and a photo
   // removed from under the viewer just leaves the nearest one on screen.
   const [rawIndex, setIndex] = useState(initialIndex);
   const index = clampIndex(rawIndex, count);
   const photo: StoryPhoto | undefined = photos[index];
+  /** Bumped by a tap back on the first photo: same photo, timer from zero. */
+  const [restarts, setRestarts] = useState(0);
 
+  const [touching, setTouching] = useState(false);
   const [holding, setHolding] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [replyFocused, setReplyFocused] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [confirming, setConfirming] = useState<{ action: StoryAction; photo: StoryPhoto | null } | null>(null);
 
   // --- load state -----------------------------------------------------------
   const pinned = useRef<Record<string, string>>({});
@@ -192,12 +253,23 @@ export function StoryViewer({
     [onRetry, runRetry]
   );
 
+  // Stable per photo: react-native-web's `Image` aborts and restarts its load
+  // whenever these change identity, so fresh arrows on every render (a hold,
+  // a URL refresh) could keep a photo from ever reporting that it loaded.
+  const photoId = photo?.id ?? null;
+  const handleLoad = useCallback(() => {
+    if (photoId && uri && imageKey) onImageLoad(photoId, uri, imageKey);
+  }, [photoId, uri, imageKey, onImageLoad]);
+  const handleError = useCallback(() => {
+    if (photoId && imageKey) onImageError(photoId, imageKey);
+  }, [photoId, imageKey, onImageError]);
+
   const tryAgain = useCallback(() => {
     setAttempt((a) => a + 1);
     void runRetry();
   }, [runRetry]);
 
-  // Prefetch the next photo so a tap forward shows it straight away.
+  // Prefetch the next photo so it is on screen (and its clock running) at once.
   const nextUri = photos[index + 1]?.uri ?? null;
   useEffect(() => {
     if (!nextUri) return;
@@ -216,6 +288,10 @@ export function StoryViewer({
         onClose();
         return;
       }
+      if (step.kind === 'restart') {
+        setRestarts((r) => r + 1);
+        return;
+      }
       if (step.kind === 'move') {
         setIndex(step.index);
         if (announce) AccessibilityInfo.announceForAccessibility?.(positionLabel(step.index, count));
@@ -226,6 +302,24 @@ export function StoryViewer({
 
   const goForward = useCallback(() => apply(stepForward(index, count)), [apply, index, count]);
   const goBack = useCallback(() => apply(stepBack(index)), [apply, index]);
+
+  // --- timer ------------------------------------------------------------------
+  const running = storyTimerRuns({
+    loaded: photoState === 'loaded',
+    touching,
+    dragging,
+    replyFocused,
+    backgrounded: system.backgrounded,
+    menuOpen: menuOpen || !!confirming,
+    manualOnly: system.manualOnly,
+    external: paused,
+  });
+  const progress = useStoryTimer({
+    duration: photoDurationMs,
+    running,
+    resetKey: `${photo?.id ?? 'none'}|${index}|${restarts}`,
+    onDone: goForward,
+  });
 
   // An owner who removes the last photo is taken out; an album that opened
   // empty keeps its empty state.
@@ -238,10 +332,25 @@ export function StoryViewer({
     }
   }, [count, onClose]);
 
+  const availableActions = (actions ?? []).filter((action) => !action.needsPhoto || !!photo);
+  const hasActions = availableActions.length > 0;
+
+  const closeSheets = useCallback((): boolean => {
+    if (confirming) {
+      setConfirming(null);
+      return true;
+    }
+    if (menuOpen) {
+      setMenuOpen(false);
+      return true;
+    }
+    return false;
+  }, [confirming, menuOpen]);
+
   // Handlers read through a ref so the pan responder and listeners below
   // are created once and still act on the current photo.
-  const latest = useRef({ goForward, goBack, onClose, menuOpen });
-  latest.current = { goForward, goBack, onClose, menuOpen };
+  const latest = useRef({ goForward, goBack, onClose, closeSheets, sheetOpen: false, replyFocused });
+  latest.current = { goForward, goBack, onClose, closeSheets, sheetOpen: menuOpen || !!confirming, replyFocused };
 
   // --- drag ---------------------------------------------------------------------
   const dragY = useRef(new Animated.Value(0)).current;
@@ -257,16 +366,21 @@ export function StoryViewer({
   const pan = useMemo(
     () =>
       PanResponder.create({
-        onMoveShouldSetPanResponderCapture: (_e, g) => !latest.current.menuOpen && isDragging(g.dx, g.dy),
-        onMoveShouldSetPanResponder: (_e, g) => !latest.current.menuOpen && isDragging(g.dx, g.dy),
+        onMoveShouldSetPanResponderCapture: (_e, g) =>
+          !latest.current.sheetOpen && !latest.current.replyFocused && isDragging(g.dx, g.dy),
+        onMoveShouldSetPanResponder: (_e, g) =>
+          !latest.current.sheetOpen && !latest.current.replyFocused && isDragging(g.dx, g.dy),
         onPanResponderGrant: () => {
           dragged.current = true;
+          setDragging(true);
           setHolding(false);
+          setTouching(false);
         },
         onPanResponderMove: (_e, g) => {
           if (g.dy > 0 && Math.abs(g.dy) > Math.abs(g.dx)) dragY.setValue(g.dy);
         },
         onPanResponderRelease: (_e, g) => {
+          setDragging(false);
           const drag = classifyDrag(g.dx, g.dy);
           if (drag === 'close') {
             latest.current.onClose();
@@ -276,7 +390,10 @@ export function StoryViewer({
           if (drag === 'next') latest.current.goForward();
           else if (drag === 'previous') latest.current.goBack();
         },
-        onPanResponderTerminate: () => settle(),
+        onPanResponderTerminate: () => {
+          setDragging(false);
+          settle();
+        },
       }),
     [dragY, settle]
   );
@@ -284,8 +401,7 @@ export function StoryViewer({
   // --- hardware back and keyboard ----------------------------------------------------
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (latest.current.menuOpen) setMenuOpen(false);
-      else latest.current.onClose();
+      if (!latest.current.closeSheets()) latest.current.onClose();
       return true;
     });
     return () => sub.remove();
@@ -295,14 +411,47 @@ export function StoryViewer({
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     const onKey = (event: { key: string }) => {
       if (event.key === 'Escape') {
-        if (latest.current.menuOpen) setMenuOpen(false);
-        else latest.current.onClose();
-      } else if (!latest.current.menuOpen && event.key === 'ArrowRight') latest.current.goForward();
-      else if (!latest.current.menuOpen && event.key === 'ArrowLeft') latest.current.goBack();
+        if (!latest.current.closeSheets()) latest.current.onClose();
+        return;
+      }
+      if (latest.current.sheetOpen || latest.current.replyFocused) return;
+      if (event.key === 'ArrowRight') latest.current.goForward();
+      else if (event.key === 'ArrowLeft') latest.current.goBack();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
+
+  // --- taps ---------------------------------------------------------------------------
+  /** A tap while typing a reply puts the keyboard away instead of moving. */
+  const tap = useCallback(
+    (direction: 'back' | 'forward') => {
+      if (dragged.current) return;
+      if (replyFocused) {
+        Keyboard.dismiss();
+        return;
+      }
+      if (direction === 'back') goBack();
+      else goForward();
+    },
+    [replyFocused, goBack, goForward]
+  );
+
+  const zoneHandlers = (direction: 'back' | 'forward') => ({
+    onPressIn: () => {
+      dragged.current = false;
+      if (!replyFocused) setTouching(true);
+    },
+    onPress: () => tap(direction),
+    onLongPress: () => {
+      if (!dragged.current && !replyFocused) setHolding(true);
+    },
+    onPressOut: () => {
+      setTouching(false);
+      setHolding(false);
+    },
+    delayLongPress: 220,
+  });
 
   // --- accessibility ----------------------------------------------------------------
   const isLast = index >= count - 1;
@@ -313,7 +462,7 @@ export function StoryViewer({
           apply(stepIncrement(index, count), true);
           break;
         case 'decrement':
-          apply(stepBack(index), true);
+          apply(stepDecrement(index), true);
           break;
         case 'activate':
           apply(stepForward(index, count), true);
@@ -324,13 +473,46 @@ export function StoryViewer({
   );
 
   const chromeVisible = !holding;
-  const hasActions = !!actions && actions.length > 0 && !!photo;
+  const showSpinner = loading || photoState === 'loading';
 
   return (
-    <View style={styles.root} testID={p} {...pan.panHandlers}>
+    <View
+      style={styles.root}
+      testID={p}
+      onLayout={(e) => {
+        const { width: w, height: h } = e.nativeEvent.layout;
+        if (w > 0 && h > 0 && (w !== measured?.width || h !== measured?.height)) setMeasured({ width: w, height: h });
+      }}
+      onAccessibilityEscape={onClose}
+      {...pan.panHandlers}
+    >
       <StatusBar style="light" />
 
+      {wide && uri ? (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none" testID={`${p}-backdrop`}>
+          <Image source={{ uri }} style={styles.fill} resizeMode="cover" blurRadius={40} accessible={false} />
+          <View style={[StyleSheet.absoluteFill, styles.backdropDim]} />
+        </View>
+      ) : null}
+
       <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateY: dragY }] }]}>
+        {/* The photo, filling its column. */}
+        <View style={[styles.column, columnStyle]} pointerEvents="none" testID={`${p}-column`}>
+          {photo && imageKey && uri && !retrying ? (
+            <Image
+              key={imageKey}
+              testID={`${p}-photo-${photo.id}`}
+              source={{ uri }}
+              style={styles.fill}
+              resizeMode="cover"
+              accessibilityIgnoresInvertColors
+              onLoad={handleLoad}
+              onError={handleError}
+            />
+          ) : null}
+        </View>
+
+        {/* Tap zones across the full width; for a screen reader, one adjustable element. */}
         {photo ? (
           <View
             style={StyleSheet.absoluteFill}
@@ -345,164 +527,133 @@ export function StoryViewer({
             ]}
             onAccessibilityAction={onAccessibilityAction}
           >
-            {imageKey && uri && !retrying ? (
-              <Image
-                key={imageKey}
-                testID={`${p}-photo-${photo.id}`}
-                source={{ uri }}
-                style={styles.photo}
-                resizeMode="contain"
-                accessibilityIgnoresInvertColors
-                onLoad={() => onImageLoad(photo.id, uri, imageKey)}
-                onError={() => onImageError(photo.id, imageKey)}
-              />
-            ) : null}
-
             <View style={styles.zones}>
               <Pressable
                 testID={`${p}-back-zone`}
                 accessible={false}
                 importantForAccessibility="no"
                 style={styles.backZone}
-                onPressIn={() => {
-                  dragged.current = false;
-                }}
-                onPress={() => {
-                  if (!dragged.current) goBack();
-                }}
-                onLongPress={() => {
-                  if (!dragged.current) setHolding(true);
-                }}
-                onPressOut={() => setHolding(false)}
-                delayLongPress={220}
+                {...zoneHandlers('back')}
               />
               <Pressable
                 testID={`${p}-forward-zone`}
                 accessible={false}
                 importantForAccessibility="no"
                 style={styles.forwardZone}
-                onPressIn={() => {
-                  dragged.current = false;
-                }}
-                onPress={() => {
-                  if (!dragged.current) goForward();
-                }}
-                onLongPress={() => {
-                  if (!dragged.current) setHolding(true);
-                }}
-                onPressOut={() => setHolding(false)}
-                delayLongPress={220}
+                {...zoneHandlers('forward')}
               />
             </View>
           </View>
         ) : null}
-      </Animated.View>
 
-      {loading || photoState === 'loading' ? (
-        <View style={styles.center} pointerEvents="none">
-          <ActivityIndicator color={colors.onDark} testID={`${p}-loading`} accessibilityLabel="loading" />
-        </View>
-      ) : null}
-
-      {!loading && photoState === 'failed' ? (
-        <View style={styles.center} pointerEvents="box-none" testID={`${p}-failed`}>
-          <Text variant="body" color={colors.onDark} style={styles.centerText}>
-            this photo didn&apos;t load.
-          </Text>
-          <Pressable
-            testID={`${p}-retry`}
-            accessibilityRole="button"
-            accessibilityLabel="try again"
-            onPress={tryAgain}
-            style={({ pressed }) => [styles.retry, pressed && styles.pressed]}
-          >
-            <Text variant="rowLabel" color={colors.onDark}>
-              try again
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
-
-      {!loading && count === 0 ? (
-        <View style={styles.center} pointerEvents="none">
-          <Text variant="body" color={colors.onDark} style={styles.centerText} testID={`${p}-empty`}>
-            no photos here yet.
-          </Text>
-        </View>
-      ) : null}
-
-      {chromeVisible ? (
-        <View style={[styles.chrome, { paddingTop: insets.top + spacing.smMd }]} pointerEvents="box-none" testID={`${p}-chrome`}>
-          {count > 1 ? (
-            <View
-              style={styles.bars}
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-              pointerEvents="none"
-              testID={`${p}-bars`}
-            >
-              {photos.map((item, i) => (
-                <View
-                  key={item.id}
-                  testID={`${p}-bar-${i}`}
-                  style={[styles.bar, i <= index ? styles.barOn : styles.barOff]}
-                />
-              ))}
+        {/* Everything drawn over the photo, inside its column. */}
+        <View style={[styles.column, columnStyle]} pointerEvents="box-none">
+          {showSpinner ? (
+            <View style={styles.center} pointerEvents="none">
+              <ActivityIndicator color={colors.onDark} testID={`${p}-loading`} accessibilityLabel="loading" />
             </View>
           ) : null}
 
-          <View style={styles.topRow} pointerEvents="box-none">
-            <View style={styles.titleBlock} pointerEvents="none">
-              {title ? (
-                <Text variant="bodyStrong" color={colors.onDark} numberOfLines={1} style={styles.shadow} testID={`${p}-title`}>
-                  {title}
+          {!loading && photoState === 'failed' ? (
+            <View style={styles.center} pointerEvents="box-none" testID={`${p}-failed`}>
+              <Text variant="body" color={colors.onDark} style={styles.centerText}>
+                this photo didn&apos;t load.
+              </Text>
+              <Pressable
+                testID={`${p}-retry`}
+                accessibilityRole="button"
+                accessibilityLabel="try again"
+                onPress={tryAgain}
+                style={({ pressed }) => [styles.pill, pressed && styles.pressed]}
+              >
+                <Text variant="rowLabel" color={colors.onDark}>
+                  try again
                 </Text>
-              ) : null}
-              {ownerName ? (
-                <Text variant="helper" color={colors.onDark} numberOfLines={1} style={[styles.shadow, styles.owner]} testID={`${p}-owner`}>
-                  {ownerName}
-                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {!loading && count === 0 ? (
+            <View style={styles.center} pointerEvents="box-none">
+              <Text variant="body" color={colors.onDark} style={styles.centerText} testID={`${p}-empty`}>
+                no photos here yet.
+              </Text>
+              {emptyAction ? (
+                <Pressable
+                  testID={`${p}-empty-action`}
+                  accessibilityRole="button"
+                  accessibilityLabel={emptyAction.label}
+                  onPress={emptyAction.onPress}
+                  style={({ pressed }) => [styles.pill, pressed && styles.pressed]}
+                >
+                  <Text variant="rowLabel" color={colors.onDark}>
+                    {emptyAction.label}
+                  </Text>
+                </Pressable>
               ) : null}
             </View>
+          ) : null}
 
-            {hasActions ? (
-              <Pressable
-                testID={`${p}-more`}
-                accessibilityRole="button"
-                accessibilityLabel="photo options"
-                hitSlop={8}
-                onPress={() => setMenuOpen(true)}
-                style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+          {chromeVisible ? (
+            <>
+              <View style={[styles.topScrim, { height: insets.top + TOP_SCRIM }]} pointerEvents="none">
+                <Scrim id={`${p}-top-scrim`} direction="down" />
+              </View>
+              <View
+                style={[styles.chrome, { paddingTop: insets.top + spacing.smMd }]}
+                pointerEvents="box-none"
+                testID={`${p}-chrome`}
               >
-                <MoreIcon size={22} color={colors.onDark} />
-              </Pressable>
-            ) : null}
+                <StoryHeader
+                  testID={p}
+                  count={count}
+                  index={index}
+                  progress={progress}
+                  manualOnly={system.manualOnly}
+                  owner={owner}
+                  title={title}
+                  onOpenOwner={onOpenOwner}
+                  onMore={hasActions ? () => setMenuOpen(true) : undefined}
+                  onClose={onClose}
+                />
+              </View>
+            </>
+          ) : null}
 
-            <Pressable
-              testID={`${p}-close`}
-              accessibilityRole="button"
-              accessibilityLabel="close"
-              hitSlop={8}
-              onPress={onClose}
-              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+          <KeyboardAvoidingView behavior="padding" style={styles.bottom} pointerEvents="box-none">
+            <View
+              style={[styles.bottomInner, { paddingBottom: insets.bottom + spacing.smMd }, !chromeVisible && styles.hidden]}
+              pointerEvents={chromeVisible ? 'box-none' : 'none'}
             >
-              <XIcon size={22} color={colors.onDark} />
-            </Pressable>
-          </View>
+              {reply || notice ? (
+                <View style={styles.bottomScrim} pointerEvents="none">
+                  <Scrim id={`${p}-bottom-scrim`} direction="up" />
+                </View>
+              ) : null}
+              {notice ? (
+                <View style={styles.notice} pointerEvents="none">
+                  <Text variant="helper" color={colors.onDark} testID={`${p}-notice`} accessibilityLiveRegion="polite">
+                    {notice}
+                  </Text>
+                </View>
+              ) : null}
+              {reply ? (
+                <StoryReplyBar
+                  testID={`${p}-reply`}
+                  onSend={reply.onSend}
+                  maxLength={reply.maxLength}
+                  ownerName={owner?.name ?? null}
+                  onFocusChange={setReplyFocused}
+                />
+              ) : null}
+            </View>
+          </KeyboardAvoidingView>
         </View>
-      ) : null}
+      </Animated.View>
 
-      {notice && chromeVisible ? (
-        <View style={[styles.notice, { bottom: insets.bottom + spacing.xxl }]} pointerEvents="none">
-          <Text variant="helper" color={colors.onDark} testID={`${p}-notice`} accessibilityLiveRegion="polite">
-            {notice}
-          </Text>
-        </View>
-      ) : null}
-
-      {menuOpen && hasActions && photo ? (
+      {menuOpen && hasActions ? (
         <Sheet testID={`${p}-menu`} onDismiss={() => setMenuOpen(false)}>
-          {actions!.map((action) => (
+          {availableActions.map((action) => (
             <Pressable
               key={action.key}
               testID={`${p}-action-${action.key}`}
@@ -510,7 +661,9 @@ export function StoryViewer({
               style={styles.menuItem}
               onPress={() => {
                 setMenuOpen(false);
-                action.onPress(photo);
+                const target = photo ?? null;
+                if (action.confirm) setConfirming({ action, photo: target });
+                else action.onPress(target);
               }}
             >
               <Text variant="rowLabel" color={action.destructive ? colors.danger : colors.ink}>
@@ -520,16 +673,70 @@ export function StoryViewer({
           ))}
         </Sheet>
       ) : null}
+
+      {confirming?.action.confirm ? (
+        <Sheet testID={`${p}-confirm`} onDismiss={() => setConfirming(null)}>
+          <Text variant="title" style={styles.confirmTitle}>
+            {confirming.action.confirm.title}
+          </Text>
+          {confirming.action.confirm.body ? <Text variant="helper">{confirming.action.confirm.body}</Text> : null}
+          <Pressable
+            testID={`${p}-confirm-yes`}
+            accessibilityRole="button"
+            style={styles.menuItem}
+            onPress={() => {
+              const { action, photo: target } = confirming;
+              setConfirming(null);
+              action.onPress(target);
+            }}
+          >
+            <Text variant="rowLabel" color={confirming.action.destructive ? colors.danger : colors.ink}>
+              {confirming.action.confirm.confirmLabel}
+            </Text>
+          </Pressable>
+          <Pressable
+            testID={`${p}-confirm-no`}
+            accessibilityRole="button"
+            style={styles.menuItem}
+            onPress={() => setConfirming(null)}
+          >
+            <Text variant="rowLabel">{confirming.action.confirm.cancelLabel ?? 'keep it'}</Text>
+          </Pressable>
+        </Sheet>
+      ) : null}
     </View>
   );
 }
 
-const BAR_HEIGHT = 3;
+/** A soft dark fade (top: dark to clear, going down; bottom: the reverse), so white text reads on any photo. */
+function Scrim({ id, direction }: { id: string; direction: 'down' | 'up' }) {
+  const gradientId = id.replace(/[^a-zA-Z0-9_-]/g, '_');
+  return (
+    <Svg width="100%" height="100%">
+      <Defs>
+        <LinearGradient id={gradientId} x1="0" y1={direction === 'down' ? '0' : '1'} x2="0" y2={direction === 'down' ? '1' : '0'}>
+          <Stop offset="0" stopColor="#000" stopOpacity={0.55} />
+          <Stop offset="0.6" stopColor="#000" stopOpacity={0.18} />
+          <Stop offset="1" stopColor="#000" stopOpacity={0} />
+        </LinearGradient>
+      </Defs>
+      <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${gradientId})`} />
+    </Svg>
+  );
+}
+
 const SCREEN_CAPTURE_KEY = 'album-story-viewer';
+const TOP_SCRIM = 120;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000', overflow: 'hidden' },
-  photo: { ...StyleSheet.absoluteFill, width: '100%', height: '100%' },
+  // Cover, centred, never stretched: `resizeMode="cover"` on the element and
+  // `objectFit` here say the same thing, so no platform falls back to a
+  // stretch when the column's shape differs from the photo's (a fold phone's
+  // tall, narrow cover screen, a wide desktop window).
+  fill: { ...StyleSheet.absoluteFill, width: '100%', height: '100%', objectFit: 'cover' },
+  backdropDim: { backgroundColor: 'rgba(0, 0, 0, 0.55)' },
+  column: { position: 'absolute', top: 0, bottom: 0, overflow: 'hidden' },
   zones: { ...StyleSheet.absoluteFill, flexDirection: 'row' },
   backZone: { flex: 1 },
   forwardZone: { flex: 2 },
@@ -541,7 +748,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xxl,
   },
   centerText: { textAlign: 'center', opacity: 0.85 },
-  retry: {
+  pill: {
     minHeight: 44,
     paddingHorizontal: spacing.xlXxl,
     borderRadius: radii.pill,
@@ -551,28 +758,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pressed: { opacity: 0.6 },
+  topScrim: { position: 'absolute', top: 0, left: 0, right: 0 },
   chrome: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     paddingHorizontal: spacing.mdLg,
-    gap: spacing.smMd,
   },
-  bars: { flexDirection: 'row', gap: 3 },
-  bar: { flex: 1, height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2 },
-  barOn: { backgroundColor: 'rgba(255, 255, 255, 0.95)' },
-  barOff: { backgroundColor: 'rgba(255, 255, 255, 0.35)' },
-  topRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, minHeight: 44 },
-  titleBlock: { flex: 1, paddingLeft: spacing.xs },
-  owner: { opacity: 0.85 },
-  shadow: { textShadowColor: 'rgba(0, 0, 0, 0.45)', textShadowRadius: 6, textShadowOffset: { width: 0, height: 1 } },
-  iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  notice: {
-    position: 'absolute',
-    left: spacing.xxl,
-    right: spacing.xxl,
-    alignItems: 'center',
-  },
+  bottom: { ...StyleSheet.absoluteFill, justifyContent: 'flex-end' },
+  bottomInner: { paddingHorizontal: spacing.mdLg, paddingTop: spacing.xxl, gap: spacing.smMd },
+  bottomScrim: { position: 'absolute', top: -spacing.huge, bottom: 0, left: 0, right: 0 },
+  hidden: { opacity: 0 },
+  notice: { alignItems: 'center' },
   menuItem: { paddingVertical: spacing.lg, minHeight: 44, justifyContent: 'center' },
+  confirmTitle: { fontSize: 17 },
 });

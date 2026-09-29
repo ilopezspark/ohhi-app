@@ -433,6 +433,9 @@ const SCOPE_FILES: string[] = [
   path.join(SRC, 'app', 'chat', '[id]', 'album', '[albumId].tsx'),
   path.join(SRC, 'app', 'settings', 'albums', '[id].tsx'),
   path.join(SRC, 'api', 'albumOwner.ts'),
+  // Story v2 (2026-09-29): the edit grid, now its own route. The story's
+  // header, reply bar, timer and copy all sit under `albums/`, swept above.
+  path.join(SRC, 'app', 'settings', 'albums', '[id]', 'edit.tsx'),
 ].filter((file) => fs.existsSync(file));
 
 describe('voice rules — real source tree', () => {
@@ -475,6 +478,15 @@ describe('voice rules — real source tree', () => {
         path.join('albums', 'storyNav.ts'),
         path.join('app', 'chat', '[id]', 'album', '[albumId].tsx'),
         path.join('app', 'settings', 'albums', '[id].tsx'),
+        // album story v2
+        path.join('albums', 'StoryHeader.tsx'),
+        path.join('albums', 'StoryReplyBar.tsx'),
+        path.join('albums', 'storyReply.ts'),
+        path.join('albums', 'albumCopy.ts'),
+        path.join('albums', 'useStoryTimer.ts'),
+        path.join('albums', 'useStoryReply.ts'),
+        path.join('api', 'albumOwner.ts'),
+        path.join('app', 'settings', 'albums', '[id]', 'edit.tsx'),
       ])
     );
   });

@@ -1,7 +1,11 @@
 /**
  * A shared album opened from its chat bubble: straight into the story
- * viewer (`albums/StoryViewer.tsx`), plus the gone handling (decision 90).
+ * (`albums/StoryViewer.tsx`) with the owner's face and name on top and the
+ * reply bar at the bottom, never a gallery; plus the gone handling
+ * (decision 90).
  */
+import fs from 'fs';
+import path from 'path';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -25,6 +29,10 @@ jest.mock('expo-screen-capture', () => ({
   allowScreenCaptureAsync: jest.fn(() => Promise.resolve()),
 }));
 jest.mock('../api/conversations', () => ({ getConversation: jest.fn() }));
+jest.mock('../api/me', () => ({ me: jest.fn() }));
+jest.mock('../api/messages', () => ({ sendMessage: jest.fn() }));
+jest.mock('../api/photos', () => ({ signedPhotoUrls: jest.fn() }));
+jest.mock('../api/albumOwner', () => ({ getAlbumOwner: jest.fn(), findConversationIdWith: jest.fn() }));
 jest.mock('../api/albums', () => ({
   getAlbum: jest.fn(),
   listAlbumPhotos: jest.fn(),
@@ -34,6 +42,10 @@ jest.mock('../api/albums', () => ({
 import { router } from 'expo-router';
 import { getAlbum, listAlbumPhotos, signedAlbumPhotoUrls } from '../api/albums';
 import { getConversation } from '../api/conversations';
+import { me } from '../api/me';
+import { sendMessage } from '../api/messages';
+import { signedPhotoUrls } from '../api/photos';
+import { findConversationIdWith, getAlbumOwner } from '../api/albumOwner';
 import ChatSharedAlbumScreen from '../app/chat/[id]/album/[albumId]';
 
 const album = { id: ALBUM, owner_id: 'owner', name: 'more of me', photo_count: 1, created_at: '2026-09-20T09:00:00Z' };
@@ -62,29 +74,95 @@ beforeEach(() => {
   (signedAlbumPhotoUrls as jest.Mock).mockImplementation(async (paths: string[]) =>
     Object.fromEntries(paths.map((path) => [path, `https://example.test/${path}?token=1`]))
   );
-  (getConversation as jest.Mock).mockResolvedValue({ id: CONV, other: { id: 'owner', firstName: 'maya', photoPath: null } });
+  (getConversation as jest.Mock).mockResolvedValue(conversation());
+  (me as jest.Mock).mockResolvedValue({ id: 'me' });
+  (getAlbumOwner as jest.Mock).mockResolvedValue({ firstName: 'Maya', photoPath: 'owner/0.jpg' });
+  (signedPhotoUrls as jest.Mock).mockImplementation(async (paths: string[]) =>
+    Object.fromEntries(paths.map((p) => [p, `https://example.test/avatar/${p}`]))
+  );
 });
 
+function conversation(overrides: Record<string, unknown> = {}) {
+  return {
+    id: CONV,
+    state: 'open',
+    openedById: 'owner',
+    blockedBy: null,
+    userAId: 'owner',
+    userBId: 'me',
+    other: { id: 'owner', firstName: 'maya', photoPath: null },
+    lastMessage: null,
+    ...overrides,
+  };
+}
+
 describe('shared album viewer — story', () => {
-  it('opens straight into the viewer at the first photo, with the album name and the owner', async () => {
+  it('opens straight into the story at the first photo, with the owner’s face, lowercase name and the album name', async () => {
     (getAlbum as jest.Mock).mockResolvedValue(album);
     (listAlbumPhotos as jest.Mock).mockResolvedValue([photo, photo2]);
     const screen = await renderScreen(newClient());
     expect(await screen.findByTestId('chat-shared-album-photo-p1')).toBeTruthy();
+    expect(screen.getByTestId('chat-shared-album-photo-p1').props.resizeMode).toBe('cover');
     expect(screen.getByTestId('chat-shared-album-stage').props.accessibilityLabel).toBe('photo 1 of 2');
     expect(screen.getByTestId('chat-shared-album-title')).toHaveTextContent('more of me');
     expect(await screen.findByTestId('chat-shared-album-owner')).toHaveTextContent('maya');
-    // A recipient gets no owner controls.
+    expect(getAlbumOwner).toHaveBeenCalledWith('owner');
+    await waitFor(() =>
+      expect(screen.getByTestId('chat-shared-album-avatar-image').props.source).toEqual({
+        uri: 'https://example.test/avatar/owner/0.jpg',
+      })
+    );
+    // A recipient gets no owner controls, and nothing that looks like a gallery.
     expect(screen.queryByTestId('chat-shared-album-more')).toBeNull();
+    expect(screen.queryByTestId('album-detail-screen')).toBeNull();
   });
 
-  it('does not name the caller on their own album', async () => {
-    (getAlbum as jest.Mock).mockResolvedValue({ ...album, owner_id: 'me' });
+  it('shows the reply bar in an open thread, and a reply goes into this thread as plain text', async () => {
+    (getAlbum as jest.Mock).mockResolvedValue(album);
+    (listAlbumPhotos as jest.Mock).mockResolvedValue([photo]);
+    (sendMessage as jest.Mock).mockResolvedValue({ id: 'm1' });
+    const screen = await renderScreen(newClient());
+    const input = await screen.findByTestId('chat-shared-album-reply-input');
+    expect(findConversationIdWith).not.toHaveBeenCalled();
+    await fireEvent.changeText(input, 'this one');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('chat-shared-album-reply-send'));
+    });
+    expect(sendMessage).toHaveBeenCalledWith({ conversationId: CONV, body: 'this one' });
+    expect(await screen.findByTestId('chat-shared-album-reply-sent')).toHaveTextContent('sent');
+  });
+
+  it('no reply bar when the thread does not let them write', async () => {
+    (getConversation as jest.Mock).mockResolvedValue(conversation({ state: 'expired' }));
+    (getAlbum as jest.Mock).mockResolvedValue(album);
     (listAlbumPhotos as jest.Mock).mockResolvedValue([photo]);
     const screen = await renderScreen(newClient());
     await screen.findByTestId('chat-shared-album-photo-p1');
     await waitFor(() => expect(getConversation).toHaveBeenCalled());
-    expect(screen.queryByTestId('chat-shared-album-owner')).toBeNull();
+    await act(async () => {});
+    expect(screen.queryByTestId('chat-shared-album-reply')).toBeNull();
+  });
+
+  it('tapping the owner opens their profile', async () => {
+    (getAlbum as jest.Mock).mockResolvedValue(album);
+    (listAlbumPhotos as jest.Mock).mockResolvedValue([photo]);
+    const screen = await renderScreen(newClient());
+    await fireEvent.press(await screen.findByTestId('chat-shared-album-owner-link'));
+    expect(router.push).toHaveBeenCalledWith('/profile/owner');
+  });
+
+  it('the owner tapping their own bubble gets the story with their own face, no reply bar and no way to edit', async () => {
+    (getAlbum as jest.Mock).mockResolvedValue({ ...album, owner_id: 'me' });
+    (listAlbumPhotos as jest.Mock).mockResolvedValue([photo]);
+    (getAlbumOwner as jest.Mock).mockResolvedValue({ firstName: 'Sam', photoPath: null });
+    const screen = await renderScreen(newClient());
+    await screen.findByTestId('chat-shared-album-photo-p1');
+    expect(await screen.findByTestId('chat-shared-album-owner')).toHaveTextContent('sam');
+    expect(getAlbumOwner).toHaveBeenCalledWith('me');
+    await act(async () => {});
+    expect(screen.queryByTestId('chat-shared-album-reply')).toBeNull();
+    expect(screen.queryByTestId('chat-shared-album-more')).toBeNull();
+    expect(screen.queryByTestId('chat-shared-album-owner-link')).toBeNull();
   });
 
   it('tapping forward on the last photo closes back to the thread', async () => {
@@ -113,6 +191,7 @@ describe('shared album viewer — story', () => {
     (listAlbumPhotos as jest.Mock).mockReturnValue(new Promise(() => {}));
     const screen = await renderScreen(newClient());
     expect(screen.getByTestId('chat-shared-album-loading')).toBeTruthy();
+    await act(async () => {});
   });
 });
 
@@ -123,6 +202,7 @@ describe('shared album viewer — gone (migration 0014, decision 90)', () => {
     const screen = await renderScreen(newClient());
     expect(await screen.findByTestId('chat-shared-album-photo-p1')).toBeTruthy();
     expect(router.back).not.toHaveBeenCalled();
+    await act(async () => {});
   });
 
   it('an album that is there but empty is not gone', async () => {
@@ -131,6 +211,7 @@ describe('shared album viewer — gone (migration 0014, decision 90)', () => {
     const screen = await renderScreen(newClient());
     expect(await screen.findByTestId('chat-shared-album-empty')).toHaveTextContent('no photos here yet.');
     expect(router.back).not.toHaveBeenCalled();
+    await act(async () => {});
   });
 
   it('an empty album read (taken back, or the owner vanished) goes back to the thread and drops the bubble, saying nothing', async () => {
@@ -168,5 +249,32 @@ describe('shared album viewer — gone (migration 0014, decision 90)', () => {
     (listAlbumPhotos as jest.Mock).mockResolvedValue([]);
     await renderScreen(newClient());
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith(`/chat/${CONV}`));
+  });
+});
+
+describe('every way into an album from chat is the story', () => {
+  const SRC = path.join(__dirname, '..');
+  function files(dir: string): string[] {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) return files(full);
+      return /\.tsx?$/.test(entry.name) ? [full] : [];
+    });
+  }
+  const chatFiles = [
+    ...files(path.join(SRC, 'chat')),
+    path.join(SRC, 'app', 'chat', '[id].tsx'),
+    ...files(path.join(SRC, 'app', 'chat', '[id]')),
+  ];
+
+  it('nothing in chat links to the albums page or its edit grid', () => {
+    const linking = chatFiles.filter((file) => /settings\/albums/.test(fs.readFileSync(file, 'utf8')));
+    expect(linking.map((file) => path.relative(SRC, file))).toEqual([]);
+  });
+
+  it('the thread opens a shared album on the story route and nowhere else', () => {
+    const thread = fs.readFileSync(path.join(SRC, 'app', 'chat', '[id].tsx'), 'utf8');
+    const albumPushes = thread.match(/router\.push\(`[^`]*album[^`]*`/g) ?? [];
+    expect(albumPushes).toEqual(['router.push(`/chat/${conversationId}/album/${albumId}`']);
   });
 });

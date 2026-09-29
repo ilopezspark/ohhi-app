@@ -1,7 +1,8 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
 import { resizeForUpload } from '../photos/resize';
-import { readUploadBody } from '../storage/readUpload';
+import { readUploadBody, type UploadBody } from '../storage/readUpload';
+import { logUploadFailure } from '../storage/uploadError';
 import { MAX_VIDEO_BYTES } from '../chat/video';
 
 export const CHAT_MEDIA_BUCKET = 'chat-media';
@@ -105,14 +106,23 @@ export async function uploadChatMedia({
   // Video is uploaded as-is, so it is also where the 50 MB cap matters: a
   // picker that didn't report `fileSize` is still stopped here, before the
   // file is read into memory.
-  const body = await readUploadBody(uploadUri, kind === 'video' ? { maxBytes: MAX_VIDEO_BYTES } : {});
+  let body: UploadBody;
+  try {
+    body = await readUploadBody(uploadUri, kind === 'video' ? { maxBytes: MAX_VIDEO_BYTES } : {});
+  } catch (error) {
+    logUploadFailure({ what: 'chat media', step: 'read', bucket, path }, error);
+    throw error;
+  }
 
   const { error } = await supabase.storage.from(bucket).upload(path, body, {
     contentType,
     // No upsert: one object per message id, and a message row is never edited.
     upsert: false,
   });
-  if (error) throw mapSupabaseError(error);
+  if (error) {
+    logUploadFailure({ what: 'chat media', step: 'upload', bucket, path }, error);
+    throw mapSupabaseError(error);
+  }
 
   return path;
 }
@@ -134,13 +144,22 @@ export async function uploadChatMediaPoster({
 }: UploadChatMediaPosterInput): Promise<string> {
   const path = chatMediaPosterPath(conversationId, messageId);
 
-  const body = await readUploadBody(uri);
+  let body: UploadBody;
+  try {
+    body = await readUploadBody(uri);
+  } catch (error) {
+    logUploadFailure({ what: 'chat media poster', step: 'read', bucket, path }, error);
+    throw error;
+  }
 
   const { error } = await supabase.storage.from(bucket).upload(path, body, {
     contentType: 'image/jpeg',
     upsert: false,
   });
-  if (error) throw mapSupabaseError(error);
+  if (error) {
+    logUploadFailure({ what: 'chat media poster', step: 'poster', bucket, path }, error);
+    throw mapSupabaseError(error);
+  }
 
   return path;
 }
@@ -232,7 +251,10 @@ export async function resendChatMedia({
     contentType: kind === 'video' ? 'video/mp4' : 'image/jpeg',
     upsert: false,
   });
-  if (uploadError) throw mapSupabaseError(uploadError);
+  if (uploadError) {
+    logUploadFailure({ what: 'chat media resend', step: 'upload', bucket: targetBucket, path: targetMediaPath }, uploadError);
+    throw mapSupabaseError(uploadError);
+  }
 
   let targetPosterPath: string | null = null;
   const posterUrl = sourcePosterPath ? urlByPath[sourcePosterPath] : undefined;
@@ -243,7 +265,10 @@ export async function resendChatMedia({
       contentType: 'image/jpeg',
       upsert: false,
     });
-    if (posterError) throw mapSupabaseError(posterError);
+    if (posterError) {
+      logUploadFailure({ what: 'chat media resend', step: 'poster', bucket: targetBucket, path: targetPosterPath }, posterError);
+      throw mapSupabaseError(posterError);
+    }
   }
 
   return { mediaPath: targetMediaPath, posterPath: targetPosterPath };

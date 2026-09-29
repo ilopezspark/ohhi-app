@@ -3,6 +3,7 @@ import { Image, Pressable, StyleSheet, View, type ImageStyle, type StyleProp } f
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { TintedPlaceholder } from '../photos/TintedPlaceholder';
 import { Badge, CheckIcon, Dot, Text } from '../ui';
+import { displayName } from '../ui/displayName';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
 import { ProfileHero } from './view/ProfileHero';
 
@@ -230,7 +231,7 @@ function GridVariant({
         <View style={styles.gridNameRow}>
           <View style={styles.gridNameWithDot}>
             <Text variant="title" color={colors.onDark} numberOfLines={1} style={styles.gridName}>
-              {data.firstName}
+              {displayName(data.firstName)}
               {data.gradYear ? (
                 <Text variant="captionMuted" color={colors.onDark}>{`  '${String(data.gradYear).slice(-2)}`}</Text>
               ) : null}
@@ -260,7 +261,7 @@ function GridVariant({
   );
 
   const tileStyle = [styles.gridTile, shadows.md, { backgroundColor: data.tint }];
-  const accessibilityLabel = [data.firstName, tierLabel, showOnlineDot ? 'online' : null].filter(Boolean).join(', ');
+  const accessibilityLabel = [displayName(data.firstName), tierLabel, showOnlineDot ? 'online' : null].filter(Boolean).join(', ');
 
   if (!onPress) {
     return (
@@ -322,7 +323,7 @@ function ThumbnailVariant({
     <Pressable
       testID={testID ?? testIDs.root}
       accessibilityRole="button"
-      accessibilityLabel={data.firstName}
+      accessibilityLabel={displayName(data.firstName)}
       onPress={onPress}
       style={tileStyle}
     >

@@ -1,6 +1,7 @@
 /**
- * The story viewer's navigation rules (`albums/storyNav.ts`): tap zones,
- * the first/last boundaries, start index clamping and drag classification.
+ * The story viewer's rules (`albums/storyNav.ts`): tap zones, the
+ * first/last boundaries, start index clamping, drag classification, the
+ * photo column's width and when the timer may run.
  */
 import {
   BACK_ZONE_FRACTION,
@@ -8,9 +9,13 @@ import {
   classifyDrag,
   isDragging,
   positionLabel,
+  STORY_PHOTO_MS,
   stepBack,
+  stepDecrement,
   stepForward,
   stepIncrement,
+  storyColumnWidth,
+  storyTimerRuns,
   zoneForX,
 } from '../albums/storyNav';
 
@@ -45,9 +50,14 @@ describe('steps', () => {
     expect(stepForward(0, 0)).toEqual({ kind: 'close' });
   });
 
-  it('back on the first photo stays', () => {
-    expect(stepBack(0)).toEqual({ kind: 'stay' });
+  it('back on the first photo restarts it; back elsewhere moves one back', () => {
+    expect(stepBack(0)).toEqual({ kind: 'restart' });
     expect(stepBack(2)).toEqual({ kind: 'move', index: 1 });
+  });
+
+  it('a screen reader decrement never restarts, it stays on the first photo', () => {
+    expect(stepDecrement(0)).toEqual({ kind: 'stay' });
+    expect(stepDecrement(2)).toEqual({ kind: 'move', index: 1 });
   });
 
   it('a screen reader increment never closes', () => {
@@ -88,4 +98,48 @@ describe('drags', () => {
 
 it('announces position as "photo n of m"', () => {
   expect(positionLabel(1, 5)).toBe('photo 2 of 5');
+});
+
+describe('timer', () => {
+  it('shows each photo for 5 seconds', () => {
+    expect(STORY_PHOTO_MS).toBe(5000);
+  });
+
+  it('runs only once the photo has loaded and nothing holds it', () => {
+    expect(storyTimerRuns({ loaded: true })).toBe(true);
+    expect(storyTimerRuns({ loaded: false })).toBe(false);
+  });
+
+  it.each([
+    ['touching'],
+    ['dragging'],
+    ['replyFocused'],
+    ['backgrounded'],
+    ['menuOpen'],
+    ['manualOnly'],
+    ['external'],
+  ] as const)('is held by %s', (flag) => {
+    expect(storyTimerRuns({ loaded: true, [flag]: true })).toBe(false);
+  });
+});
+
+describe('storyColumnWidth', () => {
+  it('fills the whole width on phones, including a fold phone cover screen', () => {
+    expect(storyColumnWidth(390, 844)).toBe(390);
+    expect(storyColumnWidth(360, 880)).toBe(360);
+    expect(storyColumnWidth(375, 667)).toBe(375);
+    expect(storyColumnWidth(412, 915)).toBe(412);
+  });
+
+  it('centres a 9:16 column of the full height on a clearly wider screen', () => {
+    expect(storyColumnWidth(900, 800)).toBe(450);
+    expect(storyColumnWidth(1280, 800)).toBe(450);
+    // An unfolded foldable, roughly square.
+    expect(storyColumnWidth(884, 1000)).toBe(563);
+  });
+
+  it('never goes wider than the screen, and copes with an unmeasured one', () => {
+    expect(storyColumnWidth(300, 1000)).toBe(300);
+    expect(storyColumnWidth(0, 0)).toBe(0);
+  });
 });

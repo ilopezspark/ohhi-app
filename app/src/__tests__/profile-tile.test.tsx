@@ -17,6 +17,14 @@ const baseData: ProfileTileData = {
 };
 
 describe('ProfileTile — grid size', () => {
+  it('shows and labels the name in lowercase (owner ruling), whatever was stored', async () => {
+    const { getByText, getByLabelText } = await render(
+      <ProfileTile size="grid" data={{ ...baseData, firstName: 'Tyler' }} onPress={jest.fn()} testIDs={{}} />
+    );
+    expect(getByText(/tyler/)).toBeTruthy();
+    expect(getByLabelText('tyler, on campus')).toBeTruthy();
+  });
+
   it('renders the placeholder when there is no photoUrl, and the photo when there is', async () => {
     const { getByTestId, queryByTestId } = await render(
       <ProfileTile size="grid" data={baseData} testIDs={{ placeholder: 'ph', photo: 'ph-img' }} />
@@ -120,7 +128,7 @@ describe('ProfileTile — hero size', () => {
     const { getByText, getByTestId } = await render(
       <ProfileTile size="hero" data={baseData} testIDs={{ tier: 'tier-pill', statusLine: 'status' }} />
     );
-    expect(getByText(/Ada/)).toBeTruthy();
+    expect(getByText(/ada/)).toBeTruthy();
     expect(getByTestId('status').props.children).toBe('hello');
     expect(getByTestId('tier-pill')).toBeTruthy();
   });
@@ -143,7 +151,7 @@ describe('ProfileTile — hero size', () => {
     expect(getByTestId('tier-pill')).toHaveTextContent('on campus');
     expect(getByText("on campus · nursing '28")).toBeTruthy();
     expect(queryByText(/CLC/)).toBeNull();
-    expect(getByTestId('name')).toHaveTextContent('Ada');
+    expect(getByTestId('name')).toHaveTextContent('ada');
   });
 
   it('renders a single "here for a · b" pill from goals, using hereForLabel', async () => {

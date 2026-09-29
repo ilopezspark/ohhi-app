@@ -1,5 +1,5 @@
 import { ActivityIndicator, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { ChatIcon, Text } from '../ui';
+import { ChatIcon, CheckIcon, Text } from '../ui';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
 import type { CardCta } from './cta';
 
@@ -22,6 +22,8 @@ export interface CtaButtonProps {
    * the row sitting on the hero photo. `paper`: a white circle with a float
    * shadow, for the profile's sticky bar once it sits on paper
    * (`03-profile-scrolled.png`). Only the look changes, never the states.
+   * `hi sent` follows it too: a frosted chip on the photo, a quiet tinted
+   * pill on paper.
    */
   appearance?: 'photo' | 'paper';
   style?: StyleProp<ViewStyle>;
@@ -58,7 +60,8 @@ export function CtaButton({
   const busy = hiBusy || messageBusy;
 
   const showHi = cta.kind === 'hi_and_message' || cta.kind === 'hi_sent';
-  const hiDisabled = busy || cta.kind === 'hi_sent';
+  const hiSent = cta.kind === 'hi_sent';
+  const hiDisabled = busy || hiSent;
 
   const showMessage =
     cta.kind === 'hi_and_message' ||
@@ -78,7 +81,11 @@ export function CtaButton({
           disabled={hiDisabled}
           style={({ pressed }) => [
             styles.hiButton,
-            hiDisabled && styles.disabled,
+            // A sent hi is a settled state, not a greyed-out button: a
+            // neutral pill with full-strength text, so it reads on the photo
+            // and on paper alike. Only an in-flight send is faded.
+            hiSent && (appearance === 'paper' ? styles.hiSentPaper : styles.hiSentPhoto),
+            hiDisabled && !hiSent && styles.disabled,
             pressed && !hiDisabled && styles.pressed,
           ]}
           onPress={() => {
@@ -87,9 +94,16 @@ export function CtaButton({
         >
           {hiBusy ? (
             <ActivityIndicator color={colors.onDark} />
+          ) : hiSent ? (
+            <View style={styles.hiSentLabel}>
+              <CheckIcon size={16} color={appearance === 'paper' ? colors.muted : colors.onDark} />
+              <Text variant="bodyStrong" color={appearance === 'paper' ? colors.ink : colors.onDark}>
+                {HI_LABEL.hi_sent}
+              </Text>
+            </View>
           ) : (
             <Text variant="bodyStrong" color={colors.onDark}>
-              {HI_LABEL[cta.kind === 'hi_sent' ? 'hi_sent' : 'hi']}
+              {HI_LABEL.hi}
             </Text>
           )}
         </Pressable>
@@ -128,6 +142,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  hiSentPhoto: {
+    backgroundColor: colors.onPhotoChip,
+    borderWidth: 1,
+    borderColor: colors.onPhotoChipBorder,
+    paddingVertical: spacing.xl,
+  },
+  hiSentPaper: {
+    backgroundColor: colors.paperTint,
+  },
+  hiSentLabel: { flexDirection: 'row', alignItems: 'center', gap: spacing.smMd },
   messageButton: {
     width: 54,
     height: 54,

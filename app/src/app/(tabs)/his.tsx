@@ -7,6 +7,7 @@ import { isUnavailableError } from '../../api/errors';
 import { signedPhotoUrls } from '../../api/photos';
 import { tintForPhoto } from '../../photos/tint';
 import { Avatar, EmptyState, HisIcon, Text } from '../../ui';
+import { displayName } from '../../ui/displayName';
 import { colors, hairline, radii, shadows, spacing } from '../../theme/tokens';
 
 const QUERY_KEY = ['his_received'];
@@ -145,7 +146,7 @@ export default function HisScreen() {
               onPress={() => router.push(`/profile/${item.fromUserId}` as never)}
             >
               <Text variant="rowLabel" numberOfLines={1}>
-                {item.firstName ?? 'Someone'}
+                {displayName(item.firstName) || 'someone'}
               </Text>
             </Pressable>
 

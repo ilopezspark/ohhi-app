@@ -1,30 +1,40 @@
 import { useCallback, useMemo } from 'react';
 import { View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAlbum, listAlbumPhotos, signedAlbumPhotoUrls } from '../../../../api/albums';
-import { getConversation } from '../../../../api/conversations';
+import { me as fetchMe } from '../../../../api/me';
 import type { ShareFeedItem } from '../../../../chat/shareFeed';
 import { dropQueries, leaveScreen, useGoneLatch, useLeaveWhenGone } from '../../../../query/gone';
 import { StoryViewer } from '../../../../albums/StoryViewer';
+import { useAlbumOwner } from '../../../../albums/useAlbumOwner';
+import { useScreenFocused } from '../../../../albums/useScreenFocused';
+import { useStoryReply } from '../../../../albums/useStoryReply';
 
 /**
- * A shared album, opened from its `ShareBubble` in the thread. Opens
- * straight into the story viewer (`albums/StoryViewer.tsx`): full screen,
- * tap right to go on, left to go back, forward past the last photo closes.
- * Read-only for everyone here, including an owner tapping their own bubble;
- * managing an album happens on its own screen (`/settings/albums/[id]`).
+ * A shared album, opened from its `ShareBubble` in the thread (the only way
+ * into an album from chat: `openSharedAlbum` in `app/chat/[id].tsx` pushes
+ * this route and nothing else). It opens straight into the story
+ * (`albums/StoryViewer.tsx`): the photos fill the screen and move on by
+ * themselves, the owner's face and first name sit on top, and a reply bar
+ * at the bottom sends a plain message into this thread.
+ *
+ * Nothing here is a gallery: there is no grid, no list and no way to the
+ * album's management screen. Editing an album happens only in the albums
+ * page (Me, albums, then `edit` on the album), never from chat. An owner tapping
+ * their own bubble gets the same story with their own face on it, no reply
+ * bar and no `…`.
  *
  * Read path unchanged: `listAlbumPhotos` (`src/api/albums.ts`) is RLS-scoped
  * for a non-owner viewer to an active, unrevoked share with no block either
  * way. Album photos are not moderated (migration 0013), so every photo in a
  * shared album is shown; this screen adds no filtering of its own. Signed
- * URLs last 60 seconds, so they are re-signed every 45 while the viewer is
+ * URLs last 60 seconds, so they are re-signed every 45 while the story is
  * open, and on demand when a photo fails to load.
  *
- * The owner's first name comes from the thread's own conversation read
- * (same query key as the thread screen, so normally already cached), and
- * only when the album is theirs rather than the caller's.
+ * The reply bar shows only while this thread lets the viewer send a text
+ * message (`albums/useStoryReply.ts`). The story pauses while another screen
+ * is on top (the owner's profile, opened from the header).
  *
  * Gone (decision 90): when the album read comes back empty, on open or on
  * any refetch (the share was taken back, or the owner was suspended, banned
@@ -39,6 +49,7 @@ export default function ChatSharedAlbumScreen() {
   const queryClient = useQueryClient();
   const { gone, latch } = useGoneLatch();
   const fallback = conversationId ? `/chat/${conversationId}` : '/chats';
+  const focused = useScreenFocused();
 
   const {
     data: album,
@@ -56,12 +67,8 @@ export default function ChatSharedAlbumScreen() {
     enabled: !!albumId && !gone,
   });
 
-  const { data: conversation } = useQuery({
-    queryKey: ['conversation', conversationId],
-    queryFn: () => getConversation(conversationId),
-    enabled: !!conversationId && !gone,
-    staleTime: 60_000,
-  });
+  const { data: meData } = useQuery({ queryKey: ['me'], queryFn: fetchMe });
+  const meId = meData?.id ?? null;
 
   latch(albumLoaded && album === null);
   useLeaveWhenGone(
@@ -98,26 +105,34 @@ export default function ChatSharedAlbumScreen() {
     [photos, photoUrls]
   );
 
+  const ownerId = album?.owner_id ?? null;
+  const owner = useAlbumOwner(gone ? null : ownerId);
+  const isOwner = !!ownerId && !!meId && ownerId === meId;
+  const reply = useStoryReply({ conversationId, ownerId, viewerId: meId, enabled: !gone && !!album });
+
   const close = useCallback(() => leaveScreen(fallback), [fallback]);
   const retry = useCallback(() => refetchUrls(), [refetchUrls]);
+  const openOwner = useCallback(() => {
+    if (ownerId) router.push(`/profile/${ownerId}` as never);
+  }, [ownerId]);
 
   if (gone) {
     return <View style={{ flex: 1, backgroundColor: '#000' }} testID="chat-shared-album-gone" />;
   }
-
-  const ownerName =
-    album && conversation && conversation.other.id === album.owner_id ? conversation.other.firstName : null;
 
   return (
     <StoryViewer
       testID="chat-shared-album"
       photos={album ? storyPhotos : []}
       title={album?.name ?? null}
-      ownerName={ownerName}
+      owner={album ? owner : null}
+      onOpenOwner={album && meId && !isOwner ? openOwner : undefined}
       loading={albumPending || photosPending || (albumLoaded && !album)}
       resolving={paths.length > 0 && urlsPending}
       onRetry={retry}
       onClose={close}
+      reply={isOwner ? null : reply}
+      paused={!focused}
     />
   );
 }

@@ -1,0 +1,510 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { me } from '../../../../api/me';
+import {
+  addAlbumPhoto,
+  deleteAlbum,
+  getAlbum,
+  listAlbumPhotos,
+  removeAlbumPhoto,
+  renameAlbum,
+  signedAlbumPhotoUrls,
+  type AlbumPhotoRow,
+  type AlbumRow,
+} from '../../../../api/albums';
+import { listSharesForSubject, listShareCandidates, revokeShare, shareAlbum, type ShareCandidate, type ShareRow } from '../../../../api/shares';
+import { isUnavailableError, mapSupabaseError } from '../../../../api/errors';
+import { leaveScreen, useGoneLatch, useLeaveWhenGone, useOnAppActive } from '../../../../query/gone';
+import { StoryViewer, type StoryPhoto } from '../../../../albums/StoryViewer';
+import { useAlbumOwner } from '../../../../albums/useAlbumOwner';
+import { REMOVE_PHOTO_CONFIRM, REMOVE_PHOTO_LABEL } from '../../../../albums/albumCopy';
+import { ConfirmButton } from '../../../../settings/ConfirmButton';
+import { Header, Sheet, Text } from '../../../../ui';
+import { displayName } from '../../../../ui/displayName';
+import { colors, fontFamilies, radii, spacing } from '../../../../theme/tokens';
+
+const NAME_MAX_LENGTH = 60;
+
+/**
+ * `/settings/albums/[id]/edit`: the album's management grid, the one place
+ * an album is shown as a gallery (the owner's ruling, 2026-09-29: "the only
+ * ui where it should open as a gallery is when editing it, that can be done
+ * in the albums page not within chat"). Reached only from the albums page:
+ * the `edit` on an album tile (`settings/albums/index.tsx`) and `edit album`
+ * in the owner's story `…` (`settings/albums/[id].tsx`). Nothing in chat
+ * links here.
+ *
+ * Rename, add photos, remove a photo (asks first, since it is permanent),
+ * share and stop sharing, delete the album. Tapping a thumbnail opens that
+ * photo in the story, over this screen, with `remove this photo` in its `…`
+ * (asking first too).
+ *
+ * Owner only. Anyone else who lands here (a stale link) is sent to the
+ * album's story instead, which is what they can see.
+ *
+ * Reloads on focus, app foreground and reconnect. Gone (decision 90): an
+ * album that was on screen and then reads back empty (deleted elsewhere)
+ * sends the screen back to the albums list without a word. The "shared
+ * with" list and candidates simply stop naming someone who vanished.
+ */
+export default function AlbumEditScreen() {
+  const params = useLocalSearchParams<{ id: string }>();
+  const albumId = Array.isArray(params.id) ? params.id[0] : params.id ?? '';
+
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [album, setAlbum] = useState<AlbumRow | null>(null);
+  const [photos, setPhotos] = useState<AlbumPhotoRow[]>([]);
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+  const [candidates, setCandidates] = useState<ShareCandidate[]>([]);
+  const [shares, setShares] = useState<ShareRow[]>([]);
+  const [name, setName] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  /** The photo waiting on "remove this photo?" from the grid, or `null`. */
+  const [confirmRemove, setConfirmRemove] = useState<AlbumPhotoRow | null>(null);
+  /** The story over this screen: the photo it opened at, or `null` when closed. */
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const queryClient = useQueryClient();
+  const { gone, latch } = useGoneLatch();
+  const hadAlbum = useRef(false);
+
+  const isOwner = !!album && !!myUserId && album.owner_id === myUserId;
+  const myCard = useAlbumOwner(isOwner ? myUserId : null);
+
+  const load = useCallback(async () => {
+    if (!albumId) return;
+    try {
+      const [meResult, albumRow, photoRows] = await Promise.all([me(), getAlbum(albumId), listAlbumPhotos(albumId)]);
+      if (!albumRow && hadAlbum.current) {
+        latch(true);
+        return;
+      }
+      if (albumRow) hadAlbum.current = true;
+      setMyUserId(meResult?.id ?? null);
+      setAlbum(albumRow);
+      setName(albumRow?.name ?? '');
+      setPhotos(photoRows);
+
+      const owner = !!albumRow && !!meResult && albumRow.owner_id === meResult.id;
+      if (!owner) {
+        setLoadError(null);
+        return;
+      }
+
+      const paths = photoRows.map((p) => p.storage_path);
+      if (paths.length > 0) setPhotoUrls(await signedAlbumPhotoUrls(paths));
+      const [candidateRows, shareRows] = await Promise.all([listShareCandidates(), listSharesForSubject('album', albumId)]);
+      setCandidates(candidateRows);
+      setShares(shareRows);
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(mapSupabaseError(error).message);
+    } finally {
+      setLoaded(true);
+    }
+  }, [albumId, latch]);
+
+  // Not the owner: this is not their screen. Their view of it is the story.
+  const notMine = loaded && !!album && !!myUserId && album.owner_id !== myUserId;
+  useEffect(() => {
+    if (notMine) router.replace(`/settings/albums/${albumId}` as never);
+  }, [notMine, albumId]);
+
+  /** Everything else that shows this album reads it again after a change here. */
+  const refreshElsewhere = useCallback(() => {
+    for (const key of [['album-story', albumId], ['album-story-photos', albumId], ['my_albums'], ['me', 'albums'], ['me', 'albums_summary']]) {
+      void queryClient.invalidateQueries({ queryKey: key });
+    }
+  }, [albumId, queryClient]);
+
+  /** Signed URLs last 60 seconds: the story calls this when a photo fails to load. */
+  const refreshUrls = useCallback(async () => {
+    const paths = photos.map((p) => p.storage_path);
+    if (paths.length === 0) return;
+    const urls = await signedAlbumPhotoUrls(paths);
+    setPhotoUrls((prev) => ({ ...prev, ...urls }));
+  }, [photos]);
+
+  const storyPhotos = useMemo<StoryPhoto[]>(
+    () => photos.map((p) => ({ id: p.id, uri: photoUrls[p.storage_path] ?? null })),
+    [photos, photoUrls]
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!gone) void load();
+    }, [load, gone])
+  );
+  useOnAppActive(() => {
+    if (!gone) void load();
+  });
+  useLeaveWhenGone(
+    gone,
+    () => {
+      for (const key of [['shared_with_me_albums'], ['my_albums'], ['me', 'albums'], ['me', 'albums_summary']]) {
+        void queryClient.invalidateQueries({ queryKey: key });
+      }
+    },
+    '/settings/albums'
+  );
+
+  const renameMutation = useMutation({
+    mutationFn: (next: string) => renameAlbum(albumId, next),
+    onSuccess: (_void, next) => {
+      setAlbum((prev) => (prev ? { ...prev, name: next } : prev));
+      refreshElsewhere();
+    },
+    onError: (error: unknown) => setActionError(mapSupabaseError(error).message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteAlbum(albumId),
+    onSuccess: () => {
+      refreshElsewhere();
+      // Back past this album's story too: it no longer exists.
+      const nav = router as unknown as { dismissTo?: (href: string) => void };
+      if (typeof nav.dismissTo === 'function') nav.dismissTo('/settings/albums');
+      else router.replace('/settings/albums' as never);
+    },
+    onError: (error: unknown) => setActionError(mapSupabaseError(error).message),
+  });
+
+  const addPhotoMutation = useMutation({
+    mutationFn: (asset: { uri: string; width: number; height: number }) =>
+      addAlbumPhoto({ albumId, uri: asset.uri, width: asset.width, height: asset.height }),
+    onSuccess: (photo) => {
+      setPhotos((prev) => [...prev, photo]);
+      refreshElsewhere();
+      void signedAlbumPhotoUrls([photo.storage_path]).then((urls) =>
+        setPhotoUrls((prev) => ({ ...prev, ...urls }))
+      );
+    },
+    onError: (error: unknown) => setActionError(mapSupabaseError(error).message),
+  });
+
+  const removePhotoMutation = useMutation({
+    mutationFn: (photo: { id: string; storage_path: string }) => removeAlbumPhoto(photo.id, photo.storage_path),
+    onSuccess: (_void, photo) => {
+      setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+      refreshElsewhere();
+    },
+    onError: (error: unknown) => setActionError(mapSupabaseError(error).message),
+  });
+
+  const shareMutation = useMutation({
+    mutationFn: (viewerId: string) => shareAlbum(albumId, viewerId),
+    onSuccess: (share) => setShares((prev) => [share, ...prev]),
+    onError: (error: unknown) => {
+      setActionError(mapSupabaseError(error).message);
+      // Refused like any other when the person has vanished (decision 90):
+      // reload so they drop out of the candidates instead of inviting retries.
+      if (isUnavailableError(error)) void load();
+    },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (shareId: string) => revokeShare(shareId),
+    onSuccess: (_void, shareId) =>
+      setShares((prev) => prev.map((s) => (s.id === shareId ? { ...s, revoked_at: new Date().toISOString() } : s))),
+    onError: (error: unknown) => setActionError(mapSupabaseError(error).message),
+  });
+
+  async function pickAndAddPhoto() {
+    setActionError(null);
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setActionError('allow photo library access to add a photo.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    addPhotoMutation.mutate({ uri: asset.uri, width: asset.width, height: asset.height });
+  }
+
+  const back = useCallback(() => leaveScreen('/settings/albums'), []);
+
+  if (gone) {
+    return <View style={styles.center} testID="album-gone" />;
+  }
+
+  if (!loaded || notMine) {
+    return (
+      <View style={styles.center} testID="album-loading">
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (!album) {
+    return (
+      <View style={styles.center} testID="album-unavailable">
+        <Text variant="body" color={colors.muted} style={styles.unavailable}>
+          {loadError ?? 'this album isn’t available.'}
+        </Text>
+      </View>
+    );
+  }
+
+  const activeShares = shares.filter((s) => !s.revoked_at);
+  const sharedUserIds = new Set(activeShares.map((s) => s.viewer_id));
+  const shareableCandidates = candidates.filter((c) => !sharedUserIds.has(c.userId));
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <FlatList
+        testID="album-detail-screen"
+        style={styles.container}
+        data={photos}
+        keyExtractor={(item) => item.id}
+        numColumns={3}
+        columnWrapperStyle={photos.length > 0 ? styles.photoRow : undefined}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <Header title="edit album" titleSize={24} onBack={back} testID="album-edit-header" />
+            <View style={styles.renameRow}>
+              <TextInput
+                testID="album-name-input"
+                accessibilityLabel="album name"
+                style={styles.nameInput}
+                value={name}
+                maxLength={NAME_MAX_LENGTH}
+                onChangeText={setName}
+                onBlur={() => {
+                  const trimmed = name.trim();
+                  if (trimmed && trimmed !== album.name) renameMutation.mutate(trimmed);
+                }}
+              />
+            </View>
+
+            {actionError ? (
+              <Text variant="helper" color={colors.danger} testID="album-action-error">
+                {actionError}
+              </Text>
+            ) : null}
+
+            <Pressable testID="album-add-photo" accessibilityRole="button" style={styles.secondaryButton} onPress={pickAndAddPhoto}>
+              {addPhotoMutation.isPending ? (
+                <ActivityIndicator color={colors.signal} />
+              ) : (
+                <Text variant="rowLabel" color={colors.signal}>
+                  add photo
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        }
+        renderItem={({ item, index }) => {
+          const url = photoUrls[item.storage_path];
+          return (
+            <View style={styles.photoCell} testID={`album-photo-${item.id}`}>
+              <Pressable
+                testID={`album-photo-open-${item.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`open photo ${index + 1} of ${photos.length}`}
+                style={styles.photoOpen}
+                onPress={() => {
+                  setActionError(null);
+                  setViewerIndex(index);
+                }}
+              >
+                {url ? <Image source={{ uri: url }} style={styles.photoImage} /> : <View style={styles.photoPlaceholder} />}
+              </Pressable>
+              <Pressable
+                testID={`album-photo-remove-${item.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`remove photo ${index + 1}`}
+                style={styles.removeButton}
+                hitSlop={6}
+                onPress={() => setConfirmRemove(item)}
+              >
+                <Text variant="micro" color={colors.onDark}>
+                  remove
+                </Text>
+              </Pressable>
+            </View>
+          );
+        }}
+        ListFooterComponent={
+          <View style={styles.footer}>
+            <Text variant="rowLabel" style={styles.sectionTitle}>
+              shared with
+            </Text>
+            {activeShares.length === 0 ? <Text variant="helper">not shared with anyone yet.</Text> : null}
+            {activeShares.map((share) => (
+              <View key={share.id} style={styles.shareRow} testID={`album-share-${share.viewer_id}`}>
+                <Text variant="body">{displayName(candidates.find((c) => c.userId === share.viewer_id)?.firstName) || share.viewer_id}</Text>
+                <Pressable testID={`album-revoke-${share.viewer_id}`} accessibilityRole="button" onPress={() => revokeMutation.mutate(share.id)}>
+                  <Text variant="body" color={colors.danger}>
+                    stop sharing
+                  </Text>
+                </Pressable>
+              </View>
+            ))}
+
+            <Text variant="rowLabel" style={styles.sectionTitle}>
+              share with
+            </Text>
+            {shareableCandidates.length === 0 ? (
+              <Text variant="helper">only people you have an open conversation with can be offered here.</Text>
+            ) : null}
+            {shareableCandidates.map((candidate) => (
+              <Pressable
+                key={candidate.userId}
+                testID={`album-share-candidate-${candidate.userId}`}
+                accessibilityRole="button"
+                style={styles.shareRow}
+                onPress={() => shareMutation.mutate(candidate.userId)}
+              >
+                <Text variant="body">{displayName(candidate.firstName) || candidate.userId}</Text>
+                <Text variant="rowLabel" color={colors.signal}>
+                  share
+                </Text>
+              </Pressable>
+            ))}
+
+            <ConfirmButton
+              testID="album-delete"
+              label="delete album"
+              busy={deleteMutation.isPending}
+              onPress={() => deleteMutation.mutate()}
+            />
+          </View>
+        }
+        ListEmptyComponent={
+          <Text variant="helper" style={styles.emptyGrid}>
+            no photos yet.
+          </Text>
+        }
+      />
+
+      {confirmRemove ? (
+        <Sheet testID="album-remove-confirm" onDismiss={() => setConfirmRemove(null)}>
+          <Text variant="title" style={styles.confirmTitle}>
+            {REMOVE_PHOTO_CONFIRM.title}
+          </Text>
+          {REMOVE_PHOTO_CONFIRM.body ? <Text variant="helper">{REMOVE_PHOTO_CONFIRM.body}</Text> : null}
+          <Pressable
+            testID="album-remove-confirm-yes"
+            accessibilityRole="button"
+            style={styles.sheetRow}
+            onPress={() => {
+              const row = confirmRemove;
+              setConfirmRemove(null);
+              setActionError(null);
+              removePhotoMutation.mutate(row);
+            }}
+          >
+            <Text variant="rowLabel" color={colors.danger}>
+              {REMOVE_PHOTO_CONFIRM.confirmLabel}
+            </Text>
+          </Pressable>
+          <Pressable
+            testID="album-remove-confirm-no"
+            accessibilityRole="button"
+            style={styles.sheetRow}
+            onPress={() => setConfirmRemove(null)}
+          >
+            <Text variant="rowLabel">{REMOVE_PHOTO_CONFIRM.cancelLabel}</Text>
+          </Pressable>
+        </Sheet>
+      ) : null}
+
+      <Modal
+        visible={viewerIndex !== null}
+        animationType="fade"
+        presentationStyle="overFullScreen"
+        transparent={false}
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setViewerIndex(null)}
+      >
+        {viewerIndex !== null ? (
+          <StoryViewer
+            testID="album-owner-viewer"
+            photos={storyPhotos}
+            initialIndex={viewerIndex}
+            title={album.name}
+            owner={myCard}
+            onRetry={refreshUrls}
+            onClose={() => setViewerIndex(null)}
+            notice={actionError}
+            actions={[
+              {
+                key: 'remove',
+                label: REMOVE_PHOTO_LABEL,
+                destructive: true,
+                needsPhoto: true,
+                confirm: REMOVE_PHOTO_CONFIRM,
+                onPress: (photo) => {
+                  const row = photos.find((p) => p.id === photo?.id);
+                  if (!row) return;
+                  setActionError(null);
+                  removePhotoMutation.mutate(row);
+                },
+              },
+            ]}
+          />
+        ) : null}
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.paper },
+  container: { flex: 1, backgroundColor: colors.paper },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, backgroundColor: colors.paper },
+  unavailable: { textAlign: 'center' },
+  header: { padding: spacing.lgXl, gap: spacing.md },
+  renameRow: { flexDirection: 'row' },
+  nameInput: {
+    flex: 1,
+    fontSize: 20,
+    fontFamily: fontFamilies.outfitBold,
+    color: colors.ink,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+    paddingVertical: spacing.xs,
+  },
+  secondaryButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.smMd,
+    minHeight: 40,
+    justifyContent: 'center',
+  },
+  photoRow: { gap: spacing.xs, paddingHorizontal: spacing.lgXl },
+  photoCell: { flex: 1 / 3, aspectRatio: 1, margin: 2, position: 'relative' },
+  photoOpen: { width: '100%', height: '100%' },
+  photoImage: { width: '100%', height: '100%', borderRadius: radii.sm / 2 },
+  photoPlaceholder: { width: '100%', height: '100%', borderRadius: radii.sm / 2, backgroundColor: colors.tint },
+  removeButton: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: colors.overlay,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.smMd,
+    paddingVertical: 2,
+  },
+  footer: { padding: spacing.lgXl, gap: spacing.md },
+  sectionTitle: { marginTop: spacing.md },
+  emptyGrid: { paddingHorizontal: spacing.lgXl },
+  shareRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.smMd,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line,
+  },
+  sheetRow: { paddingVertical: spacing.lg, minHeight: 44, justifyContent: 'center' },
+  confirmTitle: { fontSize: 17 },
+});

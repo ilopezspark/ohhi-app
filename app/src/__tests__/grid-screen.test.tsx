@@ -154,10 +154,10 @@ describe('GridScreen — tiles', () => {
 
     await waitFor(() => expect(getByTestId('grid-tile-u1')).toBeTruthy());
     // The name node also carries the grad year as a nested <Text>, so these
-    // match "Ada  '28" rather than "Ada" exactly.
-    expect(getByText(/Ada/)).toBeTruthy();
-    expect(getByText(/Bea/)).toBeTruthy();
-    expect(getByText(/Cyd/)).toBeTruthy();
+    // match "ada  '28" rather than "ada" exactly (names show lowercase).
+    expect(getByText(/ada/)).toBeTruthy();
+    expect(getByText(/bea/)).toBeTruthy();
+    expect(getByText(/cyd/)).toBeTruthy();
     expect(getAllByText(/'28/)).toHaveLength(3);
   });
 

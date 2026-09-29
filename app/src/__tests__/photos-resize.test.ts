@@ -18,7 +18,7 @@ describe('resizeForUpload', () => {
 
     expect(mockManipulateAsync).toHaveBeenCalledWith(
       'file://original.jpg',
-      [{ resize: { width: RESIZE_MAX_LONG_EDGE, height: 1200 } }],
+      [{ resize: { width: RESIZE_MAX_LONG_EDGE } }],
       { compress: RESIZE_JPEG_QUALITY, format: 'jpeg' }
     );
   });
@@ -28,19 +28,33 @@ describe('resizeForUpload', () => {
 
     expect(mockManipulateAsync).toHaveBeenCalledWith(
       'file://original.jpg',
-      [{ resize: { width: 1200, height: RESIZE_MAX_LONG_EDGE } }],
+      [{ resize: { height: RESIZE_MAX_LONG_EDGE } }],
       { compress: RESIZE_JPEG_QUALITY, format: 'jpeg' }
     );
   });
 
-  it('never upscales a photo already smaller than the target', async () => {
+  it('never upscales a photo already smaller than the target (re-encode only, no resize)', async () => {
     await resizeForUpload({ uri: 'file://small.jpg', width: 800, height: 600 });
 
-    expect(mockManipulateAsync).toHaveBeenCalledWith(
-      'file://small.jpg',
-      [{ resize: { width: 800, height: 600 } }],
-      { compress: RESIZE_JPEG_QUALITY, format: 'jpeg' }
-    );
+    expect(mockManipulateAsync).toHaveBeenCalledWith('file://small.jpg', [], {
+      compress: RESIZE_JPEG_QUALITY,
+      format: 'jpeg',
+    });
+  });
+
+  it('only ever passes one dimension, so a picker size that disagrees with the pixels cannot stretch the photo', async () => {
+    for (const [width, height] of [
+      [4000, 3000],
+      [3000, 4000],
+      [4032, 1816],
+      [1080, 2400],
+    ]) {
+      mockManipulateAsync.mockClear();
+      await resizeForUpload({ uri: 'file://x.jpg', width: width!, height: height! });
+      const [, actions] = mockManipulateAsync.mock.calls[0];
+      const resize = (actions as { resize: Record<string, number> }[])[0]!.resize;
+      expect(Object.keys(resize)).toHaveLength(1);
+    }
   });
 
   it('compresses at quality 0.8 and encodes JPEG, per decision 39', async () => {

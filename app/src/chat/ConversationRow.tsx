@@ -3,6 +3,7 @@ import type { ConversationListItem } from '../api/conversations';
 import { tintForPhoto } from '../photos/tint';
 import { colors, hairline, spacing } from '../theme/tokens';
 import { Avatar, Badge, Dot, Text } from '../ui';
+import { displayName } from '../ui/displayName';
 import { conversationChip, messagePreview } from './rules';
 
 interface Props {
@@ -59,7 +60,7 @@ export function ConversationRow({ item, meId, photoUrl, onPress }: Props) {
       <View style={styles.body}>
         <View style={styles.titleRow}>
           <Text variant="rowLabel" style={{ fontSize: 16, fontWeight: '700' }} numberOfLines={1}>
-            {item.other.firstName ?? 'Someone'}
+            {displayName(item.other.firstName) || 'someone'}
           </Text>
           <Text variant="captionMuted">{relativeTime(item.lastMessageAt)}</Text>
         </View>

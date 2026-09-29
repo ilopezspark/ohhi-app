@@ -14,8 +14,10 @@ import { listSharesForSubject } from '../../../api/shares';
 import { mapSupabaseError } from '../../../api/errors';
 import { tintForPhoto } from '../../../photos/tint';
 import { Header, Input, Text } from '../../../ui';
-import { PlusIcon } from '../../../ui/icons';
+import { PencilIcon, PlusIcon } from '../../../ui/icons';
 import { AlbumCover } from '../../../settings/components/AlbumCover';
+import { getAlbumOwner } from '../../../api/albumOwner';
+import { displayName } from '../../../ui/displayName';
 import { colors, radii, spacing } from '../../../theme/tokens';
 
 const NAME_MAX_LENGTH = 60;
@@ -31,6 +33,12 @@ const NAME_MAX_LENGTH = 60;
  * `src/api/shares.ts`) to match the mockup's "shared with 3 people" /
  * "not shared with anyone" line, which the pre-restyle screen didn't show
  * at all.
+ *
+ * Tapping an album opens it as a story (`settings/albums/[id].tsx`), mine
+ * and the ones shared with me alike. Editing is a separate, explicit action:
+ * the `edit` pill on each of my albums opens the management grid
+ * (`settings/albums/[id]/edit.tsx`), the only place an album is a gallery
+ * (the owner's ruling, 2026-09-29).
  *
  * Deviation: each cover collage is 4 tinted placeholders (`tintForPhoto`,
  * seeded off the album id) rather than the album's real first 4 photos —
@@ -134,26 +142,43 @@ export default function AlbumsListScreen() {
 
         <View style={styles.grid}>
           {(albums ?? []).map((album) => (
-            <Pressable
-              key={album.id}
-              testID={`albums-item-${album.id}`}
-              style={styles.tile}
-              onPress={() => router.push(`/settings/albums/${album.id}` as never)}
-            >
-              <AlbumCover
-                testID={`albums-cover-${album.id}`}
-                tiles={Array.from({ length: 4 }, (_, i) => ({ tint: tintForPhoto(album.id, i) }))}
-              />
-              <View style={styles.tileMeta}>
-                <Text variant="rowLabel" numberOfLines={1} style={styles.tileName}>
-                  {album.name}
+            <View key={album.id} style={styles.tile}>
+              <Pressable
+                testID={`albums-item-${album.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`open ${album.name}`}
+                style={styles.tileOpen}
+                onPress={() => router.push(`/settings/albums/${album.id}` as never)}
+              >
+                <AlbumCover
+                  testID={`albums-cover-${album.id}`}
+                  tiles={Array.from({ length: 4 }, (_, i) => ({ tint: tintForPhoto(album.id, i) }))}
+                />
+                <View style={styles.tileMeta}>
+                  <Text variant="rowLabel" numberOfLines={1} style={styles.tileName}>
+                    {album.name}
+                  </Text>
+                  <Text variant="captionMuted">{`${album.photo_count} photo${album.photo_count === 1 ? '' : 's'}`}</Text>
+                </View>
+                <Text variant="helper" style={styles.tileShared}>
+                  {shareLabel(album)}
                 </Text>
-                <Text variant="captionMuted">{`${album.photo_count} photo${album.photo_count === 1 ? '' : 's'}`}</Text>
-              </View>
-              <Text variant="helper" style={styles.tileShared}>
-                {shareLabel(album)}
-              </Text>
-            </Pressable>
+              </Pressable>
+              {/* Editing is its own, explicit action: the only way to the grid. */}
+              <Pressable
+                testID={`albums-edit-${album.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`edit ${album.name}`}
+                hitSlop={8}
+                style={({ pressed }) => [styles.editPill, pressed && styles.pressed]}
+                onPress={() => router.push(`/settings/albums/${album.id}/edit` as never)}
+              >
+                <PencilIcon size={12} color={colors.ink} />
+                <Text variant="captionMuted" color={colors.ink} style={styles.editText}>
+                  edit
+                </Text>
+              </Pressable>
+            </View>
           ))}
 
           <Pressable testID="albums-create-start" style={styles.newTile} onPress={() => setCreating(true)}>
@@ -170,14 +195,7 @@ export default function AlbumsListScreen() {
               shared with me
             </Text>
             {(shared ?? []).map((item: SharedAlbum) => (
-              <Pressable
-                key={item.share_id}
-                testID={`albums-shared-item-${item.album.id}`}
-                style={styles.sharedRow}
-                onPress={() => router.push(`/settings/albums/${item.album.id}` as never)}
-              >
-                <Text variant="rowLabel">{item.album.name}</Text>
-              </Pressable>
+              <SharedAlbumRow key={item.share_id} item={item} />
             ))}
           </View>
         ) : null}
@@ -194,13 +212,61 @@ export default function AlbumsListScreen() {
   );
 }
 
+/**
+ * One album someone shared with me: its name and whose it is (lowercase,
+ * `ui/displayName`). Tapping opens it as a story. The owner's name is the
+ * same cached read the story's header makes (`['album-owner', id]`).
+ */
+function SharedAlbumRow({ item }: { item: SharedAlbum }) {
+  const ownerId = item.album.owner_id;
+  const { data: owner } = useQuery({
+    queryKey: ['album-owner', ownerId],
+    queryFn: () => getAlbumOwner(ownerId),
+    enabled: !!ownerId,
+    staleTime: 5 * 60_000,
+  });
+  const name = displayName(owner?.firstName);
+  return (
+    <Pressable
+      testID={`albums-shared-item-${item.album.id}`}
+      accessibilityRole="button"
+      accessibilityLabel={name ? `open ${item.album.name}, from ${name}` : `open ${item.album.name}`}
+      style={styles.sharedRow}
+      onPress={() => router.push(`/settings/albums/${item.album.id}` as never)}
+    >
+      <Text variant="rowLabel">{item.album.name}</Text>
+      {name ? (
+        <Text variant="captionMuted" testID={`albums-shared-owner-${item.album.id}`}>
+          {`from ${name}`}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
   scroll: { paddingHorizontal: spacing.lgXl, paddingBottom: spacing.huge, gap: spacing.xl },
   createRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.mdLg },
   createAction: { paddingHorizontal: spacing.mdLg },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg },
-  tile: { width: '47%', gap: spacing.smMd },
+  tile: { width: '47%', position: 'relative' },
+  tileOpen: { gap: spacing.smMd },
+  editPill: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.paper,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.smMd,
+    paddingVertical: 3,
+    minHeight: 24,
+  },
+  editText: { lineHeight: 12 },
+  pressed: { opacity: 0.6 },
   tileMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   tileName: { flex: 1 },
   tileShared: { fontSize: 12, marginTop: -spacing.xs },
@@ -216,6 +282,6 @@ const styles = StyleSheet.create({
     gap: spacing.smMd,
   },
   sectionLabel: { color: colors.subtle, marginBottom: spacing.xs },
-  sharedRow: { paddingVertical: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.line },
+  sharedRow: { paddingVertical: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.line, gap: 2 },
   rulesBanner: { backgroundColor: colors.tint, borderRadius: radii.lg, padding: spacing.lgXl, gap: spacing.xs },
 });

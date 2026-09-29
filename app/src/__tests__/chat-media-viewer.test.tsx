@@ -19,9 +19,11 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: (...args: unknown[]) => mockUseLocalSearchParams(...args),
 }));
 
-const mockUsePreventScreenCapture = jest.fn();
+const mockPreventScreenCapture = jest.fn((_key?: string) => Promise.resolve());
+const mockAllowScreenCapture = jest.fn((_key?: string) => Promise.resolve());
 jest.mock('expo-screen-capture', () => ({
-  usePreventScreenCapture: (...args: unknown[]) => mockUsePreventScreenCapture(...args),
+  preventScreenCaptureAsync: (key: string) => mockPreventScreenCapture(key),
+  allowScreenCaptureAsync: (key: string) => mockAllowScreenCapture(key),
 }));
 
 jest.mock('expo-video', () => {
@@ -166,8 +168,35 @@ describe('viewer — screen capture and cleanup', () => {
     (getMessageMedia as jest.Mock).mockResolvedValue(message());
     (signedChatMediaUrls as jest.Mock).mockResolvedValue({ [`${CONV}/m1.jpg`]: 'https://signed/m1.jpg' });
 
-    await renderScreen();
-    expect(mockUsePreventScreenCapture).toHaveBeenCalled();
+    const { screen } = await renderScreen();
+    expect(mockPreventScreenCapture).toHaveBeenCalledWith('chat-media-viewer');
+    expect(mockAllowScreenCapture).not.toHaveBeenCalled();
+    await screen.unmount();
+    expect(mockAllowScreenCapture).toHaveBeenCalledWith('chat-media-viewer');
+  });
+
+  it('never lets a screen capture failure escape (web answers "not available")', async () => {
+    mockPreventScreenCapture.mockImplementationOnce(() => Promise.reject(new Error('not available on web')));
+    (getMessageMedia as jest.Mock).mockResolvedValue(message());
+    (signedChatMediaUrls as jest.Mock).mockResolvedValue({ [`${CONV}/m1.jpg`]: 'https://signed/m1.jpg' });
+
+    const { screen } = await renderScreen();
+    await waitFor(() => expect(screen.getByTestId('chat-media-viewer-image')).toBeTruthy());
+  });
+
+  it('skips screen capture entirely on web', async () => {
+    const { Platform } = require('react-native');
+    const original = Platform.OS;
+    Platform.OS = 'web';
+    try {
+      (getMessageMedia as jest.Mock).mockResolvedValue(message());
+      (signedChatMediaUrls as jest.Mock).mockResolvedValue({ [`${CONV}/m1.jpg`]: 'https://signed/m1.jpg' });
+      const { screen } = await renderScreen();
+      await waitFor(() => expect(screen.getByTestId('chat-media-viewer-image')).toBeTruthy());
+      expect(mockPreventScreenCapture).not.toHaveBeenCalled();
+    } finally {
+      Platform.OS = original;
+    }
   });
 
   it('refreshes the thread and message caches on unmount, discarding the URL', async () => {

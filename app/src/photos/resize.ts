@@ -36,10 +36,28 @@ export interface ResizedPhoto {
 export async function resizeForUpload({ uri, width, height }: ResizeSource): Promise<ResizedPhoto> {
   const longEdge = Math.max(width, height);
   const scale = longEdge > RESIZE_MAX_LONG_EDGE ? RESIZE_MAX_LONG_EDGE / longEdge : 1;
-  const targetWidth = Math.max(1, Math.round(width * scale));
-  const targetHeight = Math.max(1, Math.round(height * scale));
 
-  const result = await manipulateAsync(uri, [{ resize: { width: targetWidth, height: targetHeight } }], {
+  // Only ever pass ONE dimension, so the manipulator keeps the image's own
+  // aspect ratio. Passing both forces exactly that box, which stretches the
+  // photo whenever the picker's width/height disagree with the pixels the
+  // manipulator decodes (a rotated camera JPEG whose EXIF orientation one
+  // side applied and the other didn't). Worst case this way, the long edge
+  // lands a little over the target; the photo is never distorted. A photo
+  // already within the target is only re-encoded (which is still the
+  // EXIF-stripping step), never resized, not even to its own size.
+  const actions =
+    scale < 1
+      ? [
+          {
+            resize:
+              width >= height
+                ? { width: Math.max(1, Math.round(width * scale)) }
+                : { height: Math.max(1, Math.round(height * scale)) },
+          },
+        ]
+      : [];
+
+  const result = await manipulateAsync(uri, actions, {
     compress: RESIZE_JPEG_QUALITY,
     format: SaveFormat.JPEG,
   });

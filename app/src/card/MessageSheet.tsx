@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Avatar, Button, Input, Sheet, Text } from '../ui';
+import { displayName } from '../ui/displayName';
 import { colors, spacing } from '../theme/tokens';
 import { MAX_OPENER_LENGTH } from '../chat/rules';
 
@@ -57,7 +58,7 @@ export function MessageSheet({
       <View style={styles.header}>
         <Avatar uri={photoUrl} tint={tint} testID="profile-message-sheet-avatar" />
         <View>
-          <Text variant="title">{`one message to ${firstName}`}</Text>
+          <Text variant="title">{`one message to ${displayName(firstName)}`}</Text>
           {subtitle ? (
             <Text variant="helper" color={colors.muted}>
               {subtitle}

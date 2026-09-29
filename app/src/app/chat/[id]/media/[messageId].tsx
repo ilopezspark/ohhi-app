@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ScreenCapture from 'expo-screen-capture';
@@ -12,6 +12,8 @@ import { useRecipientExhaustedStore } from '../../../../chat/recipientExhausted'
 import { colors, layout, radii, shadows, spacing } from '../../../../theme/tokens';
 import { BackIcon } from '../../../../ui/icons';
 import { Text } from '../../../../ui';
+
+const SCREEN_CAPTURE_KEY = 'chat-media-viewer';
 
 /**
  * The full-screen media viewer (`docs/chat-media-plan.md` §4/§7):
@@ -34,8 +36,8 @@ import { Text } from '../../../../ui';
  * `expo-video` primitives already in use elsewhere in this app carry no extra
  * disk cache of their own to defeat (this app has no `expo-image` dependency
  * to configure a cache policy on). `expo-screen-capture`'s
- * `usePreventScreenCapture` covers the mount/unmount FLAG_SECURE toggle on
- * Android — §1/CM-8's own limitation (no iOS/web equivalent) is stated in
+ * `preventScreenCaptureAsync`/`allowScreenCaptureAsync` cover the
+ * mount/unmount FLAG_SECURE toggle on Android (skipped on web) — §1/CM-8's own limitation (no iOS/web equivalent) is stated in
  * the copy below, not just in the docs.
  */
 export default function ChatMediaViewerScreen() {
@@ -45,9 +47,18 @@ export default function ChatMediaViewerScreen() {
   const queryClient = useQueryClient();
   const markExhausted = useRecipientExhaustedStore((state) => state.markExhausted);
 
-  // Android-only in effect (FLAG_SECURE); a no-op everywhere else. Active for
-  // exactly the lifetime of this screen.
-  ScreenCapture.usePreventScreenCapture('chat-media-viewer');
+  // Android-only in effect (FLAG_SECURE); a no-op on iOS. Active for exactly
+  // the lifetime of this screen. Not `usePreventScreenCapture`: on web that
+  // hook rejects with "not available on web", which surfaced as an uncaught
+  // error and crashed the viewer there. Same native calls as the album story
+  // (`albums/StoryViewer.tsx`): skipped on web, never allowed to throw.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    ScreenCapture.preventScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => {});
+    return () => {
+      ScreenCapture.allowScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => {});
+    };
+  }, []);
 
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: fetchMe });
   const { data: message, isPending: messagePending } = useQuery({

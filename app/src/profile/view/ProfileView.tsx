@@ -4,19 +4,19 @@ import {
   ScrollView,
   StyleSheet,
   View,
-  useWindowDimensions,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
 import { BackIcon, CheckIcon, ChevronDownIcon, Dot, MoreIcon, Text } from '../../ui';
+import { displayName } from '../../ui/displayName';
 import { tintForPhoto } from '../../photos/tint';
 import { colors, hairline, radii, spacing } from '../../theme/tokens';
 import { isSparse, sparseNotice, type ProfileViewData } from './model';
 import { PhotoPager } from './PhotoPager';
 import { PhotoIconButton, ProfileHero } from './ProfileHero';
 import { detailSections } from './sections';
-import { useInsets } from './useInsets';
+import { useInsets, useScreenFrame } from './useInsets';
 
 /**
  * Wider than this (tablets, open foldables) the view's *content* stops
@@ -66,15 +66,20 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
   const p = testIDPrefix;
   const safeInsets = useInsets();
   const insets = preview ? NO_INSETS : safeInsets;
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  // The hero fills the view. On the profile screen that is the window; in
-  // the editor's Preview it is the tab's own area, measured on layout.
+  const screen = useScreenFrame();
+  // The hero is exactly as tall as this view: on the profile screen that is
+  // the whole screen (edge to edge, under both system bars); in the
+  // editor's Preview it is the tab's own area. Both come from `onLayout`, so
+  // rotation, a fold opening and split screen resize it. Until the first
+  // layout, the safe-area frame (the root view's real size) stands in, not
+  // the window: on Android the window can leave out the system bars.
   const [measured, setMeasured] = useState<{ width: number; height: number } | null>(null);
-  const viewWidth = measured?.width ?? windowWidth;
+  const viewWidth = measured?.width ?? screen.width;
   const contentWidth = Math.min(viewWidth, PROFILE_MAX_WIDTH);
   /** Space either side of the centred content column (0 on a phone). */
   const sideInset = Math.max(0, (viewWidth - contentWidth) / 2);
-  const heroHeight = measured?.height ?? windowHeight;
+  const heroHeight = measured?.height ?? screen.height;
+  const name = displayName(data.firstName);
   const headerHeight = insets.top + HEADER_BAR;
 
   const scrollRef = useRef<ScrollView>(null);
@@ -130,6 +135,7 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
         <ProfileHero
           frame="bleed"
           height={heroHeight}
+          width={viewWidth}
           topInset={insets.top}
           sideInset={sideInset}
           bottomSpace={actions ? barHeight : insets.bottom}
@@ -138,7 +144,7 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
           photoSlot={
             <PhotoPager
               userId={data.userId}
-              firstName={data.firstName}
+              firstName={name}
               paths={data.photoPaths}
               urls={data.photoUrls}
               barsTop={insets.top + spacing.md}
@@ -176,6 +182,8 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
             tags: `${p}-tags`,
             notice: `${p}-sparse-notice`,
             expand: `${p}-expand`,
+            topScrim: `${p}-top-scrim`,
+            bottomScrim: `${p}-bottom-scrim`,
           }}
         />
 
@@ -202,7 +210,7 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
             </Pressable>
             <View style={styles.headerTitle} accessibilityRole="header">
               <Text variant="title" style={styles.headerName} numberOfLines={1}>
-                {data.firstName}
+                {name}
               </Text>
               {data.verified ? (
                 <View style={styles.headerVerified} accessibilityLabel="verified student">

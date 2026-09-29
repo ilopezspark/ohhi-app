@@ -17,6 +17,7 @@ import {
   Text,
 } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
+import { displayName } from '../../ui/displayName';
 import { GATED_NOTE, joinedMonthLabel } from '../fields';
 import { classOf, type ProfilePrompt, type ProfileViewData } from './model';
 
@@ -79,6 +80,7 @@ export function detailSections(
   { prefix, onReportOrBlock, preview = false, now }: DetailSectionOptions
 ): DetailSection[] {
   const sections: DetailSection[] = [];
+  const name = displayName(data.firstName);
 
   if (data.sharedLines.length > 0) {
     sections.push({ key: 'shared', render: () => <SharedCard lines={data.sharedLines} testID={`${prefix}-shared`} /> });
@@ -103,7 +105,7 @@ export function detailSections(
             userId={data.userId}
             position={position}
             url={data.photoUrls[path]}
-            firstName={data.firstName}
+            firstName={name}
             testID={`${prefix}-photo-card-${position}`}
           />
         ),
@@ -146,7 +148,7 @@ export function detailSections(
       render: () => (
         <AroundCampusCard
           places={places}
-          firstName={data.firstName}
+          firstName={name}
           note={preview ? GATED_NOTE : null}
           testID={`${prefix}-around-campus`}
         />
@@ -158,7 +160,7 @@ export function detailSections(
     key: 'footer',
     render: () => (
       <ProfileFooter
-        firstName={data.firstName}
+        firstName={name}
         verified={data.verified}
         campusShort={data.campusShort}
         joinedMonth={data.joinedMonth}

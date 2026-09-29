@@ -47,10 +47,17 @@ import { useConversationRealtime } from '../../chat/useChatRealtime';
 import { messageId as newMessageId } from '../../chat/uuid';
 import { checkVideo, generateVideoPoster, VIDEO_REJECTION_COPY } from '../../chat/video';
 import { UploadTooLargeError } from '../../storage/readUpload';
+import {
+  CHAT_MEDIA_FAILURE_COPY,
+  classifyUploadFailure,
+  logUploadFailure,
+  type UploadStep,
+} from '../../storage/uploadError';
 import { tintForPhoto } from '../../photos/tint';
 import { colors, layout, radii, shadows, spacing } from '../../theme/tokens';
 import { BackIcon, MoreIcon } from '../../ui/icons';
 import { Avatar, Button, Sheet, Text } from '../../ui';
+import { displayName } from '../../ui/displayName';
 
 /**
  * A conversation thread (`docs/app-social-plan.md` §3, `Chat-Thread.html`).
@@ -607,6 +614,9 @@ export default function ChatThreadScreen() {
       const id = newMessageId();
       const bucket = viewLimit == null ? CHAT_MEDIA_BUCKET : CHAT_MEDIA_LIMITED_BUCKET;
 
+      // Which step was running when it failed, for the dev-only log below.
+      let step: UploadStep = pendingMedia.trayItem ? 'resend' : 'upload';
+
       try {
         let mediaPath: string;
         let posterPath: string | null = null;
@@ -633,6 +643,7 @@ export default function ChatThreadScreen() {
             bucket,
           });
           if (pendingMedia.kind === 'video' && pendingMedia.posterUri) {
+            step = 'poster';
             posterPath = await uploadChatMediaPoster({
               conversationId,
               messageId: id,
@@ -644,6 +655,7 @@ export default function ChatThreadScreen() {
           throw new Error('no media source');
         }
 
+        step = 'insert';
         await send({
           id,
           body: null,
@@ -659,11 +671,19 @@ export default function ChatThreadScreen() {
         closeMediaFlow();
         void queryClient.invalidateQueries({ queryKey: ['recently-shared-media', meId] });
       } catch (error) {
+        logUploadFailure({ what: 'chat media', step, bucket }, error);
         // Generic: an upload refused because the thread isn't `open` looks
         // exactly like a dropped connection, which is the point (decision 24).
-        // The one exception is our own size gate (a video the picker didn't
-        // report a size for), which says what it is, same as at pick time.
-        setMediaError(error instanceof UploadTooLargeError ? VIDEO_REJECTION_COPY.size : "Couldn't send. Try again.");
+        // Only causes about the file itself say what they are: our own size
+        // gate (a video the picker didn't report a size for, same copy as at
+        // pick time), and the server refusing the file's size or type
+        // (`storage/uploadError.ts`).
+        const reason = classifyUploadFailure(error);
+        setMediaError(
+          error instanceof UploadTooLargeError && pendingMedia.kind === 'video'
+            ? VIDEO_REJECTION_COPY.size
+            : CHAT_MEDIA_FAILURE_COPY[reason]
+        );
         // An upload into a thread that has since vanished is refused by the
         // storage policy; re-reading the thread lets the gone latch leave.
         void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
@@ -791,7 +811,9 @@ export default function ChatThreadScreen() {
     return <View style={styles.center} testID="thread-gone" />;
   }
 
-  const otherName = conversation.other.firstName ?? 'Someone';
+  // Titles and labels show names lowercase (owner ruling, 29 September
+  // 2026); the stored name is untouched.
+  const otherName = displayName(conversation.other.firstName) || 'someone';
 
   return (
     <KeyboardAvoidingView

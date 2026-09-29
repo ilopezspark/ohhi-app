@@ -92,7 +92,7 @@ describe('ProfileScreen', () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card());
     const { findByTestId } = await renderScreen();
     await findByTestId('profile-screen');
-    expect(await findByTestId('profile-name')).toHaveTextContent('Ada');
+    expect(await findByTestId('profile-name')).toHaveTextContent('ada');
     await findByTestId('profile-status-line');
   });
 

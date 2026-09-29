@@ -1,6 +1,8 @@
 import { Text as RNText } from 'react-native';
 import { fireEvent, render, within } from '@testing-library/react-native';
+import { SafeAreaFrameContext } from 'react-native-safe-area-context';
 import { ProfileView, PROFILE_MAX_WIDTH } from '../profile/view/ProfileView';
+import { BOTTOM_SCRIM_FADE, BOTTOM_SCRIM_SHARE, heroScrimHeights } from '../profile/view/ProfileHero';
 import type { ProfileViewData } from '../profile/view/model';
 import { Icon, type IconName } from '../ui/icons';
 
@@ -302,6 +304,105 @@ describe('ProfileView — scrolling (03)', () => {
     await fireEvent(screen.getByTestId('profile-view'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 390, height: 844 } } });
     const details = Object.assign({}, ...[screen.getByTestId('profile-details').props.style].flat(Infinity).filter(Boolean));
     expect(details.width).toBe(390);
+  });
+});
+
+describe('ProfileView — hero layout (the phone report: scrim stopped short)', () => {
+  const flat = (node: { props: { style?: unknown } }) => Object.assign({}, ...[node.props.style].flat(Infinity).filter(Boolean));
+
+  async function laidOut(width: number, height: number, contentHeight = 300, data: ProfileViewData = MAYA) {
+    const screen = await renderView(data);
+    await fireEvent(screen.getByTestId('profile-view'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width, height } } });
+    await fireEvent(screen.getByTestId('profile-hero'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width, height } } });
+    // The hero's bottom block: here now … chips, plus the space kept for the bar.
+    const block = screen.getByTestId('profile-name').parent;
+    let node = block;
+    while (node && flat(node).position !== 'absolute') node = node.parent;
+    await fireEvent(node!, 'layout', { nativeEvent: { layout: { x: 0, y: height - contentHeight, width, height: contentHeight } } });
+    return screen;
+  }
+
+  it.each([
+    [390, 844],
+    [624, 986],
+    [360, 880],
+    [900, 800],
+  ])('at %ix%i the hero is exactly the view tall and the bottom scrim is anchored to its bottom edge', async (width, height) => {
+    const screen = await laidOut(width, height);
+    expect(flat(screen.getByTestId('profile-hero')).height).toBe(height);
+
+    const scrim = flat(screen.getByTestId('profile-bottom-scrim'));
+    expect(scrim).toMatchObject({ position: 'absolute', left: 0, right: 0, bottom: 0 });
+    expect(scrim.top).toBeUndefined();
+    expect(scrim.height).toBe(Math.round(height * BOTTOM_SCRIM_SHARE));
+
+    // The gradient is drawn at the box's own size in plain numbers (a
+    // percentage-sized SVG kept its first-frame size on Android).
+    const svg = screen.getByTestId('profile-bottom-scrim-svg');
+    expect(svg.props.bbWidth ?? svg.props.width).toBe(width);
+    expect(svg.props.bbHeight ?? svg.props.height).toBe(Math.round(height * BOTTOM_SCRIM_SHARE));
+  });
+
+  it('grows the bottom scrim above a tall text block, never past the hero', async () => {
+    const tall = await laidOut(390, 844, 600);
+    expect(flat(tall.getByTestId('profile-bottom-scrim')).height).toBe(600 + BOTTOM_SCRIM_FADE);
+    const huge = await laidOut(390, 844, 800);
+    expect(flat(huge.getByTestId('profile-bottom-scrim')).height).toBe(844);
+  });
+
+  it('keeps a top scrim under the status bar', async () => {
+    const screen = await laidOut(390, 844);
+    expect(flat(screen.getByTestId('profile-top-scrim'))).toMatchObject({ position: 'absolute', top: 0, left: 0, right: 0, height: 110 });
+  });
+
+  it('follows a resize (rotation, a fold opening): hero and scrim take the new size', async () => {
+    const screen = await laidOut(390, 844);
+    await fireEvent(screen.getByTestId('profile-view'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 844, height: 390 } } });
+    await fireEvent(screen.getByTestId('profile-hero'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 844, height: 390 } } });
+    expect(flat(screen.getByTestId('profile-hero')).height).toBe(390);
+    // A short landscape hero: the text block (300) plus its fade needs more
+    // than the hero has, so the scrim covers all of it.
+    expect(flat(screen.getByTestId('profile-bottom-scrim')).height).toBe(390);
+    const svg = screen.getByTestId('profile-bottom-scrim-svg');
+    expect(svg.props.bbWidth ?? svg.props.width).toBe(844);
+  });
+
+  it('before its first layout, sizes the hero from the safe-area frame, not the window', async () => {
+    const screen = await render(
+      <SafeAreaFrameContext.Provider value={{ x: 0, y: 0, width: 412, height: 915 }}>
+        <ProfileView data={MAYA} onBack={jest.fn()} />
+      </SafeAreaFrameContext.Provider>
+    );
+    expect(flat(screen.getByTestId('profile-hero')).height).toBe(915);
+  });
+
+  it('heroScrimHeights: at least the share, above the text, capped at the hero', () => {
+    expect(heroScrimHeights(1000, 40, 200)).toEqual({ top: 150, bottom: 620 });
+    expect(heroScrimHeights(1000, 40, 700)).toEqual({ top: 150, bottom: 820 });
+    expect(heroScrimHeights(500, 40, 700)).toEqual({ top: 150, bottom: 500 });
+    expect(heroScrimHeights(100, 40, 0)).toEqual({ top: 100, bottom: 100 });
+  });
+
+  it('shows the photo covering the hero, never stretched', async () => {
+    const screen = await laidOut(360, 880);
+    const image = screen.getByTestId('profile-photo-image-0');
+    expect(image.props.resizeMode ?? flat(image).resizeMode).toBe('cover');
+  });
+});
+
+describe('ProfileView — names are lowercase (owner ruling)', () => {
+  it('shows a capitalised stored name in lowercase everywhere it is a title or label', async () => {
+    const screen = await renderView({ ...LUIS, firstName: 'Tyler', usualPlaces: ['library'] });
+    expect(screen.getByTestId('profile-name')).toHaveTextContent('tyler');
+    expect(screen.getByTestId('profile-sparse-notice')).toHaveTextContent("tyler hasn't filled much in yet. not a red flag.");
+    expect(screen.getByLabelText('more about tyler')).toBeTruthy();
+    expect(screen.getByLabelText('photos of tyler')).toBeTruthy();
+    expect(screen.getByLabelText('report or block tyler')).toBeTruthy();
+    expect(screen.getByTestId('profile-around-campus')).toHaveTextContent(/where tyler usually ends up/);
+    expect(screen.queryByText(/Tyler/)).toBeNull();
+    await scrollTo(screen, 3000);
+    expect(screen.getByTestId('profile-header')).toHaveTextContent(/tyler/);
+    expect(screen.queryByText(/Tyler/)).toBeNull();
   });
 });
 

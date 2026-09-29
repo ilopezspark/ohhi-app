@@ -4,6 +4,7 @@ import { mapSupabaseError } from './errors';
 import { currentUserId } from './session';
 import { resizeForUpload } from '../photos/resize';
 import { readUploadBody } from '../storage/readUpload';
+import { logUploadFailure } from '../storage/uploadError';
 import { tintForPhoto } from '../photos/tint';
 import { newPhotoId, profilePhotoPath, profilePhotoPathForId, type ProfilePhotoPosition } from '../photos/path';
 import type { Database } from '../types/database';
@@ -126,7 +127,10 @@ export async function addProfilePhoto({ position, uri, width, height }: AddProfi
     contentType: 'image/jpeg',
     upsert: false,
   });
-  if (uploadError) throw mapSupabaseError(uploadError);
+  if (uploadError) {
+    logUploadFailure({ what: 'profile photo', step: 'upload', bucket: 'profile-photos', path }, uploadError);
+    throw mapSupabaseError(uploadError);
+  }
 
   const { data, error } = await supabase
     .from('user_photos')
@@ -176,7 +180,10 @@ export async function replaceProfilePhoto({
     contentType: 'image/jpeg',
     upsert: false,
   });
-  if (uploadError) throw mapSupabaseError(uploadError);
+  if (uploadError) {
+    logUploadFailure({ what: 'profile photo', step: 'upload', bucket: 'profile-photos', path }, uploadError);
+    throw mapSupabaseError(uploadError);
+  }
 
   const { data, error } = await supabase
     .from('user_photos')

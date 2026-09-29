@@ -4,6 +4,7 @@ import { currentUserId } from './session';
 import { resizeForUpload } from '../photos/resize';
 import { newPhotoId } from '../photos/path';
 import { readUploadBody } from '../storage/readUpload';
+import { logUploadFailure } from '../storage/uploadError';
 import type { Database } from '../types/database';
 
 export type AlbumRow = Database['public']['Tables']['albums']['Row'];
@@ -183,7 +184,10 @@ export async function addAlbumPhoto({ albumId, uri, width, height }: AddAlbumPho
     contentType: 'image/jpeg',
     upsert: false,
   });
-  if (uploadError) throw mapSupabaseError(uploadError);
+  if (uploadError) {
+    logUploadFailure({ what: 'album photo', step: 'upload', bucket: 'album-photos', path }, uploadError);
+    throw mapSupabaseError(uploadError);
+  }
 
   const { data, error } = await supabase
     .from('album_photos')

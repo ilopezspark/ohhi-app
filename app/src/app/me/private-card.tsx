@@ -15,6 +15,7 @@ import { useRefetchOnFocus } from '../../query/gone';
 import { tintForPhoto } from '../../photos/tint';
 import { Avatar, Button, Chip, EmptyState, Header, RowCard, SectionLabel, Text } from '../../ui';
 import { LockIcon } from '../../ui/icons';
+import { displayName } from '../../ui/displayName';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 
 /**
@@ -129,7 +130,7 @@ export default function PrivateCardScreen() {
               <View key={person.shareId} style={styles.sharedRow} testID={`private-card-shared-${person.shareId}`}>
                 <Avatar tint={tintForPhoto(person.userId, 0)} size="md" />
                 <View style={styles.sharedText}>
-                  <Text variant="rowLabel">{person.firstName ?? 'someone'}</Text>
+                  <Text variant="rowLabel">{displayName(person.firstName) || 'someone'}</Text>
                   <Text variant="micro" color={colors.inkSoft}>
                     {relativeSentLabel(person.sentAt)}
                   </Text>
