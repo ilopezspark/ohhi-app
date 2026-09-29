@@ -7,6 +7,12 @@ export interface UseMyPhotosResult {
   /** `storage_path` -> signed URL, only for paths that signed successfully. */
   urls: Record<string, string>;
   isLoading: boolean;
+  /**
+   * True once the photo list has been read at least once. Until then `photos`
+   * is an empty placeholder, not "you have no photos", so nothing may derive a
+   * slot or a count from it.
+   */
+  isLoaded: boolean;
   refetch: () => void;
   invalidate: () => void;
 }
@@ -40,6 +46,7 @@ export function useMyPhotos(): UseMyPhotosResult {
     photos,
     urls: urlsQuery.data ?? {},
     isLoading: photosQuery.isPending,
+    isLoaded: photosQuery.data !== undefined,
     refetch: () => {
       void photosQuery.refetch();
     },

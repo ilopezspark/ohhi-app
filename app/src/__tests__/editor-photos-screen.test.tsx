@@ -103,16 +103,36 @@ describe('EditPhotosScreen', () => {
     grantPicker();
 
     const { findByTestId } = await renderScreen();
+    // The empty slot tiles exist (disabled) before the photos load, so wait
+    // for the loaded grid rather than pressing whatever `tile-2` is first.
+    await findByTestId('editor-photos-pencil-1');
     await fireEvent.press(await findByTestId('editor-photos-tile-2'));
 
     await waitFor(() => expect(addProfilePhoto).toHaveBeenCalled());
     expect((addProfilePhoto as jest.Mock).mock.calls[0][0]).toMatchObject({ position: 1, uri: 'file://picked.jpg' });
   });
 
+  it('offers no add slot until the photos have loaded (a slot from the empty placeholder would collide)', async () => {
+    let resolveList: (rows: ReturnType<typeof row>[]) => void = () => {};
+    (listMyPhotos as jest.Mock).mockReturnValue(new Promise((resolve) => (resolveList = resolve)));
+    grantPicker();
+
+    const { getByTestId, queryByTestId, findByTestId } = await renderScreen();
+    expect(queryByTestId('editor-photos-add-badge')).toBeNull();
+    await fireEvent.press(getByTestId('editor-photos-tile-0'));
+    expect(ImagePicker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
+    expect(addProfilePhoto).not.toHaveBeenCalled();
+
+    resolveList([row('a', 0)]);
+    await findByTestId('editor-photos-pencil-0');
+    await findByTestId('editor-photos-add-badge');
+  });
+
   it('says so when photo library access is denied', async () => {
     (listMyPhotos as jest.Mock).mockResolvedValue([]);
     (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockResolvedValue({ granted: false });
     const { findByTestId } = await renderScreen();
+    await findByTestId('editor-photos-add-badge'); // loaded: the add slot is live
     await fireEvent.press(await findByTestId('editor-photos-tile-0'));
     const error = await findByTestId('editor-photos-error');
     expect(error.props.children).toBe('allow photo library access to add a photo.');

@@ -77,7 +77,7 @@ type OffGridConfirm = { copy: string; run: () => void };
  */
 export default function EditPhotosScreen() {
   const queryClient = useQueryClient();
-  const { photos, urls } = useMyPhotos();
+  const { photos, urls, isLoaded } = useMyPhotos();
 
   const [actionSheetIndex, setActionSheetIndex] = useState<number | null>(null);
   const [offGridConfirm, setOffGridConfirm] = useState<OffGridConfirm | null>(null);
@@ -178,14 +178,20 @@ export default function EditPhotosScreen() {
 
   async function handleAdd() {
     setError(null);
-    const position = firstFreePosition(currentCache());
-    if (position === null) return;
+    // Until the first read lands, `photos` is an empty placeholder: a slot
+    // taken from it would be 0 and collide with a photo already there.
+    const known = queryClient.getQueryData<UserPhotoRow[]>(queryKeys.me.photos);
+    if (!known || firstFreePosition(known) === null) return;
     const picked = await pickFromLibrary();
     if (picked.kind === 'denied') {
       setError(PERMISSION_COPY);
       return;
     }
     if (picked.kind !== 'picked') return;
+    // The picker is modal and can stay open a while (a focus refetch can land
+    // meanwhile), so the slot comes from the cache as it is now, not as it was.
+    const position = firstFreePosition(currentCache());
+    if (position === null) return;
     setAddBusy(true);
     try {
       const created = await addProfilePhoto({
@@ -241,7 +247,7 @@ export default function EditPhotosScreen() {
   }
 
   const activePhoto = actionSheetIndex !== null ? photos[actionSheetIndex] : null;
-  const canAdd = photos.length < MAX_PHOTOS;
+  const canAdd = isLoaded && photos.length < MAX_PHOTOS;
 
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
@@ -345,7 +351,8 @@ export default function EditPhotosScreen() {
                 );
               }
 
-              const isNextEmpty = i === photos.length;
+              // Nothing is offered as the next slot until the photos have loaded.
+              const isNextEmpty = isLoaded && i === photos.length;
               return (
                 <Pressable
                   key={`empty-${i}`}
