@@ -130,9 +130,43 @@ describe('resolveQuote', () => {
       quote({ replyKind: 'album_photo', quotedMessageId: null, quotedAlbumPhotoId: 'p1', mediaPath: 'o/a/p1.jpg', albumId: 'a' }),
       none
     );
-    expect(view).toEqual({ state: 'album_photo', albumId: 'a', photoId: 'p1', senderId: THEM, thumbPath: 'o/a/p1.jpg' });
+    expect(view).toEqual({
+      state: 'album_photo',
+      albumId: 'a',
+      photoId: 'p1',
+      senderId: THEM,
+      thumbPath: 'o/a/p1.jpg',
+      mediaKind: 'photo',
+    });
     // Never drawn locally.
     expect(resolveQuote(albumReply, undefined, none)).toEqual({ state: 'loading' });
+  });
+
+  it('album video: the poster is the thumbnail, never the mp4', () => {
+    const albumReply = msg({ id: 'r1', reply_to_album_photo_id: 'v1', reply_kind: 'album_photo' });
+    const video = quote({
+      replyKind: 'album_photo',
+      quotedMessageId: null,
+      quotedAlbumPhotoId: 'v1',
+      mediaKind: 'video',
+      mediaPath: 'o/a/v1.mp4',
+      mediaPosterPath: 'o/a/v1-poster.jpg',
+      albumId: 'a',
+    });
+    expect(resolveQuote(albumReply, video, none)).toEqual({
+      state: 'album_photo',
+      albumId: 'a',
+      photoId: 'v1',
+      senderId: THEM,
+      thumbPath: 'o/a/v1-poster.jpg',
+      mediaKind: 'video',
+    });
+    // A video with no poster signs nothing: the placeholder shows.
+    expect(resolveQuote(albumReply, { ...video, mediaPosterPath: null }, none)).toMatchObject({
+      mediaKind: 'video',
+      thumbPath: null,
+    });
+    expect(quoteAccessibilityLabel(resolveQuote(albumReply, video, none)!, 'maya')).toBe('reply to maya, album video');
   });
 
   it('draws a message quote from the loaded original while the answer is on its way', () => {

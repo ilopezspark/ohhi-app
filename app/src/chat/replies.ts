@@ -128,8 +128,13 @@ export type QuoteView =
       albumId: string | null;
       photoId: string;
       senderId: string | null;
-      /** `album-photos` path for the thumbnail. */
+      /**
+       * `album-photos` path for the thumbnail: the photo, or for the album's
+       * video its poster (never the mp4, which is not an image).
+       */
       thumbPath: string | null;
+      /** Migration 0025: the album's one video quotes as its poster with a play mark. */
+      mediaKind: 'photo' | 'video';
     }
   | {
       /** Migration 0024: a prompt answer, replied to from its owner's profile. */
@@ -203,12 +208,14 @@ export function resolveQuote(
     }
     if (quote.replyKind === 'album_photo') {
       if (!quote.quotedAlbumPhotoId) return { state: 'unavailable' };
+      const video = quote.mediaKind === 'video';
       return {
         state: 'album_photo',
         albumId: quote.albumId,
         photoId: quote.quotedAlbumPhotoId,
         senderId: quote.quotedSenderId,
-        thumbPath: quote.mediaPath,
+        thumbPath: video ? quote.mediaPosterPath : quote.mediaPath,
+        mediaKind: video ? 'video' : 'photo',
       };
     }
     if (!quote.quotedMessageId) return { state: 'unavailable' };
@@ -261,7 +268,7 @@ export function quoteAccessibilityLabel(view: QuoteView, name: string): string {
     case 'unavailable':
       return `reply, ${QUOTE_UNAVAILABLE_COPY}`;
     case 'album_photo':
-      return `reply to ${name}, album photo`;
+      return `reply to ${name}, album ${view.mediaKind === 'video' ? 'video' : 'photo'}`;
     case 'prompt':
       return `reply to ${name === 'you' ? 'your' : `${name}'s`} answer, ${view.question}, ${view.answer}`;
     case 'profile_photo':

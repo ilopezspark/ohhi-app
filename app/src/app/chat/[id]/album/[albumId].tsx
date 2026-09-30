@@ -6,6 +6,7 @@ import { getAlbum, listAlbumPhotos, signedAlbumPhotoUrls } from '../../../../api
 import { me as fetchMe } from '../../../../api/me';
 import type { ShareFeedItem } from '../../../../chat/shareFeed';
 import { dropQueries, leaveScreen, useGoneLatch, useLeaveWhenGone } from '../../../../query/gone';
+import { albumSignPaths, albumStoryItems } from '../../../../albums/albumMedia';
 import { StoryViewer } from '../../../../albums/StoryViewer';
 import { useAlbumOwner } from '../../../../albums/useAlbumOwner';
 import { useScreenFocused } from '../../../../albums/useScreenFocused';
@@ -90,7 +91,8 @@ export default function ChatSharedAlbumScreen() {
     fallback
   );
 
-  const paths = useMemo(() => (photos ?? []).map((p) => p.storage_path), [photos]);
+  // A video's poster is signed with it (`albums/albumMedia.ts`).
+  const paths = useMemo(() => albumSignPaths(photos ?? []), [photos]);
   const pathsKey = useMemo(() => [...paths].sort().join('|'), [paths]);
   const {
     data: photoUrls,
@@ -104,10 +106,7 @@ export default function ChatSharedAlbumScreen() {
     refetchInterval: 45_000,
   });
 
-  const storyPhotos = useMemo(
-    () => (photos ?? []).map((p) => ({ id: p.id, uri: photoUrls?.[p.storage_path] ?? null })),
-    [photos, photoUrls]
-  );
+  const storyPhotos = useMemo(() => albumStoryItems(photos ?? [], photoUrls), [photos, photoUrls]);
 
   const ownerId = album?.owner_id ?? null;
   const owner = useAlbumOwner(gone ? null : ownerId);

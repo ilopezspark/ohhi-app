@@ -56,7 +56,7 @@ export function ReplyQuote({ view, name, thumbUrl, mine, onPress, testID }: Prop
     line = QUOTE_LOADING_COPY;
     showName = false;
   } else if (view.state === 'album_photo') {
-    line = 'album photo';
+    line = view.mediaKind === 'video' ? 'album video' : 'album photo';
   } else if (view.state === 'profile_photo') {
     line = PROFILE_PHOTO_QUOTE_COPY;
   } else if (view.state === 'prompt') {
@@ -69,6 +69,7 @@ export function ReplyQuote({ view, name, thumbUrl, mine, onPress, testID }: Prop
     (view.state === 'message' && (view.limited || !!view.thumbPath)) ||
     view.state === 'album_photo' ||
     view.state === 'profile_photo';
+  const albumVideo = view.state === 'album_photo' && view.mediaKind === 'video';
   const showImage = hasThumbSlot && !!thumbUrl && !thumbFailed && !(view.state === 'message' && view.limited);
 
   const content = (
@@ -100,17 +101,26 @@ export function ReplyQuote({ view, name, thumbUrl, mine, onPress, testID }: Prop
       {hasThumbSlot ? (
         <View style={styles.thumb} testID={`${testID}-thumb`}>
           {showImage ? (
-            <Image
-              source={{ uri: thumbUrl }}
-              style={styles.thumbImage}
-              resizeMode="cover"
-              onError={() => setThumbFailed(true)}
-              accessibilityIgnoresInvertColors
-              testID={`${testID}-image`}
-            />
+            <>
+              <Image
+                source={{ uri: thumbUrl }}
+                style={styles.thumbImage}
+                resizeMode="cover"
+                onError={() => setThumbFailed(true)}
+                accessibilityIgnoresInvertColors
+                testID={`${testID}-image`}
+              />
+              {albumVideo ? (
+                <View style={styles.playBadge} pointerEvents="none" testID={`${testID}-play`}>
+                  <PlayIcon size={12} color="#fff" />
+                </View>
+              ) : null}
+            </>
           ) : (
             <View style={styles.thumbPlaceholder} testID={`${testID}-placeholder`}>
-              {view.state === 'album_photo' ? (
+              {albumVideo ? (
+                <PlayIcon size={14} color={colors.subtle} />
+              ) : view.state === 'album_photo' ? (
                 <AlbumIcon size={16} color={colors.subtle} />
               ) : view.state === 'message' && view.mediaKind === 'video' ? (
                 <PlayIcon size={14} color={colors.subtle} />
@@ -166,6 +176,16 @@ const styles = StyleSheet.create({
   name: { fontWeight: '600' },
   thumb: { width: THUMB, height: THUMB, borderRadius: 8, overflow: 'hidden' },
   thumbImage: { width: '100%', height: '100%' },
+  playBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
   thumbPlaceholder: {
     flex: 1,
     backgroundColor: colors.dashed,
