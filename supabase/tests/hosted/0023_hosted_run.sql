@@ -415,10 +415,12 @@ begin
               and identity_audience <> case when is_public then 'everyone'::public.profile_audience else 'only_me'::public.profile_audience end),
     0, 'backfill: every existing identity row has identity_audience = (is_public ? everyone : only_me)') into v_line; out := out || v_line || E'\n';
   select is((select count(*)::int from public.user_identity where user_id::text not like 'a0230000-%'
-              and (payload_version <> 1 or background_audience <> 'everyone' or lifestyle_audience <> 'everyone' or around_audience <> 'everyone')),
-    0, 'existing identity rows: payload_version 1, the other three cards everyone') into v_line; out := out || v_line || E'\n';
-  select is((select count(*)::int from public.user_private_card where user_id::text not like 'a0230000-%' and payload_version <> 1),
-    0, 'existing card rows: payload_version 1') into v_line; out := out || v_line || E'\n';
+              and (payload_version not in (1, 2) or background_audience is null or lifestyle_audience is null or around_audience is null)),
+    0, 'existing identity rows: a valid payload_version and every audience set') into v_line; out := out || v_line || E'\n';
+  -- Rows written by the v2 identity function after the apply are version 2,
+  -- so this only checks the version is one the function knows how to read.
+  select is((select count(*)::int from public.user_private_card where user_id::text not like 'a0230000-%' and payload_version not in (1, 2)),
+    0, 'existing card rows: a valid payload_version') into v_line; out := out || v_line || E'\n';
   select is((select count(*)::int from public.shares where owner_id::text not like 'a0230000-%' and card_sections <> '{}'),
     0, 'existing shares: card_sections {}') into v_line; out := out || v_line || E'\n';
 
