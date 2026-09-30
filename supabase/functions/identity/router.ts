@@ -1,5 +1,7 @@
-// Routing, authorization and rate limiting for the four `identity` routes.
-// docs/edge-identity-plan.md §1 (shapes), §2 (auth), §5 (limits, log hygiene).
+// Routing, authorization and rate limiting for the `identity` routes.
+// docs/edge-identity-plan.md §1 (shapes), §2 (auth), §5 (limits, log hygiene);
+// payload v2 per docs/design/profile-restructure/reconcile.md C2, C3, C6, C9
+// and the owner rulings (per-card audience; share semantics).
 //
 // Kept separate from index.ts so the whole request path is testable without
 // binding a port: index.ts is only `Deno.serve(createHandler(...))`.
@@ -12,16 +14,40 @@ import {
   unauthenticated,
   validationFailed,
 } from "../_shared/http.ts";
-import type { Db } from "./db.ts";
+import type { Db, IdentityRow } from "./db.ts";
 import { type KeyDomain } from "./crypto.ts";
-import { cardFieldsFilled, identityFieldsFilled } from "./fields.ts";
 import {
-  readCardPayload,
-  readIdentityPayload,
-  validateCardRequest,
-  validateIdentityRequest,
+  type Audiences,
+  CARD_SECTION_SPECS,
+  cardFieldsFilled,
+  type CardPayloadV2,
+  defaultAudiences,
+  emptyCard,
+  emptyIdentity,
+  IDENTITY_FIELD_SPECS,
+  type IdentityCard,
+  identityFieldsFilled,
+  type IdentityPayloadV2,
+  isFilled,
+  isGatedSection,
+} from "./fields.ts";
+import { cardFromStored, identityFromStored } from "./mapping.ts";
+import {
+  applyCardPut,
+  applyIdentityPut,
+  isPublicFor,
+  newTypedEntries,
+  validateCardPut,
+  validateIdentityPut,
   ValidationError,
 } from "./validate.ts";
+import {
+  CARD_GROUPS,
+  CARD_SECTIONS,
+  IDENTITY_CARD_ORDER,
+  IDENTITY_CARDS,
+  IDENTITY_FIELDS,
+} from "./vocab.ts";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -100,6 +126,20 @@ export function routeSegments(pathname: string): string[] {
   return parts;
 }
 
+/**
+ * The route as logged: user ids become `:id`, and a reveal's section name
+ * becomes `:section`, so the log never records which intimacy section a
+ * viewer opened (no read receipts, reconcile C3).
+ */
+export function routeLabel(method: string, segments: string[]): string {
+  const labelled = segments.map((s, i) => {
+    if (UUID_RE.test(s)) return ":id";
+    if (i === 3 && segments[0] === "card" && segments[2] === "reveal") return ":section";
+    return s;
+  });
+  return `${method} /${labelled.join("/")}`;
+}
+
 // -----------------------------------------------------------------------------
 // Handler
 // -----------------------------------------------------------------------------
@@ -111,9 +151,7 @@ export function createHandler(deps: RouterDeps): (req: Request) => Promise<Respo
   return async function handle(req: Request): Promise<Response> {
     const startedAt = now();
     const segments = routeSegments(new URL(req.url).pathname);
-    const route = `${req.method} /${
-      segments.map((s) => (UUID_RE.test(s) ? ":id" : s)).join("/")
-    }`;
+    const route = routeLabel(req.method, segments);
     let userId: string | null = null;
     let response: Response;
 
@@ -163,22 +201,32 @@ async function dispatch(
   deps: RouterDeps,
 ): Promise<Response> {
   const { method } = req;
+  const [first, second, third, fourth] = segments;
 
   // PUT /identity
   if (segments.length === 0) {
     return method === "PUT" ? await putIdentity(req, userId, deps) : notFound();
   }
-  // PUT /card
-  if (segments.length === 1 && segments[0] === "card") {
+  // PUT /identity/card
+  if (segments.length === 1 && first === "card") {
     return method === "PUT" ? await putCard(req, userId, deps) : notFound();
   }
   // GET /identity/:user_id
-  if (segments.length === 1 && UUID_RE.test(segments[0])) {
-    return method === "GET" ? await getIdentity(segments[0], userId, deps) : notFound();
+  if (segments.length === 1 && UUID_RE.test(first)) {
+    return method === "GET" ? await getIdentity(first, userId, deps) : notFound();
   }
-  // GET /card/:user_id
-  if (segments.length === 2 && segments[0] === "card" && UUID_RE.test(segments[1])) {
-    return method === "GET" ? await getCard(segments[1], userId, deps) : notFound();
+  // GET /identity/card/:user_id
+  if (segments.length === 2 && first === "card" && UUID_RE.test(second)) {
+    return method === "GET" ? await getCard(second, userId, deps) : notFound();
+  }
+  // GET /identity/card/:user_id/reveal/:section
+  if (
+    segments.length === 4 && first === "card" && UUID_RE.test(second) &&
+    third === "reveal"
+  ) {
+    return method === "GET"
+      ? await revealSection(second, fourth, userId, deps)
+      : notFound();
   }
   return notFound();
 }
@@ -193,32 +241,101 @@ async function readJsonBody(req: Request): Promise<unknown> {
   }
 }
 
+// -----------------------------------------------------------------------------
+// GET /identity/:user_id
+// -----------------------------------------------------------------------------
+
+type CardValues = Partial<
+  Record<keyof IdentityPayloadV2, IdentityPayloadV2[keyof IdentityPayloadV2]>
+>;
+
+function cardValues(payload: IdentityPayloadV2, card: IdentityCard): CardValues {
+  const out: CardValues = {};
+  for (const field of IDENTITY_CARDS[card]) out[field] = payload[field];
+  return out;
+}
+
+/**
+ * The public cards a caller may see (ruling 1). Pure.
+ *
+ * owner: every card, filled or not.
+ * anyone else: only filled cards, and only when the card's audience admits
+ *   them: `everyone`; `after_hi` while `gateOpen`; `only_me` never. "before
+ *   you message me" has no audience: always shown once filled. A hidden card
+ *   is omitted, never marked, so "hidden" and "empty" look the same.
+ */
+export function visibleCards(
+  payload: IdentityPayloadV2,
+  audiences: Audiences,
+  viewer: { isOwner: boolean; gateOpen: boolean },
+): Partial<Record<IdentityCard, CardValues>> {
+  const out: Partial<Record<IdentityCard, CardValues>> = {};
+  for (const card of IDENTITY_CARD_ORDER) {
+    const values = cardValues(payload, card);
+    if (viewer.isOwner) {
+      out[card] = values;
+      continue;
+    }
+    if (!Object.values(values).some(isFilled)) continue;
+    if (card !== "before_you_message") {
+      const audience = audiences[card];
+      const admitted = audience === "everyone" ||
+        (audience === "after_hi" && viewer.gateOpen);
+      if (!admitted) continue;
+    }
+    out[card] = values;
+  }
+  return out;
+}
+
 async function getIdentity(
   targetId: string,
   callerId: string,
   deps: RouterDeps,
 ): Promise<Response> {
-  const row = await deps.db.getIdentity(targetId, callerId);
-  // Decision 24: "no such row" and "not authorized" are the same 404. Plan §2:
-  // for identity the authorization check is the `is_public` column itself.
-  // Decision 33: a block in either direction (private.is_blocked, symmetric)
-  // hides the row even when it is public — same generic 404, no distinguishable
-  // error, exactly like the card path's private.share_is_active.
-  // Decision 90 (migration 0014): `blocked` is also true when the owner is
-  // suspended, banned or deleted (private.is_visible_user), so a hidden user's
-  // public identity is the same 404 as a missing one.
+  const isOwner = targetId === callerId;
+  const row: IdentityRow | null = await deps.db.getIdentity(targetId, callerId);
+  // Decision 24: "no such row", "blocked", "hidden owner", "unverified caller"
+  // and "nothing you may see" are all the same 404. A block in either
+  // direction (decision 33), a suspended/banned/deleted owner (decision 90)
+  // and a caller who is not a verified adult (decision 97) arrive as
+  // `blocked`. The owner's own read ignores the flag.
   if (!row || !row.payload_ciphertext) return notFound();
-  if (targetId !== callerId && (!row.is_public || row.blocked)) return notFound();
+  if (!isOwner && row.blocked) return notFound();
 
-  const payload = readIdentityPayload(
+  const payload = identityFromStored(
+    row.payload_version,
     await deps.decrypt("identity", row.payload_ciphertext, row.key_version),
   );
-  return json({
-    user_id: targetId,
-    pronouns: payload.pronouns,
-    orientation: payload.orientation,
-    is_public: row.is_public,
-  });
+  const cards = visibleCards(payload, row.audiences, { isOwner, gateOpen: row.gate_open });
+  if (!isOwner && Object.keys(cards).length === 0) return notFound();
+
+  const body: Record<string, unknown> = { user_id: targetId, cards };
+  if (isOwner) {
+    body.audiences = row.audiences;
+    body.is_public = row.is_public;
+  }
+  // Transitional v1 keys, so a build that predates v2 still renders and
+  // round-trips pronouns/orientation. Present only with the identity card.
+  // Removed in the cleanup phase (reconcile E, phase 6).
+  if (cards.identity) {
+    body.pronouns = payload.pronouns[0] ?? null;
+    body.orientation = payload.orientation;
+  }
+  return json(body);
+}
+
+// -----------------------------------------------------------------------------
+// GET /identity/card/:user_id and …/reveal/:section
+// -----------------------------------------------------------------------------
+
+async function loadCard(targetId: string, deps: RouterDeps): Promise<CardPayloadV2 | null> {
+  const row = await deps.db.getCard(targetId);
+  if (!row || !row.payload_ciphertext) return null;
+  return cardFromStored(
+    row.payload_version,
+    await deps.decrypt("card", row.payload_ciphertext, row.key_version),
+  );
 }
 
 async function getCard(
@@ -226,38 +343,85 @@ async function getCard(
   callerId: string,
   deps: RouterDeps,
 ): Promise<Response> {
-  const row = await deps.db.getCard(targetId);
-  if (!row || !row.payload_ciphertext) return notFound();
-  if (targetId !== callerId) {
-    // private.share_is_active(owner, viewer, 'private_card', owner) — it already
-    // folds in `private.is_blocked` and a `revoked_at` share, so revocation and
-    // a block both take effect on the very next read. Since migration 0014 it
-    // also requires the owner to be visible (decision 90), in SQL, so a
-    // suspended, banned or deleted owner's card is a 404 with no change here.
-    if (!(await deps.db.cardShareIsActive(targetId, callerId))) return notFound();
+  const isOwner = targetId === callerId;
+  let ticked: string[] = [];
+  if (!isOwner) {
+    // private.card_share_sections(owner, viewer) folds in
+    // private.share_is_active: a revoked share, a block, a hidden owner and an
+    // unverified reader are all null, so each takes effect on the next read.
+    const sections = await deps.db.cardShareSections(targetId, callerId);
+    if (sections === null) return notFound();
+    ticked = sections;
   }
+  const payload = await loadCard(targetId, deps);
+  if (!payload) return notFound();
 
-  const payload = readCardPayload(
-    await deps.decrypt("card", row.payload_ciphertext, row.key_version),
-  );
-  return json({ user_id: targetId, ...payload });
+  if (isOwner) return json({ user_id: targetId, ...payload, gated: [] });
+
+  // Ruling 6: standard is always included, boundaries always attached; gated
+  // sections are covers only (names, never content), and only those ticked on
+  // this share that hold something.
+  const body: Record<string, unknown> = { user_id: targetId };
+  for (const section of [...CARD_GROUPS.standard, ...CARD_GROUPS.always_attached]) {
+    body[section] = payload[section];
+  }
+  body.gated = CARD_GROUPS.gated.filter((s) => ticked.includes(s) && isFilled(payload[s]));
+  return json(body);
 }
+
+async function revealSection(
+  targetId: string,
+  section: string,
+  callerId: string,
+  deps: RouterDeps,
+): Promise<Response> {
+  if (!isGatedSection(section)) return notFound();
+  if (targetId !== callerId) {
+    const sections = await deps.db.cardShareSections(targetId, callerId);
+    if (sections === null || !sections.includes(section)) return notFound();
+  }
+  const payload = await loadCard(targetId, deps);
+  if (!payload || !isFilled(payload[section])) return notFound();
+  return json({ user_id: targetId, section, values: payload[section] });
+}
+
+// -----------------------------------------------------------------------------
+// PUT /identity and PUT /identity/card
+// -----------------------------------------------------------------------------
 
 async function putIdentity(
   req: Request,
   userId: string,
   deps: RouterDeps,
 ): Promise<Response> {
-  const body = validateIdentityRequest(await readJsonBody(req));
-  const payload = { pronouns: body.pronouns, orientation: body.orientation };
-  const { ciphertext, keyVersion } = await deps.encrypt("identity", payload);
-  const written = await deps.db.writeIdentity(
-    userId,
-    ciphertext,
-    keyVersion,
-    identityFieldsFilled(payload),
-    body.is_public,
-  );
+  const put = validateIdentityPut(await readJsonBody(req));
+  const written = await deps.db.updateIdentity(userId, async (current, tools) => {
+    const stored = current?.payload_ciphertext
+      ? identityFromStored(
+        current.payload_version,
+        await deps.decrypt("identity", current.payload_ciphertext, current.key_version),
+      )
+      : emptyIdentity();
+    const { payload, audiences } = applyIdentityPut(
+      put,
+      stored,
+      current?.audiences ?? defaultAudiences(),
+    );
+    const typed = newTypedEntries(IDENTITY_FIELD_SPECS, IDENTITY_FIELDS, stored, payload);
+    if (typed.length > 0) await tools.assertClean(typed);
+    const { ciphertext, keyVersion } = await deps.encrypt("identity", payload);
+    return {
+      ciphertext,
+      keyVersion,
+      fieldsFilled: identityFieldsFilled(payload),
+      // `write_identity` always sets is_public. On an existing row it gets the
+      // stored value back (a no-op), so the 0023 trigger
+      // `user_identity_audience_sync` lets the identity_audience update that
+      // follows drive it. A new row gets the value that audience implies.
+      isPublic: current ? current.is_public : isPublicFor(audiences),
+      audiences,
+    };
+  });
   return json({ user_id: userId, ...written });
 }
 
@@ -266,13 +430,19 @@ async function putCard(
   userId: string,
   deps: RouterDeps,
 ): Promise<Response> {
-  const payload = validateCardRequest(await readJsonBody(req));
-  const { ciphertext, keyVersion } = await deps.encrypt("card", payload);
-  const written = await deps.db.writeCard(
-    userId,
-    ciphertext,
-    keyVersion,
-    cardFieldsFilled(payload),
-  );
+  const patch = validateCardPut(await readJsonBody(req));
+  const written = await deps.db.updateCard(userId, async (current, tools) => {
+    const stored = current?.payload_ciphertext
+      ? cardFromStored(
+        current.payload_version,
+        await deps.decrypt("card", current.payload_ciphertext, current.key_version),
+      )
+      : emptyCard();
+    const payload = applyCardPut(patch, stored);
+    const typed = newTypedEntries(CARD_SECTION_SPECS, CARD_SECTIONS, stored, payload);
+    if (typed.length > 0) await tools.assertClean(typed);
+    const { ciphertext, keyVersion } = await deps.encrypt("card", payload);
+    return { ciphertext, keyVersion, fieldsFilled: cardFieldsFilled(payload) };
+  });
   return json({ user_id: userId, ...written });
 }

@@ -1,141 +1,43 @@
-// Request-body schemas and the chip vocabularies.
-// docs/edge-identity-plan.md §3/§7 Q1-Q2, decisions 20 and 21; vocabulary
-// values per docs/design/me-redesign/brief.md rulings 1, 3, 4, 5, 6 and the
-// `08-edit-private-card.png` artboard (28 September 2026).
+// Request-body schemas for payload v2, the v1 onboarding body, and the
+// shape-only readers for stored payloads.
+// docs/design/profile-restructure/reconcile.md C1-C3, C6, C9 and the owner rulings.
 //
-// The vocabularies are a function-side constant, versioned with this function's
-// deploys, not a DB table: there is no product-owned equivalent of `tags` for
-// these fields yet (decision 21, "until product defines the real taxonomy").
-// `hard_nos` is the one exception (ruling 4): it also accepts typed entries
-// alongside its fixed suggestions. Everything else below is still a fixed
-// allow-list, now matching the redesign artboards rather than a placeholder.
+// The vocabularies themselves live in vocab.ts (pure data) and are re-exported
+// from here, so `import { PRONOUN_OPTIONS } from "./validate.ts"` keeps working.
 //
 // Every violation is a 400 with field-level detail in the message. Unknown
-// top-level keys are rejected, not ignored.
+// top-level keys are rejected, not ignored. Write-your-own entries are only
+// length- and shape-checked here; the word filter (0018) runs in router.ts,
+// inside the write transaction, because it needs the database.
 
-/** Decision 20 / artboard order: a short fixed pronoun list, plus a free-text opt-out. */
-export const PRONOUN_OPTIONS = [
-  "he/him",
-  "she/her",
-  "they/them",
-  "ask me",
-] as const;
+import {
+  type Audience,
+  type AudienceCard,
+  type Audiences,
+  CARD_SECTION_SPECS,
+  type CardPayloadV2,
+  type CardSection,
+  emptyCard,
+  emptyIdentity,
+  type FieldSpec,
+  type FieldValue,
+  IDENTITY_FIELD_SPECS,
+  type IdentityField,
+  type IdentityPayloadV2,
+} from "./fields.ts";
+import {
+  AUDIENCE_CARDS,
+  AUDIENCES,
+  CARD_SECTIONS,
+  CHIP_MAX_LENGTH,
+  IDENTITY_FIELDS,
+  WEIGHT_PARENTS,
+} from "./vocab.ts";
 
-/** One length cap for every chip and for the decision-20 free-text opt-out. */
-export const CHIP_MAX_LENGTH = 40;
+export * from "./vocab.ts";
 
-/** Cap on the decision-20 free-text pronoun opt-out. */
-export const PRONOUN_MAX_LENGTH = CHIP_MAX_LENGTH;
-
-/** Cap on an orientation chip. */
-export const ORIENTATION_CHIP_MAX_LENGTH = CHIP_MAX_LENGTH;
-
-/**
- * Ruling 6 / artboard order: orientation ("i'm") is chips only, up to three,
- * from a fixed list. "single" is deliberately never offered (ruling 6).
- */
-export const ORIENTATION_CHIPS = [
-  "bi",
-  "straight",
-  "gay",
-  "queer",
-  "asexual",
-  "rather not say",
-] as const;
-
-export const ORIENTATION_MAX_ITEMS = 3;
-
-export const CARD_FIELDS = ["into", "safer_sex", "kinks", "hard_nos"] as const;
-export type CardField = typeof CARD_FIELDS[number];
-
-/** Decision 21 / ruling 4: 0-8 chips per array, each at most 40 characters. */
-export const CARD_MAX_ITEMS = 8;
-export const CARD_CHIP_MAX_LENGTH = CHIP_MAX_LENGTH;
-
-/**
- * Fixed per-field allow-lists, matching the redesign artboards (ruling 3 keeps
- * `kinks` as-is; ruling 4 makes `hard_nos` accept typed entries in addition to
- * its fixed suggestions below — see `SAFER_SEX_TESTED_PATTERN` and
- * `hardNosArray`/`validateCardRequest` for how the two exceptions apply).
- */
-export const CARD_CHIPS: Record<CardField, readonly string[]> = {
-  into: [
-    "men",
-    "women",
-    "nonbinary people",
-    "everyone",
-  ],
-  safer_sex: [
-    "condoms",
-    "on prep",
-    "on birth control",
-    "ask me",
-  ],
-  kinks: [
-    "vanilla",
-    "light bondage",
-    "roleplay",
-    "toys",
-    "exhibitionism",
-    "voyeurism",
-    "dom",
-    "sub",
-    "switch",
-    "open to discuss",
-  ],
-  /** Fixed suggestions only — ruling 4 lets a card also carry typed entries. */
-  hard_nos: [
-    "no pics unasked",
-    "no substances",
-    "nothing off campus",
-  ],
-};
-
-/** Three-letter lowercase month abbreviations accepted by the `tested` pattern. */
-export const SAFER_SEX_TESTED_MONTHS = [
-  "jan",
-  "feb",
-  "mar",
-  "apr",
-  "may",
-  "jun",
-  "jul",
-  "aug",
-  "sep",
-  "oct",
-  "nov",
-  "dec",
-] as const;
-
-/**
- * `safer_sex` also accepts `tested <mon> '<yy>` (e.g. "tested apr '26"): a
- * lowercase three-letter month from `SAFER_SEX_TESTED_MONTHS`, a literal
- * space, an apostrophe, and a two-digit year. It is a pattern, not a fixed
- * chip, so it is not listed in `CARD_CHIPS.safer_sex`.
- */
-export const SAFER_SEX_TESTED_PATTERN = new RegExp(
-  `^tested (${SAFER_SEX_TESTED_MONTHS.join("|")}) '\\d{2}$`,
-);
-
-function isSaferSexChip(item: string): boolean {
-  return CARD_CHIPS.safer_sex.includes(item) || SAFER_SEX_TESTED_PATTERN.test(item);
-}
-
-/** Control characters (including tab/newline) are never allowed in a typed hard-no. */
-// deno-lint-ignore no-control-regex
-const CONTROL_CHAR_RE = /[\u0000-\u001F\u007F]/;
-
-export interface IdentityPayload {
-  pronouns: string | null;
-  orientation: string[];
-}
-
-/** PUT /identity body: the encrypted payload plus the `is_public` column. */
-export interface IdentityRequest extends IdentityPayload {
-  is_public: boolean;
-}
-
-export type CardPayload = Record<CardField, string[]>;
+/** The neutral refusal every 0018 write path uses; never echoes the text. */
+export const DIRTY_TEXT_MESSAGE = "that text can't be used";
 
 export class ValidationError extends Error {
   constructor(message: string) {
@@ -144,17 +46,25 @@ export class ValidationError extends Error {
   }
 }
 
-function asObject(body: unknown): Record<string, unknown> {
+/** Control characters (including tab/newline) are never allowed in a typed entry. */
+// deno-lint-ignore no-control-regex
+const CONTROL_CHAR_RE = /[\u0000-\u001F\u007F]/;
+
+function asObject(body: unknown, what = "Body"): Record<string, unknown> {
   if (body === null || typeof body !== "object" || Array.isArray(body)) {
-    throw new ValidationError("Body must be a JSON object.");
+    throw new ValidationError(`${what} must be a JSON object.`);
   }
   return body as Record<string, unknown>;
 }
 
-function rejectUnknownKeys(obj: Record<string, unknown>, allowed: readonly string[]): void {
+function rejectUnknownKeys(
+  obj: Record<string, unknown>,
+  allowed: readonly string[],
+  hint = "",
+): void {
   const unknown = Object.keys(obj).filter((k) => !allowed.includes(k));
   if (unknown.length > 0) {
-    throw new ValidationError(`Unknown key(s): ${unknown.sort().join(", ")}.`);
+    throw new ValidationError(`Unknown key(s): ${unknown.sort().join(", ")}.${hint}`);
   }
 }
 
@@ -165,190 +75,360 @@ function requireKeys(obj: Record<string, unknown>, required: readonly string[]):
   }
 }
 
-/** A chip array: right type, within maxItems, within maxLength, on the allow-list. */
-function chipArray(
-  value: unknown,
-  field: string,
-  allowed: readonly string[] | ((item: string) => boolean),
-  maxItems: number,
-  maxLength: number,
-): string[] {
-  if (!Array.isArray(value)) {
-    throw new ValidationError(`${field} must be an array of strings.`);
-  }
-  if (value.length > maxItems) {
-    throw new ValidationError(
-      `${field} accepts at most ${maxItems} items, got ${value.length}.`,
-    );
-  }
-  const isAllowed = typeof allowed === "function"
-    ? allowed
-    : (item: string) => allowed.includes(item);
-  const out: string[] = [];
-  for (const item of value) {
-    if (typeof item !== "string") {
-      throw new ValidationError(`${field} must contain only strings.`);
-    }
-    if (item.length > maxLength) {
-      throw new ValidationError(`${field} items must be at most ${maxLength} characters.`);
-    }
-    if (!isAllowed(item)) {
-      throw new ValidationError(`${field} contains an unknown value.`);
-    }
-    if (out.includes(item)) {
-      throw new ValidationError(`${field} contains a duplicate value.`);
-    }
-    out.push(item);
-  }
-  return out;
+/** Trims and collapses internal whitespace runs to one space. */
+export function normalizeTyped(item: string): string {
+  return item.trim().replace(/\s+/g, " ");
+}
+
+/** The fixed option matching `item` case-insensitively, if any. */
+function canonicalOption(options: readonly string[], item: string): string | undefined {
+  const key = item.toLowerCase();
+  return options.find((o) => o.toLowerCase() === key);
 }
 
 /**
- * Ruling 4: `hard_nos` accepts typed entries alongside its fixed suggestions.
- * A typed entry is trimmed, has its internal whitespace runs collapsed to a
- * single space, must be 1-40 characters after that, and must contain no
- * control character (including a newline) anywhere in the original string.
- * The whole group (fixed selections plus typed entries) is de-duplicated
- * case-insensitively — a typed entry that case-insensitively matches a fixed
- * suggestion is stored under the fixed suggestion's own spelling.
+ * Validates one field's value against its spec.
+ *
+ * single: a string on the list, or null.
+ * multi, fixed only: an array of distinct strings, each on the list (exact).
+ * multi, write your own: each entry is either a fixed option (matched
+ *   case-insensitively and stored under the list's own spelling) or a typed
+ *   entry: no control characters, trimmed, whitespace collapsed, 1..maxLength
+ *   characters. De-duplicated case-insensitively. At most `typed.maxCount`
+ *   typed entries and at most `maxItems` in total.
  */
-function hardNosArray(
-  value: unknown,
-  field: string,
-  fixed: readonly string[],
-  maxItems: number,
-  maxLength: number,
-): string[] {
+export function validateField(spec: FieldSpec, value: unknown, field: string): FieldValue {
+  if (spec.kind === "single") {
+    if (value === null) return null;
+    if (typeof value !== "string") {
+      throw new ValidationError(`${field} must be a string or null.`);
+    }
+    if (!spec.options.includes(value)) {
+      throw new ValidationError(`${field} contains an unknown value.`);
+    }
+    return value;
+  }
+
   if (!Array.isArray(value)) {
     throw new ValidationError(`${field} must be an array of strings.`);
   }
-  if (value.length > maxItems) {
+  if (spec.maxItems !== null && value.length > spec.maxItems) {
     throw new ValidationError(
-      `${field} accepts at most ${maxItems} items, got ${value.length}.`,
+      `${field} accepts at most ${spec.maxItems} items, got ${value.length}.`,
     );
   }
   const seen = new Set<string>();
   const out: string[] = [];
+  let typedCount = 0;
   for (const item of value) {
     if (typeof item !== "string") {
       throw new ValidationError(`${field} must contain only strings.`);
     }
-    if (CONTROL_CHAR_RE.test(item)) {
-      throw new ValidationError(`${field} items must not contain control characters.`);
+    let stored: string;
+    if (spec.typed) {
+      if (CONTROL_CHAR_RE.test(item)) {
+        throw new ValidationError(`${field} items must not contain control characters.`);
+      }
+      const normalized = normalizeTyped(item);
+      if (normalized.length === 0) {
+        throw new ValidationError(`${field} items must be at least 1 character.`);
+      }
+      const canonical = canonicalOption(spec.options, normalized);
+      if (canonical) {
+        stored = canonical;
+      } else {
+        if (normalized.length > spec.typed.maxLength) {
+          throw new ValidationError(
+            `${field} typed entries must be at most ${spec.typed.maxLength} characters.`,
+          );
+        }
+        typedCount += 1;
+        stored = normalized;
+      }
+    } else {
+      if (item.length > CHIP_MAX_LENGTH) {
+        throw new ValidationError(
+          `${field} items must be at most ${CHIP_MAX_LENGTH} characters.`,
+        );
+      }
+      if (!spec.options.includes(item)) {
+        throw new ValidationError(`${field} contains an unknown value.`);
+      }
+      stored = item;
     }
-    const trimmed = item.trim().replace(/ {2,}/g, " ");
-    if (trimmed.length === 0) {
-      throw new ValidationError(`${field} items must be at least 1 character.`);
-    }
-    if (trimmed.length > maxLength) {
-      throw new ValidationError(`${field} items must be at most ${maxLength} characters.`);
-    }
-    const key = trimmed.toLowerCase();
+    const key = stored.toLowerCase();
     if (seen.has(key)) {
       throw new ValidationError(`${field} contains a duplicate value.`);
     }
     seen.add(key);
-    const canonical = fixed.find((f) => f.toLowerCase() === key);
-    out.push(canonical ?? trimmed);
+    out.push(stored);
   }
-  return out;
-}
-
-/** Validates a PUT /identity body. Throws ValidationError on any violation. */
-export function validateIdentityRequest(body: unknown): IdentityRequest {
-  const obj = asObject(body);
-  rejectUnknownKeys(obj, ["pronouns", "orientation", "is_public"]);
-  requireKeys(obj, ["pronouns", "orientation", "is_public"]);
-
-  const { pronouns, orientation, is_public: isPublic } = obj;
-
-  if (pronouns !== null && typeof pronouns !== "string") {
-    throw new ValidationError("pronouns must be a string or null.");
-  }
-  if (typeof pronouns === "string") {
-    if (pronouns.length === 0) {
-      throw new ValidationError("pronouns must be null rather than an empty string.");
-    }
-    // Decision 20: the fixed list, or a free-text opt-out under the cap.
-    if (pronouns.length > PRONOUN_MAX_LENGTH) {
-      throw new ValidationError(
-        `pronouns must be at most ${PRONOUN_MAX_LENGTH} characters.`,
-      );
-    }
-  }
-  if (typeof isPublic !== "boolean") {
-    throw new ValidationError("is_public must be a boolean.");
-  }
-
-  return {
-    pronouns: (pronouns as string | null) ?? null,
-    orientation: chipArray(
-      orientation,
-      "orientation",
-      ORIENTATION_CHIPS,
-      ORIENTATION_MAX_ITEMS,
-      ORIENTATION_CHIP_MAX_LENGTH,
-    ),
-    is_public: isPublic,
-  };
-}
-
-/** Validates a PUT /card body. Throws ValidationError on any violation. */
-export function validateCardRequest(body: unknown): CardPayload {
-  const obj = asObject(body);
-  rejectUnknownKeys(obj, CARD_FIELDS);
-  requireKeys(obj, CARD_FIELDS);
-
-  const out = {} as CardPayload;
-  for (const field of CARD_FIELDS) {
-    if (field === "hard_nos") {
-      // Ruling 4: the only field that accepts typed entries.
-      out[field] = hardNosArray(
-        obj[field],
-        field,
-        CARD_CHIPS.hard_nos,
-        CARD_MAX_ITEMS,
-        CARD_CHIP_MAX_LENGTH,
-      );
-      continue;
-    }
-    out[field] = chipArray(
-      obj[field],
-      field,
-      // `safer_sex` also accepts the `tested <mon> '<yy>` pattern; every
-      // other field (`into`, `kinks`) stays a plain fixed-list check.
-      field === "safer_sex" ? isSaferSexChip : CARD_CHIPS[field],
-      CARD_MAX_ITEMS,
-      CARD_CHIP_MAX_LENGTH,
+  if (spec.typed && typedCount > spec.typed.maxCount) {
+    throw new ValidationError(
+      `${field} accepts at most ${spec.typed.maxCount} typed ${
+        spec.typed.maxCount === 1 ? "entry" : "entries"
+      }.`,
     );
   }
   return out;
 }
 
-/**
- * Coerces a decrypted blob back into the response shape. A stored payload
- * predates any later vocabulary change, so this is shape-only — it must not
- * re-run the allow-list, or a chip retired by product would make an existing
- * row unreadable.
- */
-export function readIdentityPayload(value: unknown): IdentityPayload {
-  const obj = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const pronouns = typeof obj.pronouns === "string" ? obj.pronouns : null;
-  const orientation = Array.isArray(obj.orientation)
-    ? obj.orientation.filter((v): v is string => typeof v === "string")
-    : [];
-  return { pronouns, orientation };
+/** Entries of a multi field that are not on its fixed list (the typed ones). */
+export function typedEntries(spec: FieldSpec, value: FieldValue): string[] {
+  if (spec.kind !== "multi" || !spec.typed || !Array.isArray(value)) return [];
+  return value.filter((v) => !spec.options.includes(v));
 }
 
-/** Shape-only read of a stored card payload; see `readIdentityPayload`. */
-export function readCardPayload(value: unknown): CardPayload {
-  const obj = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const out = {} as CardPayload;
-  for (const field of CARD_FIELDS) {
-    const raw = obj[field];
-    out[field] = Array.isArray(raw)
-      ? raw.filter((v): v is string => typeof v === "string")
-      : [];
+/**
+ * Typed entries present in `next` but not in `stored`, across every field
+ * that accepts them. Only these go through the word filter: text already
+ * stored is not re-checked (the 0018 rule, reconcile C6).
+ */
+export function newTypedEntries<K extends string>(
+  specs: Record<K, FieldSpec>,
+  keys: readonly K[],
+  stored: Record<K, FieldValue>,
+  next: Record<K, FieldValue>,
+): string[] {
+  const out: string[] = [];
+  for (const key of keys) {
+    const before = new Set(typedEntries(specs[key], stored[key]));
+    for (const entry of typedEntries(specs[key], next[key])) {
+      if (!before.has(entry)) out.push(entry);
+    }
   }
   return out;
+}
+
+function validateAudiences(value: unknown): Partial<Audiences> {
+  const obj = asObject(value, "audiences");
+  rejectUnknownKeys(obj, AUDIENCE_CARDS);
+  const out: Partial<Audiences> = {};
+  for (const card of AUDIENCE_CARDS) {
+    if (!Object.hasOwn(obj, card)) continue;
+    const audience = obj[card];
+    if (
+      typeof audience !== "string" || !(AUDIENCES as readonly string[]).includes(audience)
+    ) {
+      throw new ValidationError(
+        `audiences.${card} must be one of ${AUDIENCES.join(", ")}.`,
+      );
+    }
+    out[card] = audience as Audience;
+  }
+  return out;
+}
+
+// -----------------------------------------------------------------------------
+// PUT /identity
+// -----------------------------------------------------------------------------
+
+/**
+ * The v1 body onboarding sends (reconcile C9), still accepted exactly:
+ * `{pronouns: string|null, orientation: string[], is_public: boolean}`, all
+ * three keys required. Checked against the v2 vocabularies: the pronoun is a
+ * listed option or one typed entry of at most 16 characters.
+ */
+export interface IdentityPutV1 {
+  kind: "v1";
+  pronoun: string | null;
+  orientation: string[];
+  isPublic: boolean;
+}
+
+/** A v2 partial patch: any subset of the 16 fields, plus any of the four audiences. */
+export interface IdentityPutV2 {
+  kind: "v2";
+  patch: Partial<IdentityPayloadV2>;
+  audiences: Partial<Audiences>;
+}
+
+export type IdentityPut = IdentityPutV1 | IdentityPutV2;
+
+export const IDENTITY_V1_KEYS = ["pronouns", "orientation", "is_public"] as const;
+
+/** Validates a PUT /identity body. The presence of `is_public` selects the v1 body. */
+export function validateIdentityPut(body: unknown): IdentityPut {
+  const obj = asObject(body);
+
+  if (Object.hasOwn(obj, "is_public")) {
+    rejectUnknownKeys(obj, IDENTITY_V1_KEYS);
+    requireKeys(obj, IDENTITY_V1_KEYS);
+    const { pronouns, orientation, is_public: isPublic } = obj;
+    if (pronouns !== null && typeof pronouns !== "string") {
+      throw new ValidationError("pronouns must be a string or null.");
+    }
+    if (pronouns === "") {
+      throw new ValidationError("pronouns must be null rather than an empty string.");
+    }
+    if (typeof isPublic !== "boolean") {
+      throw new ValidationError("is_public must be a boolean.");
+    }
+    const pronoun = pronouns === null
+      ? null
+      : (validateField(IDENTITY_FIELD_SPECS.pronouns, [pronouns], "pronouns") as string[])[
+        0
+      ];
+    return {
+      kind: "v1",
+      pronoun,
+      orientation: validateField(
+        IDENTITY_FIELD_SPECS.orientation,
+        orientation,
+        "orientation",
+      ) as string[],
+      isPublic,
+    };
+  }
+
+  rejectUnknownKeys(obj, [...IDENTITY_FIELDS, "audiences"]);
+  const patch: Record<string, FieldValue> = {};
+  for (const field of IDENTITY_FIELDS) {
+    if (!Object.hasOwn(obj, field)) continue;
+    patch[field] = validateField(IDENTITY_FIELD_SPECS[field], obj[field], field);
+  }
+  const audiences = Object.hasOwn(obj, "audiences") ? validateAudiences(obj.audiences) : {};
+  if (Object.keys(patch).length === 0 && Object.keys(audiences).length === 0) {
+    throw new ValidationError("Body must set at least one field or audience.");
+  }
+  return { kind: "v2", patch: patch as Partial<IdentityPayloadV2>, audiences };
+}
+
+/**
+ * Applies a validated PUT /identity to the stored payload and audiences.
+ * Pure. Throws ValidationError when a weight is set without its parent.
+ *
+ * v1 body:
+ *   - pronouns: null clears them. A string equal to the stored first pronoun
+ *     keeps the stored list (an old client round-trips only the first one);
+ *     any other string replaces the list with just that pronoun.
+ *   - orientation replaces the stored list.
+ *   - is_public true -> identity audience `everyone`; false -> `only_me`,
+ *     except that a stored `after_hi` stays `after_hi` (it is already not
+ *     public). Other audiences and every other field are untouched.
+ * v2 body: each key present replaces that field; audiences merge per card.
+ *   Clearing `faith`/`politics` clears its weight too.
+ */
+export function applyIdentityPut(
+  put: IdentityPut,
+  stored: IdentityPayloadV2,
+  storedAudiences: Audiences,
+): { payload: IdentityPayloadV2; audiences: Audiences } {
+  const payload: IdentityPayloadV2 = { ...stored };
+  const audiences: Audiences = { ...storedAudiences };
+
+  if (put.kind === "v1") {
+    if (put.pronoun === null) payload.pronouns = [];
+    else if (stored.pronouns[0] !== put.pronoun) payload.pronouns = [put.pronoun];
+    payload.orientation = put.orientation;
+    audiences.identity = put.isPublic
+      ? "everyone"
+      : storedAudiences.identity === "after_hi"
+      ? "after_hi"
+      : "only_me";
+    return { payload, audiences };
+  }
+
+  Object.assign(payload, put.patch);
+  for (
+    const [weight, parent] of Object.entries(WEIGHT_PARENTS) as [
+      "faith_weight" | "politics_weight",
+      "faith" | "politics",
+    ][]
+  ) {
+    if (payload[parent] !== null) continue;
+    if (Object.hasOwn(put.patch, weight) && put.patch[weight] !== null) {
+      throw new ValidationError(`${weight} needs ${parent} to be set.`);
+    }
+    payload[weight] = null;
+  }
+  for (const card of Object.keys(put.audiences) as AudienceCard[]) {
+    audiences[card] = put.audiences[card] as Audience;
+  }
+  return { payload, audiences };
+}
+
+/** `is_public` stays in step with the identity card's audience (the old app reads it). */
+export function isPublicFor(audiences: Audiences): boolean {
+  return audiences.identity === "everyone";
+}
+
+// -----------------------------------------------------------------------------
+// PUT /identity/card
+// -----------------------------------------------------------------------------
+
+const RETIRED_CARD_KEYS = ["into", "kinks"];
+
+/** Validates a PUT /identity/card v2 body: any subset of the nine sections. */
+export function validateCardPut(body: unknown): Partial<CardPayloadV2> {
+  const obj = asObject(body);
+  const retired = RETIRED_CARD_KEYS.some((k) => Object.hasOwn(obj, k));
+  rejectUnknownKeys(
+    obj,
+    CARD_SECTIONS,
+    retired ? " The v1 card body is retired; send the v2 sections." : "",
+  );
+  const patch: Record<string, FieldValue> = {};
+  for (const section of CARD_SECTIONS) {
+    if (!Object.hasOwn(obj, section)) continue;
+    patch[section] = validateField(CARD_SECTION_SPECS[section], obj[section], section);
+  }
+  if (Object.keys(patch).length === 0) {
+    throw new ValidationError("Body must set at least one section.");
+  }
+  return patch as Partial<CardPayloadV2>;
+}
+
+export function applyCardPut(
+  patch: Partial<CardPayloadV2>,
+  stored: CardPayloadV2,
+): CardPayloadV2 {
+  return { ...stored, ...patch };
+}
+
+// -----------------------------------------------------------------------------
+// Shape-only reads of a stored v2 payload
+// -----------------------------------------------------------------------------
+
+// A stored payload predates any later vocabulary change, so reads are
+// shape-only: they must not re-run the allow-list, or a chip retired by
+// product would make an existing row unreadable.
+
+function readShape<K extends string>(
+  value: unknown,
+  keys: readonly K[],
+  specs: Record<K, FieldSpec>,
+  base: Record<K, FieldValue>,
+): Record<K, FieldValue> {
+  const obj = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const out = { ...base };
+  for (const key of keys) {
+    const raw = obj[key];
+    if (specs[key].kind === "single") {
+      out[key] = typeof raw === "string" && raw.length > 0 ? raw : null;
+    } else {
+      out[key] = Array.isArray(raw)
+        ? raw.filter((v): v is string => typeof v === "string")
+        : [];
+    }
+  }
+  return out;
+}
+
+export function readIdentityV2(value: unknown): IdentityPayloadV2 {
+  return readShape(
+    value,
+    IDENTITY_FIELDS,
+    IDENTITY_FIELD_SPECS,
+    emptyIdentity() as unknown as Record<IdentityField, FieldValue>,
+  ) as unknown as IdentityPayloadV2;
+}
+
+export function readCardV2(value: unknown): CardPayloadV2 {
+  return readShape(
+    value,
+    CARD_SECTIONS,
+    CARD_SECTION_SPECS,
+    emptyCard() as unknown as Record<CardSection, FieldValue>,
+  ) as unknown as CardPayloadV2;
 }

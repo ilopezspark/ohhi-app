@@ -1,10 +1,14 @@
-// OhHi · `identity` edge function — one function, four routes.
-// docs/edge-identity-plan.md; decisions 16, 19, 20-24.
+// OhHi · `identity` edge function — one function, five routes, payload v2.
+// docs/edge-identity-plan.md; decisions 16, 19, 20-24; the profile restructure
+// (docs/design/profile-restructure/reconcile.md and its owner rulings).
 //
-//   GET  /functions/v1/identity/:user_id        owner or is_public
-//   PUT  /functions/v1/identity                 owner only
-//   GET  /functions/v1/identity/card/:user_id   owner or private.share_is_active
-//   PUT  /functions/v1/identity/card            owner only
+//   GET  /functions/v1/identity/:user_id                        owner, or per-card audience
+//   PUT  /functions/v1/identity                                 owner only (v1 or v2 body)
+//   GET  /functions/v1/identity/card/:user_id                   owner, or an active card share
+//   GET  /functions/v1/identity/card/:user_id/reveal/:section   owner, or a share that ticked it
+//   PUT  /functions/v1/identity/card                            owner only (v2 body)
+//
+// See README.md for the exact request and response shapes.
 //
 // This file is wiring only: the caller-JWT verifier, the crypto, and the
 // service-role Postgres client are handed to the router, which holds the whole

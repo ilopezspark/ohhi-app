@@ -1,82 +1,84 @@
 import { assertEquals } from "@std/assert";
 import {
   CARD_MAX_FIELDS,
+  CARD_SECTION_GROUP,
   cardFieldsFilled,
+  emptyCard,
+  emptyIdentity,
+  IDENTITY_FIELD_CARD,
   IDENTITY_MAX_FIELDS,
   identityFieldsFilled,
+  isFilled,
+  isGatedSection,
 } from "./fields.ts";
-import { CARD_FIELDS, type CardPayload } from "./validate.ts";
+import { CARD_SECTIONS, IDENTITY_FIELDS } from "./vocab.ts";
 
-const emptyCard: CardPayload = { into: [], safer_sex: [], kinks: [], hard_nos: [] };
+Deno.test("bounds match migration 0023's widened fields_filled_range (0..16, 0..9)", () => {
+  assertEquals(IDENTITY_MAX_FIELDS, 16);
+  assertEquals(CARD_MAX_FIELDS, 9);
+});
 
 Deno.test("identity: all-empty is 0", () => {
-  assertEquals(identityFieldsFilled({ pronouns: null, orientation: [] }), 0);
+  assertEquals(identityFieldsFilled(emptyIdentity()), 0);
 });
 
-Deno.test("identity: each field alone is 1", () => {
-  assertEquals(identityFieldsFilled({ pronouns: "she/her", orientation: [] }), 1);
-  assertEquals(identityFieldsFilled({ pronouns: null, orientation: ["bi"] }), 1);
-});
-
-Deno.test("identity: all-filled is 2, the migration-0003 upper bound", () => {
-  assertEquals(
-    identityFieldsFilled({ pronouns: "they/them", orientation: ["queer", "fluid"] }),
-    IDENTITY_MAX_FIELDS,
-  );
-  assertEquals(IDENTITY_MAX_FIELDS, 2);
-});
-
-Deno.test("identity: an empty-string pronoun does not count as filled", () => {
-  assertEquals(identityFieldsFilled({ pronouns: "", orientation: [] }), 0);
-});
-
-Deno.test("card: all-empty is 0", () => {
-  assertEquals(cardFieldsFilled(emptyCard), 0);
-});
-
-Deno.test("card: one non-empty array per field counts once each", () => {
-  for (const field of CARD_FIELDS) {
-    assertEquals(cardFieldsFilled({ ...emptyCard, [field]: ["x"] }), 1, field);
+Deno.test("identity: each field alone counts once", () => {
+  for (const field of IDENTITY_FIELDS) {
+    const payload = emptyIdentity() as unknown as Record<string, unknown>;
+    payload[field] = Array.isArray(payload[field]) ? ["x"] : "x";
+    assertEquals(
+      identityFieldsFilled(payload as unknown as ReturnType<typeof emptyIdentity>),
+      1,
+      field,
+    );
   }
 });
 
-Deno.test("card: mixed values count only the non-empty arrays", () => {
+Deno.test("identity: all-filled is 16; chip count never inflates it", () => {
+  const payload = emptyIdentity() as unknown as Record<string, unknown>;
+  for (const field of IDENTITY_FIELDS) {
+    payload[field] = Array.isArray(payload[field]) ? ["a", "b", "c"] : "x";
+  }
   assertEquals(
-    cardFieldsFilled({ into: ["top"], safer_sex: ["condoms"], kinks: [], hard_nos: [] }),
-    2,
-  );
-  assertEquals(
-    cardFieldsFilled({
-      into: ["top"],
-      safer_sex: [],
-      kinks: ["toys"],
-      hard_nos: ["no drugs"],
-    }),
-    3,
+    identityFieldsFilled(payload as unknown as ReturnType<typeof emptyIdentity>),
+    IDENTITY_MAX_FIELDS,
   );
 });
 
-Deno.test("card: all-filled is 4, the migration-0003 upper bound", () => {
-  assertEquals(
-    cardFieldsFilled({
-      into: ["top"],
-      safer_sex: ["condoms"],
-      kinks: ["toys"],
-      hard_nos: ["no drugs"],
-    }),
-    CARD_MAX_FIELDS,
-  );
-  assertEquals(CARD_MAX_FIELDS, 4);
+Deno.test("card: all-empty is 0, each section once, all-filled is 9", () => {
+  assertEquals(cardFieldsFilled(emptyCard()), 0);
+  const full = emptyCard() as unknown as Record<string, unknown>;
+  for (const section of CARD_SECTIONS) {
+    const one = emptyCard() as unknown as Record<string, unknown>;
+    one[section] = Array.isArray(one[section]) ? ["x"] : "x";
+    assertEquals(
+      cardFieldsFilled(one as unknown as ReturnType<typeof emptyCard>),
+      1,
+      section,
+    );
+    full[section] = Array.isArray(full[section]) ? ["x", "y"] : "x";
+  }
+  assertEquals(cardFieldsFilled(full as unknown as ReturnType<typeof emptyCard>), 9);
 });
 
-Deno.test("the two counts sum to the Me screen's 6", () => {
-  assertEquals(IDENTITY_MAX_FIELDS + CARD_MAX_FIELDS, 6);
+Deno.test("an empty string and an empty array are not filled", () => {
+  assertEquals(isFilled(""), false);
+  assertEquals(isFilled([]), false);
+  assertEquals(isFilled(null), false);
+  assertEquals(isFilled("slow"), true);
+  assertEquals(isFilled(["x"]), true);
 });
 
-Deno.test("chip count never inflates the field count", () => {
-  assertEquals(
-    identityFieldsFilled({ pronouns: "she/her", orientation: ["bi", "queer", "fluid"] }),
-    2,
-  );
-  assertEquals(cardFieldsFilled({ ...emptyCard, into: ["a", "b", "c", "d"] }), 1);
+Deno.test("catalogue: every key knows its card or group", () => {
+  assertEquals(IDENTITY_FIELD_CARD.pronouns, "identity");
+  assertEquals(IDENTITY_FIELD_CARD.faith_weight, "background");
+  assertEquals(IDENTITY_FIELD_CARD.four_twenty, "lifestyle");
+  assertEquals(IDENTITY_FIELD_CARD.communication, "around");
+  assertEquals(IDENTITY_FIELD_CARD.photos_content, "before_you_message");
+  assertEquals(CARD_SECTION_GROUP.hosting, "standard");
+  assertEquals(CARD_SECTION_GROUP.practices, "gated");
+  assertEquals(CARD_SECTION_GROUP.privacy, "always_attached");
+  assertEquals(isGatedSection("safer_sex"), true);
+  assertEquals(isGatedSection("hard_nos"), false);
+  assertEquals(isGatedSection("constructor"), false);
 });
