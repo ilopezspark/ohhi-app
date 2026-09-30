@@ -238,9 +238,10 @@ The sections below describe the content files.
   (most defining first): positions 0..n-1, and the grid tile shows the first two. CLC is a
   commuter campus, so the four residential tags (`fraternity`, `sorority`, `dorm life`, `stays on
   campus weekends`) are never used; commuter ones (`i live in the parking lot`) are fine. The old
-  CLC tags are gone: majors are now `major` / `about.minor` (CLC programs: `art`, `bio`,
-  `business`, `criminal justice`, `cs`, `early childhood education`, `education`, `nursing`,
-  `welding`), and places are not tags any more.
+  CLC tags are gone: majors are now `major` / `about.minor` (CLC programs: since migration 0019
+  the 50 of `private.default_programs()` in `supabase/migrations/20260918000019_more_programs.sql`,
+  which keep 0018's `art`, `bio`, `business`, `criminal justice`, `cs`, `early childhood
+  education`, `education`, `nursing`, `welding`), and places are not tags any more.
 - **Goals**: 1-3 per person from the `user_goal` enum (`friends`, `study`, `dates`, `group`,
   `whatever`).
 - **Schema limits respected**: `first_name` 2-20 chars, `status_line` ≤140 chars (or `null`),
@@ -272,7 +273,7 @@ The sections below describe the content files.
 Run `node supabase/seed/demo/validate.mjs` from the repo root. It checks: each person's tags are
 3-10 distinct labels that exist in migration 0018's catalog (parsed from §4 of the migration
 file itself) and are not residential; `major` / `about.minor` are CLC programs (the list is
-cross-checked against §5), the minor differs from the major and needs one; the about enums,
+read from migration 0019 §1, and 0018 §5's nine are cross-checked as part of it), the minor differs from the major and needs one; the about enums,
 `work_hours` rules, `job_title` 1-48 chars, `graduating_unsure` only with a null `grad_year` and
 no term (at most one person), `grad_year` null or 2026-2034; and that `job_title`, status lines,
 place lines, usual places and prompt answers pass migration 0018's word filter patterns (no email,

@@ -2,7 +2,8 @@
 // Validates supabase/seed/demo/cast.json and interactions.json against the
 // schema limits in supabase/migrations/20260918000002_core_schema.sql, the
 // profile fields of 0015, the tags / about / word filter of 0018 (whose tag
-// catalog and CLC programs are read from the migration file itself), and
+// catalog and CLC programs are read from the migration file itself), the CLC
+// program list of 0019 (read from that migration file too), and
 // the scripted-state rules from the seed task. Run with:
 //   node supabase/seed/demo/validate.mjs
 // Exits non-zero on any failure.
@@ -52,8 +53,13 @@ const TAG_CATALOG = new Map(); // label -> { category, campusType }
   if (TAG_CATALOG.size !== 411) throw new Error(`validate: parsed ${TAG_CATALOG.size} tags from migration 0018, expected 411`);
 }
 
-// public.programs for CLC (migration 0018 §5): the major/minor catalog.
-const PROGRAMS = new Set([
+// public.programs for CLC: the major/minor catalog. Migration 0018 §5 seeded
+// nine; migration 0019 §1 made CLC's list the 50 of private.default_programs()
+// (the nine included). Both are read from the migration files: 0018's nine
+// must match the list below and be part of 0019's list, and PROGRAMS is
+// 0019's list.
+const MIGRATION_0019 = join(__dirname, "..", "..", "migrations", "20260918000019_more_programs.sql");
+const PROGRAMS_0018 = new Set([
   "art", "bio", "business", "criminal justice", "cs",
   "early childhood education", "education", "nursing", "welding",
 ]);
@@ -63,9 +69,28 @@ const PROGRAMS = new Set([
   const end = sql.indexOf(") as v(label, sort_order)", start);
   if (start < 0 || end < 0) throw new Error("validate: could not find the CLC programs in migration 0018 §5");
   const found = new Set([...sql.slice(start, end).matchAll(/\('([a-z ]+)', \d+\)/g)].map((x) => x[1]));
-  if (found.size !== PROGRAMS.size || [...PROGRAMS].some((p) => !found.has(p))) {
+  if (found.size !== PROGRAMS_0018.size || [...PROGRAMS_0018].some((p) => !found.has(p))) {
     throw new Error(`validate: the CLC programs in migration 0018 §5 (${[...found].join(", ")}) differ from validate.mjs`);
   }
+}
+const PROGRAMS = new Set();
+{
+  const sql = readFileSync(MIGRATION_0019, "utf8");
+  const start = sql.indexOf("create function private.default_programs()");
+  const end = sql.indexOf("$$;", start);
+  if (start < 0 || end < 0) throw new Error("validate: could not find private.default_programs() in migration 0019 §1");
+  const body = sql.slice(start, end);
+  const arr = body.slice(body.indexOf("unnest(array["), body.indexOf("]) with ordinality"));
+  for (const m of arr.matchAll(/'([a-z ]+)'/g)) {
+    if (PROGRAMS.has(m[1])) throw new Error(`validate: program "${m[1]}" appears twice in migration 0019`);
+    PROGRAMS.add(m[1]);
+  }
+  const tail = body.match(/union all\s+select '([a-z ]+)', \d+::smallint/);
+  if (!tail) throw new Error("validate: could not find the last default program (undecided) in migration 0019 §1");
+  PROGRAMS.add(tail[1]);
+  if (PROGRAMS.size !== 50) throw new Error(`validate: parsed ${PROGRAMS.size} programs from migration 0019, expected 50`);
+  const missing = [...PROGRAMS_0018].filter((p) => !PROGRAMS.has(p));
+  if (missing.length) throw new Error(`validate: migration 0019 drops 0018 programs: ${missing.join(", ")}`);
 }
 
 // Migration 0018 §1 enums.

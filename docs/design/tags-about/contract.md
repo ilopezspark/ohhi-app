@@ -150,9 +150,8 @@ are not built.
   paused, blocked or unverified person (nothing else to do in the app).
 - `public.programs (id, campus_id, label, active, sort_order)`: the major and
   minor picker, readable for the caller's own campus only. Offer
-  `active = true` rows ordered by `sort_order, label`. CLC: art, bio,
-  business, criminal justice, cs, early childhood education, education,
-  nursing, welding.
+  `active = true` rows ordered by `sort_order, label`. CLC: 50 programs since
+  migration 0019 (see "Programs and program suggestions" below).
 
 ### Write: `public.set_my_about(p_about jsonb) returns jsonb`
 
@@ -325,3 +324,88 @@ only gained a trailing `about` column; `me()` is identical.
   wanted.
 - Word list approvals and the `first_name` question: see
   `blocked-terms-proposed.md`.
+
+## 10. Programs and program suggestions (migration 0019)
+
+Migration `supabase/migrations/20260918000019_more_programs.sql`, decision 95.
+Live on the hosted project.
+
+### The list (read it exactly as before)
+
+Nothing about the read changed: same table, columns, grant and policy.
+
+```ts
+supabase
+  .from('programs')
+  .select('id, label, sort_order, active')
+  .eq('active', true)
+  .order('sort_order')
+  .order('label')
+```
+
+RLS already limits it to the caller's campus (no campus filter needed; signed
+out returns nothing). One list serves both pickers, major and minor.
+
+CLC has 50, in this order (alphabetical, `sort_order` 10, 20 ... 490, with
+`undecided` last at 1000):
+
+accounting, architecture, art, automotive technology, bio, business,
+chemistry, communications, construction management, criminal justice, cs,
+culinary arts, cybersecurity, dental hygiene, early childhood education,
+economics, education, electrical technology, engineering, english,
+environmental science, exercise science, finance, fire science, general
+studies, graphic design, health sciences, history, hospitality, hvac,
+information technology, liberal arts, marketing, math, medical assisting,
+music, nursing, nutrition, paralegal, paramedic, physics, political science,
+psychology, radiography, social work, sociology, spanish, theater, welding,
+undecided.
+
+- The nine 0018 programs kept their ids and labels, so every stored major and
+  minor is unchanged. Labels stay short where users already had them (`cs`,
+  `bio`); search should match on the label as stored (a client-side
+  `includes` over 50 rows is enough; no search RPC).
+- Programs accepted from the queue later appear in the same select, slotted
+  alphabetically; the app needs no change for them.
+- `undecided` is an ordinary program row, so `set_my_about` accepts it as a
+  major and (the server does not forbid it) as a minor. Suggestion: hide it
+  from the minor picker.
+- Picking is unchanged: `set_my_about({major_id, minor_id})`, errors as in §4.
+
+### Suggest a program: `public.suggest_program(p_label text, p_kind text) returns void`
+
+```ts
+supabase.rpc('suggest_program', { p_label, p_kind })  // p_kind: 'major' | 'minor'
+```
+
+`p_kind` may be omitted or null (means `'major'`); case is ignored. Writes to
+a moderation queue only (`public.program_suggestions`, service role only; the
+client cannot read or write it). It never changes the caller's profile or
+about section: after "suggest", the user still has to pick a program (or
+leave it empty) to save.
+
+- The label is trimmed, lowercased and its whitespace collapsed; 1-60
+  characters. Any characters are allowed apart from the word filter.
+- A label the caller already has pending (either kind) is a silent success:
+  no new row, no error. Show the same "sent" confirmation.
+
+Checked in this order:
+
+| refusal | code | message |
+| --- | --- | --- |
+| not signed in, no profile, or a hidden (suspended/banned/deleted) account | 42501 | `not allowed` |
+| `p_kind` not major/minor | 22023 | `unknown kind` |
+| blank | 22023 | `a suggestion can't be blank` |
+| over 60 characters | 22023 | `a suggestion must be 60 characters or fewer` |
+| word filter | 22023 | `that text can't be used` |
+| already an active program of the caller's campus (case and spacing ignored) | 22023 | `that one is already on the list` |
+| 5 already waiting from the caller | 22023 | `too many suggestions waiting` |
+
+All messages are lowercase and can be shown as is. For `that one is already
+on the list`, a nice touch is to put the matching row at the top of the
+search results. Keep the typed text in the field on any refusal.
+
+### Staff (not built)
+
+Accepting is a service-role insert into `programs (campus_id, label,
+sort_order)` plus setting the suggestion's `state`; rejecting is setting
+`state`. Nobody is notified today.
