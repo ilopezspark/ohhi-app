@@ -435,8 +435,18 @@ standing preference.
   the flags and that `profile_card_for` hides `meet_me_at` before the gate.
 - *Needs:* D9 wording for `good_first_hang`.
 
-**Phase 2. Migration 0021: additive schema.**
-- Files: `supabase/migrations/20260918000021_profile_restructure_schema.sql`, hosted run/down tests.
+**Phase 2. Migration 0023: additive schema.** *Done 30 September 2026* (decision 99). Numbered
+0023, not 0021: 0021 and 0022 went to the age gate (decisions 97, 98). Built with audience
+columns (ruling 1), not `pending_review`. Final names: enum `public.profile_audience`;
+`user_identity.{payload_version, identity_audience, background_audience, lifestyle_audience,
+around_audience}` plus the `user_identity_audience_sync` trigger that keeps `is_public` equal to
+`identity_audience = everyone` until cleanup; `user_private_card.payload_version`;
+`shares.card_sections`; `private.card_share_sections(uuid, uuid) returns text[]`;
+`public.reshare_private_card(uuid, text[]) returns public.shares`; notice kind `profile_moved`.
+Hosted history row `20260918000023`. Phases 3 and 6 below still say "after 0021" / "Migration
+0022": read those as "after 0023" and "the cleanup migration" (next free number).
+- Files: `supabase/migrations/20260918000023_profile_restructure_schema.sql`,
+  `supabase/tests/hosted/0023_hosted_run.sql`, `0023_down.sql`.
 - `user_identity`: `payload_version smallint not null default 1`, audience columns + enum (D1) or
   `pending_review` (brief-as-written); widen `fields_filled_range`.
 - `user_private_card`: `payload_version`; `fields_filled_range` 0..9.
