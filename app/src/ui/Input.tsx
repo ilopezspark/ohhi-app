@@ -53,28 +53,35 @@ export function Input({
   return (
     <View style={[styles.field, containerStyle]} testID={testID}>
       {label ? <Text variant="label">{label}</Text> : null}
-      <TextInput
-        testID={inputTestID ?? (testID ? `${testID}-input` : undefined)}
-        multiline={multiline}
-        placeholderTextColor={colors.subtle}
-        style={[
-          styles.input,
-          multiline ? styles.multiline : styles.singleLine,
-          multiline && { minHeight: inputs.paddingY * 2 + rows * inputs.lineHeight },
-          surface === 'card' && styles.onCard,
-          focused && styles.focused,
-          hasError && styles.errorBorder,
-        ]}
-        onFocus={(e) => {
-          setFocused(true);
-          onFocus?.(e);
-        }}
-        onBlur={(e) => {
-          setFocused(false);
-          onBlur?.(e);
-        }}
-        {...rest}
-      />
+      {/* The wrapper owns the fill, the radius and the shadow; the TextInput
+          stays flat. Android draws a TextInput's own elevation as a square
+          that ignores its rounded corners, so the shadow never goes on it. */}
+      <View
+        testID={testID ? `${testID}-surface` : undefined}
+        style={[styles.surface, multiline ? styles.surfaceMultiline : styles.surfaceSingleLine, surface === 'card' && styles.onCard]}
+      >
+        <TextInput
+          testID={inputTestID ?? (testID ? `${testID}-input` : undefined)}
+          multiline={multiline}
+          placeholderTextColor={colors.subtle}
+          style={[
+            styles.input,
+            multiline ? styles.multiline : styles.singleLine,
+            multiline && { minHeight: inputs.paddingY * 2 + rows * inputs.lineHeight },
+            focused && styles.focused,
+            hasError && styles.errorBorder,
+          ]}
+          onFocus={(e) => {
+            setFocused(true);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setFocused(false);
+            onBlur?.(e);
+          }}
+          {...rest}
+        />
+      </View>
       {hasError ? (
         <Text variant="helper" color={colors.danger}>
           {error}
@@ -95,17 +102,19 @@ const INSET_Y = inputs.paddingY - inputs.ringWidth;
 
 const styles = StyleSheet.create({
   field: { gap: spacing.smMd },
+  surface: { backgroundColor: colors.surface, ...shadows.sm },
+  surfaceSingleLine: { borderRadius: radii.pill },
+  surfaceMultiline: { borderRadius: radii.lg },
   input: {
     fontFamily: 'Outfit_400Regular',
     fontSize: inputs.fontSize,
     color: colors.ink,
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     borderWidth: inputs.ringWidth,
     borderColor: 'transparent',
     paddingLeft: INSET_X,
     paddingRight: INSET_X,
     includeFontPadding: false,
-    ...shadows.sm,
   },
   // One fixed height, text centred: no `lineHeight` here, since iOS draws a
   // single-line field's text off-centre when one is set.

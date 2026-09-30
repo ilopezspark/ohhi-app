@@ -81,7 +81,7 @@ describe('keyboard handling has one mechanism', () => {
 });
 
 /** A text field, directly or through a shared field component. */
-const HAS_FIELD = /<(TextInput|Input|CardTextInput|PlaceLineField|TagPicker|MessageSheet|SuggestTagSheet|ProgramPickerSheet)\b/;
+const HAS_FIELD = /<(TextInput|DigitBox|Input|CardTextInput|PlaceLineField|TagPicker|MessageSheet|SuggestTagSheet|ProgramPickerSheet)\b/;
 
 /** The shared keyboard pieces (or frames built on them). */
 const KEYBOARD_AWARE =

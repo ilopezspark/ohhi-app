@@ -28,3 +28,4 @@ export * from './SettingsRow';
 export * from './PillButton';
 export * from './VerificationPill';
 export * from './displayName';
+export * from './DigitBox';

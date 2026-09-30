@@ -94,20 +94,24 @@ export function Composer({ state, sending, onSend, onOpenShare, initialText, acc
           </Pressable>
         ) : null}
 
-        <TextInput
-          ref={input}
-          testID="composer-input"
-          style={styles.input}
-          value={text}
-          onChangeText={setText}
-          placeholder="message"
-          placeholderTextColor={colors.subtle}
-          multiline
-          // Hard cap, mirroring the trigger: 240 for the opener's first message,
-          // 1000 (the `messages_body_length` check) otherwise.
-          maxLength={state.maxLength}
-          accessibilityLabel="Message"
-        />
+        {/* The wrapper owns the fill, radius and shadow: Android draws a
+            TextInput's own elevation as a square that ignores its corners. */}
+        <View style={styles.inputWrap}>
+          <TextInput
+            ref={input}
+            testID="composer-input"
+            style={styles.input}
+            value={text}
+            onChangeText={setText}
+            placeholder="message"
+            placeholderTextColor={colors.subtle}
+            multiline
+            // Hard cap, mirroring the trigger: 240 for the opener's first message,
+            // 1000 (the `messages_body_length` check) otherwise.
+            maxLength={state.maxLength}
+            accessibilityLabel="Message"
+          />
+        </View>
 
         {/* Only shown as the cap gets close, so the 240-char opener rule is
             visible before it bites rather than after a refusal. */}
@@ -161,17 +165,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  input: {
+  inputWrap: {
     flex: 1,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+    ...shadows.sm,
+  },
+  input: {
     maxHeight: 120,
     fontFamily: 'Outfit_400Regular',
     fontSize: 15,
     color: colors.ink,
-    borderRadius: radii.pill,
+    backgroundColor: 'transparent',
     paddingHorizontal: spacing.lgXl,
     paddingVertical: spacing.lg,
-    backgroundColor: colors.surface,
-    ...shadows.sm,
   },
   counter: { paddingBottom: 10 },
   send: {

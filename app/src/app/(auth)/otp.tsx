@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, TextInput, View, type NativeSyntheticEvent, type TextInputKeyPressEventData } from 'react-native';
+import { StyleSheet, View, type NativeSyntheticEvent, type TextInput, type TextInputKeyPressEventData } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../api/client';
 import { resolveEntryHref } from '../../routing/bootstrap';
 import { otpLength } from '../../auth/otpLength';
-import { Button, Text } from '../../ui';
-import { colors, fontFamilies, radii, shadows, spacing } from '../../theme/tokens';
+import { Button, DigitBox, Text } from '../../ui';
+import { colors, fontFamilies, spacing } from '../../theme/tokens';
 import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
+import { ONBOARDING_STEP_NUMBER } from '../../onboarding/stepResolver';
 
 const RESEND_SECONDS = 60;
 
 /**
  * `Onb-Code.html`. Verify code, architecture plan §4 step 2. Design step 1
- * of 8, matching `Onb-Email.html`'s own bar (see `OnboardingHeader`'s doc
+ * of 9, matching `Onb-Email.html`'s own bar (see `OnboardingHeader`'s doc
  * comment — the mock doesn't advance the bar between email and code entry).
  *
  * **Deviation from the design, resolved**: the design's own input is a
@@ -150,7 +151,7 @@ export default function OtpScreen() {
 
   return (
     <OnboardingScreen
-      step={1}
+      step={ONBOARDING_STEP_NUMBER.code}
       onBack={goBack}
       backTestID="otp-back"
       testID="otp-screen"
@@ -172,18 +173,16 @@ export default function OtpScreen() {
       </Text>
       <View style={[styles.digitRow, { gap: digitRowGap }]}>
         {digits.map((digit, index) => (
-          <TextInput
+          <DigitBox
             key={index}
             ref={(ref) => {
               inputRefs.current[index] = ref;
             }}
             testID={`otp-input-${index}`}
             accessibilityLabel="digit"
-            style={[
-              styles.digitInput,
-              { height: digitBoxHeight, fontSize: digitFontSize },
-              digit ? null : styles.digitInputEmpty,
-            ]}
+            height={digitBoxHeight}
+            fontSize={digitFontSize}
+            containerStyle={styles.digitBox}
             keyboardType="number-pad"
             maxLength={CODE_LENGTH}
             value={digit}
@@ -219,14 +218,5 @@ const styles = StyleSheet.create({
   title: { marginTop: spacing.md },
   bold: { fontFamily: fontFamilies.outfitSemiBold },
   digitRow: { flexDirection: 'row' },
-  digitInput: {
-    flex: 1,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-    color: colors.ink,
-    fontWeight: '700',
-    textAlign: 'center',
-    ...shadows.sm,
-  },
-  digitInputEmpty: { borderWidth: 0 },
+  digitBox: { flex: 1 },
 });

@@ -17,6 +17,20 @@ describe('ui/Input', () => {
     expect(onChangeText).toHaveBeenCalledWith('a@b.edu');
   });
 
+  it('the shadow and fill sit on a wrapper that has the radius, never on the TextInput (Android draws a square elevation there)', async () => {
+    for (const multiline of [false, true]) {
+      const { getByTestId } = await render(<Input testID="f" multiline={multiline} />);
+      expect(flat(getByTestId('f-surface').props.style)).toMatchObject({
+        backgroundColor: colors.surface,
+        borderRadius: multiline ? radii.lg : radii.pill,
+        elevation: 2,
+      });
+      const field = flat(getByTestId('f-input').props.style);
+      expect(field.elevation).toBeUndefined();
+      expect(field.backgroundColor).toBe('transparent');
+    }
+  });
+
   it('single-line fields use the full pill radius', async () => {
     const { getByTestId } = await render(<Input testID="email" />);
     const flat = [getByTestId('email-input').props.style].flat().filter(Boolean);
@@ -76,7 +90,8 @@ describe('ui/Input', () => {
 
   it('on a card the field takes the paper fill so it stays visible', async () => {
     const { getByTestId } = await render(<Input testID="f" surface="card" />);
-    expect(flat(getByTestId('f-input').props.style).backgroundColor).toBe(colors.paper);
+    expect(flat(getByTestId('f-surface').props.style).backgroundColor).toBe(colors.paper);
+    expect(flat(getByTestId('f-surface').props.style).elevation).toBe(0);
   });
 
   it('an error replaces the helper and tints the border red', async () => {
