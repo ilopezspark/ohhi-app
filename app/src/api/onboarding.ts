@@ -48,6 +48,31 @@ export async function setDateOfBirth(dob: string): Promise<void> {
  */
 export async function completeOnboarding(): Promise<OnboardingCompletionStatus> {
   const { data, error } = await supabase.rpc('complete_onboarding');
-  if (error) throw mapSupabaseError(error);
+  if (error) {
+    if (isVerificationRequired(error)) throw new VerificationRequiredError();
+    throw mapSupabaseError(error);
+  }
   return data;
+}
+
+/**
+ * Migration 0021 (decision 97): `complete_onboarding()` refuses anyone who is
+ * not a verified adult with this exact `P0001` message, checked after every
+ * other refusal. It is not an error to show: it is the person's own
+ * verification state, which `me()` already tells them, so `finish` treats it
+ * as a routing signal back to the verify step's current state
+ * (`docs/age-gate-contract.md`, "Finish refused while not verified").
+ */
+export const VERIFICATION_REQUIRED_MESSAGE = 'identity verification is required';
+
+export class VerificationRequiredError extends Error {
+  constructor() {
+    super(VERIFICATION_REQUIRED_MESSAGE);
+    this.name = 'VerificationRequiredError';
+  }
+}
+
+function isVerificationRequired(error: unknown): boolean {
+  const message = (error as { message?: string } | null | undefined)?.message;
+  return typeof message === 'string' && message.includes(VERIFICATION_REQUIRED_MESSAGE);
 }

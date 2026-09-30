@@ -1,6 +1,7 @@
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ScreenHeader, Text } from '../../../ui';
+import { ScreenHeader, Text, useHeaderInsets } from '../../../ui';
+import { footerBottomPadding } from '../../../ui/keyboardInset';
 import { colors, spacing } from '../../../theme/tokens';
 import { infoLinkFor } from '../../../me/links';
 
@@ -11,6 +12,9 @@ import { infoLinkFor } from '../../../me/links';
  * this says so plainly rather than 404ing or linking out to nothing.
  */
 export default function InfoScreen() {
+  // The last line clears the home indicator / navigation bar (the shared
+  // bottom rule, `ui/keyboardInset.ts#footerBottomPadding`).
+  const bottomInset = useHeaderInsets().bottom;
   const params = useLocalSearchParams<{ slug: string }>();
   const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug ?? '';
   const link = infoLinkFor(slug);
@@ -18,7 +22,7 @@ export default function InfoScreen() {
   return (
     <View style={styles.safe}>
       <ScreenHeader title={link?.title ?? 'coming soon'} titleSize={22} onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={styles.scroll} testID="info-screen">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.huge }) }]} testID="info-screen">
         <Text variant="body" color={colors.muted} testID="info-body">
           this page is not written yet. check back soon — for now, reach out if you have a question.
         </Text>
@@ -29,5 +33,5 @@ export default function InfoScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, gap: spacing.xl },
 });

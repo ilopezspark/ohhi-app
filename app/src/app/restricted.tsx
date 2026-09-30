@@ -1,31 +1,13 @@
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import type { RestrictedStatus } from '../routing/stateToRoute';
-
-/**
- * One shared "account restricted" screen with per-state copy, for
- * closed_age/suspended/banned/deleted — architecture plan §10 open question
- * 3's recommended default. Exact copy is **Needs brief**; the strings below
- * are this skeleton's placeholder, same posture as the architecture note.
- */
-const COPY: Record<RestrictedStatus, { title: string; body: string }> = {
-  closed_age: {
-    title: "You're not old enough yet",
-    body: 'OhHi is for users 18 and up. This account cannot continue.',
-  },
-  suspended: {
-    title: 'Your account is suspended',
-    body: 'Contact support if you think this is a mistake.',
-  },
-  banned: {
-    title: 'Your account is banned',
-    body: 'This decision is final and cannot be appealed in-app.',
-  },
-  deleted: {
-    title: 'Account unavailable',
-    body: 'Something went wrong loading your account. Please reopen the app.',
-  },
-};
+import { signOutAndReset } from '../settings/signOut';
+import { Button, Text } from '../ui';
+import { colors, spacing } from '../theme/tokens';
+import { SupportLink } from '../verify/VerifyContent';
+import { RESTRICTED_COPY } from '../routing/restrictedCopy';
 
 const KNOWN_STATUSES = new Set<RestrictedStatus>(['closed_age', 'suspended', 'banned', 'deleted']);
 const DEFAULT_STATUS: RestrictedStatus = 'suspended';
@@ -34,24 +16,70 @@ function isRestrictedStatus(value: string | undefined): value is RestrictedStatu
   return !!value && KNOWN_STATUSES.has(value as RestrictedStatus);
 }
 
+/**
+ * One shared "account restricted" screen with per-state copy, for
+ * closed_age/suspended/banned/deleted — architecture plan §10 open question
+ * 3's recommended default. Reached only through the router and the layout's
+ * gate (`routing/AccessGate.tsx`), which keeps a restricted account here
+ * whatever route it opens, and moves anyone else away.
+ *
+ * `closed_age` (decision 97, `docs/age-gate-contract.md`): the age gate's
+ * terminal state, from the typed birthday at finish or from the ID at any
+ * time. Its copy is the contract's, verbatim. Final in this version (an open
+ * owner question). Its only actions are the support link and `log out`:
+ * the contract offers no account deletion here (deleting would flip the
+ * account to `deleted`, which the next sign-in revives as a fresh signup, so
+ * it stays with support and the owner's open question on keeping the ID's
+ * birthday).
+ *
+ * The other states' copy is still the skeleton's placeholder (**needs
+ * brief**), in `routing/restrictedCopy.ts`.
+ */
 export default function RestrictedScreen() {
+  const queryClient = useQueryClient();
   const { status } = useLocalSearchParams<{ status?: string }>();
-  const copy = COPY[isRestrictedStatus(status) ? status : DEFAULT_STATUS];
+  const resolved = isRestrictedStatus(status) ? status : DEFAULT_STATUS;
+  const copy = RESTRICTED_COPY[resolved];
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function onSignOut() {
+    setSigningOut(true);
+    try {
+      await signOutAndReset(queryClient);
+    } finally {
+      setSigningOut(false);
+    }
+  }
 
   return (
     <View style={styles.container} testID="restricted-screen">
-      <Text style={styles.title}>{copy.title}</Text>
-      <Text style={styles.body}>{copy.body}</Text>
-      <Pressable onPress={() => Linking.openURL('mailto:support@sayohhi.com')}>
-        <Text style={styles.link}>Contact support</Text>
-      </Pressable>
+      <Text variant="headline" testID="restricted-title">
+        {copy.title}
+      </Text>
+      <Text variant="body" color={colors.muted} testID="restricted-body">
+        {copy.body}
+      </Text>
+      <SupportLink testID="restricted-support" />
+      <View style={styles.actions}>
+        <Button
+          testID="restricted-log-out"
+          label="log out"
+          variant="ghost"
+          loading={signingOut}
+          onPress={() => void onSignOut()}
+        />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center', gap: 12 },
-  title: { fontSize: 20, fontWeight: '600' },
-  body: { color: '#555', fontSize: 14 },
-  link: { color: '#208AEF', marginTop: 16, fontWeight: '600' },
+  container: {
+    flex: 1,
+    padding: spacing.xxl,
+    justifyContent: 'center',
+    gap: spacing.lgXl,
+    backgroundColor: colors.paper,
+  },
+  actions: { marginTop: spacing.xl },
 });

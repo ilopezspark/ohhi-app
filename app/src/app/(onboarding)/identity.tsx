@@ -7,7 +7,7 @@ import { getIdentity } from '../../api/identity';
 import { putIdentity } from '../../api/identityWrite';
 import { supabase } from '../../api/client';
 import { mapSupabaseError } from '../../api/errors';
-import { stepToPath } from '../../onboarding/stepResolver';
+import { stepToPath, ONBOARDING_STEP_NUMBER } from '../../onboarding/stepResolver';
 import { PRONOUN_OPTIONS, PRONOUN_MAX_LENGTH, ORIENTATION_CHIPS, ORIENTATION_MAX_ITEMS } from '../../settings/vocab';
 import { Banner, Button, Chip, Input, Text, Toggle } from '../../ui';
 import { colors, radii, spacing } from '../../theme/tokens';
@@ -21,7 +21,7 @@ import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
  * counterpart, not a replacement for it). Optional and skippable, slotted
  * between `goals` and `photo` per the design's own screen order (the
  * contact sheet's `index.html`: basics -> here for -> about you -> photos).
- * Design step 4 of 8.
+ * Design step 5 of 9.
  *
  * Writes through `identityWrite.ts`'s `PUT /identity` (owner path), the
  * same whole-object-replace contract `settings/identity.tsx` uses.
@@ -141,7 +141,7 @@ export default function IdentityScreen() {
 
   return (
     <OnboardingScreen
-      step={4}
+      step={ONBOARDING_STEP_NUMBER.identity}
       onBack={goBack}
       backTestID="identity-back"
       testID="identity-screen"

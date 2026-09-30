@@ -1,33 +1,26 @@
-import { useState } from 'react';
+import { useCallback } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { me as fetchMe } from '../../api/me';
-import {
-  startAndOpenVerification,
-  VerificationAttemptsExhaustedError,
-  VerificationUnavailableError,
-} from '../../api/verification';
-import { mapSupabaseError } from '../../api/errors';
-import { Button, ScreenHeader, Text, VerificationPill } from '../../ui';
+import { ScreenHeader, Text, VerificationPill, useHeaderInsets } from '../../ui';
+import { footerBottomPadding } from '../../ui/keyboardInset';
 import { colors, spacing } from '../../theme/tokens';
 import { queryKeys } from '../../me/queryKeys';
-import { canStartVerification, isVerified, verificationLabel } from '../../me/settings/verification';
+import { isVerified, verificationLabel } from '../../me/settings/verification';
+import { VERIFY_SMALL_PRINT } from '../../verify/verifyState';
 
 /**
- * `/me/verification` — reuses `src/api/verification.ts`'s existing
- * `startAndOpenVerification` (opens the provider's hosted flow in a system
- * browser tab); this screen never talks to the provider directly. Refetches
- * `me()` on focus so returning from that browser tab (the result lands via
- * a server-to-server webhook, not a redirect — `verification.ts`'s own doc
- * comment) picks up the new status without a manual refresh.
+ * `/me/verification`: the person's verification status. Since the age gate
+ * (decision 97) only a verified adult reaches Me at all, so this screen only
+ * shows the status and what the check keeps; starting, retrying and waiting
+ * on a check all happen on the verify step (`verify/useVerifyFlow.ts`), the
+ * one place the app opens Persona. Refetches `me()` on focus.
  */
 export default function VerificationScreen() {
   const queryClient = useQueryClient();
+  const bottomInset = useHeaderInsets().bottom;
   const meQuery = useQuery({ queryKey: queryKeys.me.result, queryFn: fetchMe });
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -36,54 +29,24 @@ export default function VerificationScreen() {
   );
 
   const status = meQuery.data?.verification_status ?? null;
-  const verified = isVerified(status);
-
-  async function onStart() {
-    setStarting(true);
-    setError(null);
-    try {
-      await startAndOpenVerification();
-    } catch (cause) {
-      if (cause instanceof VerificationAttemptsExhaustedError || cause instanceof VerificationUnavailableError) {
-        setError(cause.message);
-      } else {
-        setError(mapSupabaseError(cause).message);
-      }
-    } finally {
-      setStarting(false);
-    }
-  }
 
   return (
     <View style={styles.safe}>
       <ScreenHeader title="verification" titleSize={26} onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={styles.scroll} testID="verification-screen">
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.huge }) }]}
+        testID="verification-screen"
+      >
         <VerificationPill
           size="md"
-          verified={verified}
+          verified={isVerified(status)}
           label={verificationLabel(status)}
           testID="verification-status-pill"
         />
 
-        <Text variant="body" color={colors.muted}>
-          verification confirms you are a real, current student before you show up on the grid. it
-          takes a couple of minutes and only you see the result of each step.
+        <Text variant="body" color={colors.muted} testID="verification-small-print">
+          {VERIFY_SMALL_PRINT}
         </Text>
-
-        {error ? (
-          <Text variant="micro" color={colors.danger} testID="verification-error">
-            {error}
-          </Text>
-        ) : null}
-
-        {canStartVerification(status) ? (
-          <Button
-            testID="verification-start"
-            label={status === 'unverified' ? 'verify now' : 'continue verifying'}
-            loading={starting}
-            onPress={onStart}
-          />
-        ) : null}
 
         {meQuery.isLoading ? <ActivityIndicator color={colors.ink} /> : null}
       </ScrollView>
@@ -93,5 +56,5 @@ export default function VerificationScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, gap: spacing.xl },
 });

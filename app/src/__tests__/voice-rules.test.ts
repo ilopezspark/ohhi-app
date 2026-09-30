@@ -416,9 +416,8 @@ const SCOPE_FILES: string[] = [
   // Onboarding's photo step: its copy was brought into the voice rules in the
   // 0014 pass. The other onboarding files are not listed yet: they still
   // carry sentence-case copy ("Something went wrong. Please try again.",
-  // finish.tsx's "Go back and fix it", validation.ts's messages) and the
-  // DateTimePicker's `mode="date"`, which want their own pass (and an
-  // allow-list decision for that prop) before they can be linted.
+  // finish.tsx's "Go back and fix it", validation.ts's messages), which wants
+  // its own pass before they can be linted.
   path.join(SRC, 'app', '(onboarding)', 'photo.tsx'),
   // The profile redesign (docs/design/profile-redesign/): the screen and the
   // card pieces it renders. `profile/view/*` is already covered by the
@@ -475,6 +474,26 @@ const SCOPE_FILES: string[] = [
   path.join(SRC, 'api', 'tags.ts'),
   path.join(SRC, 'api', 'about.ts'),
   path.join(SRC, 'api', 'notices.ts'),
+  // The age gate (decision 97, docs/age-gate-contract.md): the verify step,
+  // its copy and flow, the standalone verify screen, the restricted screen
+  // (its `closed_age` copy) and the routing that sends people to them.
+  // `routing/restrictedCopy.ts` is left out on purpose: its suspended/banned
+  // lines are still the skeleton's sentence-case placeholders (needs brief);
+  // its `closed_age` copy is checked in `age-gate-screens.test.tsx`.
+  ...listTsFiles(path.join(SRC, 'verify')),
+  path.join(SRC, 'app', '(onboarding)', 'verify.tsx'),
+  path.join(SRC, 'app', 'verify-id.tsx'),
+  path.join(SRC, 'app', 'restricted.tsx'),
+  path.join(SRC, 'routing', 'access.ts'),
+  path.join(SRC, 'routing', 'AccessGate.tsx'),
+  path.join(SRC, 'routing', 'guard.ts'),
+  path.join(SRC, 'routing', 'sessionUser.ts'),
+  path.join(SRC, 'onboarding', 'progress.ts'),
+  // The birthday step: its own boxes (no native date picker), so its copy is
+  // linted like the verify step's.
+  path.join(SRC, 'app', '(onboarding)', 'dob.tsx'),
+  path.join(SRC, 'onboarding', 'birthday.ts'),
+  path.join(SRC, 'ui', 'DigitBox.tsx'),
 ].filter((file) => fs.existsSync(file));
 
 describe('voice rules — real source tree', () => {
@@ -560,6 +579,23 @@ describe('voice rules — real source tree', () => {
         path.join('api', 'tags.ts'),
         path.join('api', 'about.ts'),
         path.join('api', 'notices.ts'),
+        // the age gate
+        path.join('verify', 'verifyState.ts'),
+        path.join('verify', 'VerifyContent.tsx'),
+        path.join('verify', 'useVerifyFlow.ts'),
+        path.join('verify', 'session.ts'),
+        path.join('app', '(onboarding)', 'verify.tsx'),
+        path.join('app', 'verify-id.tsx'),
+        path.join('app', 'restricted.tsx'),
+        path.join('routing', 'access.ts'),
+        path.join('routing', 'AccessGate.tsx'),
+        path.join('routing', 'guard.ts'),
+        path.join('routing', 'sessionUser.ts'),
+        path.join('onboarding', 'progress.ts'),
+        // the birthday step
+        path.join('app', '(onboarding)', 'dob.tsx'),
+        path.join('onboarding', 'birthday.ts'),
+        path.join('ui', 'DigitBox.tsx'),
       ])
     );
   });

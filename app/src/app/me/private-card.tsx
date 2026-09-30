@@ -12,7 +12,8 @@ import { listPrivateCardSharedWith, type SharedWithPerson } from '../../me/card/
 import { relativeSentLabel } from '../../me/card/relativeTime';
 import { useRefetchOnFocus } from '../../query/gone';
 import { tintForPhoto } from '../../photos/tint';
-import { Avatar, Button, Chip, EmptyState, ScreenHeader, RowCard, SectionLabel, Text } from '../../ui';
+import { Avatar, Button, Chip, EmptyState, ScreenHeader, RowCard, SectionLabel, Text, useHeaderInsets } from '../../ui';
+import { footerBottomPadding } from '../../ui/keyboardInset';
 import { LockIcon } from '../../ui/icons';
 import { displayName } from '../../ui/displayName';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
@@ -25,6 +26,9 @@ import { colors, radii, shadows, spacing } from '../../theme/tokens';
  * the Me tab, not modal.
  */
 export default function PrivateCardScreen() {
+  // The last line clears the home indicator / navigation bar (the shared
+  // bottom rule, `ui/keyboardInset.ts#footerBottomPadding`).
+  const bottomInset = useHeaderInsets().bottom;
   const queryClient = useQueryClient();
 
   const cardQuery = useQuery({ queryKey: queryKeys.me.card, queryFn: getMyCard });
@@ -89,7 +93,7 @@ export default function PrivateCardScreen() {
           </Text>
         }
       />
-      <ScrollView contentContainerStyle={styles.container} testID="private-card-screen">
+      <ScrollView contentContainerStyle={[styles.container, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.huge }) }]} testID="private-card-screen">
         <View style={styles.explainer} testID="private-card-explainer">
           <LockIcon size={20} color={colors.ink} />
           <Text variant="bodyMedium" color={colors.ink} style={styles.explainerText}>
@@ -161,7 +165,7 @@ export default function PrivateCardScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  container: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.mdLg, paddingBottom: spacing.huge, gap: spacing.mdLg },
+  container: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.mdLg, gap: spacing.mdLg },
   explainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',

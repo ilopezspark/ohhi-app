@@ -7,6 +7,7 @@ import { mapSupabaseError } from '../../api/errors';
 import { Button, Chip, Input, Text } from '../../ui';
 import { colors, spacing } from '../../theme/tokens';
 import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
+import { ONBOARDING_STEP_NUMBER } from '../../onboarding/stepResolver';
 
 /**
  * `Onb-Email.html`. Sign-in (email OTP), architecture plan §4 step 1 /
@@ -17,8 +18,8 @@ import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
  * the "not on OhHi yet" hint up to it is out of scope for the walking
  * skeleton — this screen shows the hint without persisting anything yet.
  *
- * Design step 1 of 8 (`OnboardingHeader`'s doc comment) — the mock keeps the
- * bar at 1 of 8 through `Onb-Code.html` too, not incrementing between
+ * Design step 1 of 9 (`OnboardingHeader`'s doc comment) — the mock keeps the
+ * bar at 1 through `Onb-Code.html` too, not incrementing between
  * email and code entry; transcribed verbatim rather than "fixed".
  */
 export default function EmailScreen() {
@@ -79,7 +80,7 @@ export default function EmailScreen() {
 
   return (
     <OnboardingScreen
-      step={1}
+      step={ONBOARDING_STEP_NUMBER.email}
       onBack={goBack}
       backTestID="email-back"
       testID="email-screen"

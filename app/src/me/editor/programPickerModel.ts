@@ -14,6 +14,19 @@ export { PROGRAM_SUGGESTION_MAX_LENGTH, type ProgramKind };
  */
 
 /**
+ * The catalog's `undecided` program (migration 0019, decision 95): a major
+ * for undeclared students, never a minor. The one label this file names, to
+ * leave it out of the minor list; matched the way search compares text.
+ */
+export const UNDECIDED_PROGRAM_LABEL = 'undecided';
+
+/** The programs a picker lists: every one for a major; for a minor, all but `undecided`. */
+export function programsForKind<T extends { label: string }>(programs: T[], kind: ProgramKind): T[] {
+  if (kind !== 'minor') return programs;
+  return programs.filter((program) => normalizeProgramText(program.label) !== UNDECIDED_PROGRAM_LABEL);
+}
+
+/**
  * How a label, an alias or a search is compared: lowercase, accents dropped,
  * every run of punctuation or spaces read as one space, trimmed. So
  * `Pre-Med`, `pre med` and ` pre  med ` are the same text.

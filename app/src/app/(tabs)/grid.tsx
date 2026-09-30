@@ -17,10 +17,8 @@ import { gridForMe, type GridRow } from '../../api/grid';
 import { me as fetchMe } from '../../api/me';
 import { getMyPresence } from '../../api/presence';
 import { listMyPhotos, signedPhotoUrls } from '../../api/photos';
-import { startAndOpenVerification } from '../../api/verification';
 import { Banner } from '../../grid/Banner';
 import { GridTile } from '../../grid/GridTile';
-import { VerifySheet } from '../../grid/VerifySheet';
 import { notVisibleReason, REASON_COPY } from '../../grid/visibility';
 import {
   LOCATION_DENIED_COPY,
@@ -34,9 +32,14 @@ import { BellIcon, EmptyState, ScreenHeader, SearchIcon, Text } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 
 /**
- * The grid (`Grid.html`/`Grid-Empty.html`/`Grid-Verify.html`,
- * `docs/design/system.md`; behaviour from `docs/app-onboarding-grid-plan.md`
- * §3–§5).
+ * The grid (`Grid.html`/`Grid-Empty.html`, `docs/design/system.md`;
+ * behaviour from `docs/app-onboarding-grid-plan.md` §3–§5).
+ *
+ * Only a verified adult ever reaches this screen (the age gate, decision 97:
+ * `routing/AccessGate.tsx`), so it has no verification states of its own:
+ * `Grid-Verify.html`'s sheet, with its "look at the grid now" line and its
+ * "just look around for now" dismiss, is gone, and so are the four
+ * verification reasons (`grid/visibility.ts`).
  *
  * Refresh policy, read from the schema rather than assumed (§3):
  * - full refetch on mount, pull-to-refresh, app foreground, and a 75s poll
@@ -61,8 +64,6 @@ import { colors, radii, shadows, spacing } from '../../theme/tokens';
  */
 export default function GridScreen() {
   const queryClient = useQueryClient();
-  const [verifyBusy, setVerifyBusy] = useState(false);
-  const [verifySheetOpen, setVerifySheetOpen] = useState(false);
   // Migration 0009 (decision 53): a location denial no longer hides anyone,
   // so this is a soft, dismissible hint rather than a visibility warning —
   // dismissed for the life of this screen instance, not persisted.
@@ -198,30 +199,9 @@ export default function GridScreen() {
   // see `grid/visibility.ts`'s own doc comment.
   const reason = notVisibleReason({
     status: meData?.status ?? null,
-    verificationStatus: meData?.verification_status ?? null,
     mainPhotoState: mainPhoto?.moderation_state ?? null,
     isVisible: myPresence?.is_visible ?? null,
   });
-
-  const onVerify = useCallback(async () => {
-    setVerifyBusy(true);
-    try {
-      await startAndOpenVerification();
-    } catch {
-      // Generic by design (decision 24) — the sheet just stops spinning and
-      // the user can try again. Never surface why.
-    } finally {
-      setVerifyBusy(false);
-      // The result arrives via the provider's server-to-server webhook, so
-      // re-read `me()` on dismiss rather than trusting a redirect.
-      void queryClient.invalidateQueries({ queryKey: ['me'] });
-    }
-  }, [queryClient]);
-
-  const onVerifySheetConfirm = useCallback(async () => {
-    await onVerify();
-    setVerifySheetOpen(false);
-  }, [onVerify]);
 
   const onEnableLocation = useCallback(async () => {
     const result = await presence.requestPermission();
@@ -242,11 +222,7 @@ export default function GridScreen() {
   }, [presence, queryClient]);
 
   const runReasonAction = useCallback(
-    (action: 'verify' | 'resume' | null) => {
-      // The design (`Grid-Verify.html`) replaces the old direct-to-Persona
-      // jump with an in-app sheet that offers a real "just look around for
-      // now" dismissal — something the old single-button banner never had.
-      if (action === 'verify') setVerifySheetOpen(true);
+    (action: 'resume' | null) => {
       if (action === 'resume') void onResume();
     },
     [onResume]
@@ -376,7 +352,6 @@ export default function GridScreen() {
           actionTestID="grid-not-visible-action"
           message={reasonCopy.message}
           actionLabel={reasonCopy.actionLabel}
-          busy={verifyBusy && reasonCopy.action === 'verify' && verifySheetOpen}
           onAction={reasonCopy.action ? () => runReasonAction(reasonCopy.action) : undefined}
         />
       ) : null}
@@ -456,13 +431,6 @@ export default function GridScreen() {
             onPress={openProfile}
           />
         )}
-      />
-
-      <VerifySheet
-        visible={verifySheetOpen}
-        busy={verifyBusy}
-        onVerify={onVerifySheetConfirm}
-        onDismiss={() => setVerifySheetOpen(false)}
       />
     </View>
   );

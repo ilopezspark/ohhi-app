@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 import { BackButton, BackIcon } from '../../ui';
 import { colors, radii, spacing } from '../../theme/tokens';
+import { ONBOARDING_TOTAL_STEPS, stepLabel } from '../stepResolver';
 
 /**
  * Every onboarding screen's `docs/design/screens/Onb-*.html` top row: a
@@ -16,17 +17,20 @@ import { colors, radii, spacing } from '../../theme/tokens';
  * a step indicator. See `app/README.md`'s "Onboarding design" section for
  * the full step numbering.
  *
- * Total step count (8) and the fill count per screen are transcribed
- * directly from the 24 screens' own markup (`docs/design/screens/Onb-*.html`),
- * not invented: `Onb-Email`/`Onb-Code` both render 1 of 8 filled (the design
- * doesn't advance the bar between school-email and code-entry — kept
- * verbatim rather than "fixed"), `Onb-Basics` 2, `Onb-Goal` 3,
- * `Onb-Identity` 4, `Onb-Photos` 5, `Onb-Status` 6, `Onb-Location` 7. The
- * app's own screen split (separate `dob`/`name` steps for the design's
- * combined "basics", separate `tags`/`status` for its combined "status &
- * tags") reuses the same design-step number for both app screens in a pair.
+ * The bar's segment count and each screen's fill were transcribed from the
+ * 24 screens' own markup (`docs/design/screens/Onb-*.html`): eight segments,
+ * `Onb-Email`/`Onb-Code` 1 (the design doesn't advance the bar between
+ * school-email and code-entry — kept verbatim rather than "fixed"),
+ * `Onb-Basics` 2, `Onb-Goal` 3, `Onb-Identity` 4, `Onb-Photos` 5,
+ * `Onb-Status` 6, `Onb-Location` 7, with the last segment for `finish`. The
+ * age gate (decision 97) inserts the `verify` step after the basics, so the
+ * bar has nine segments and every step from `goals` on moves up one
+ * (`ONBOARDING_STEP_NUMBER` in `onboarding/stepResolver.ts`). The app's own
+ * screen split (separate `dob`/`name` steps for the design's combined
+ * "basics", separate `tags`/`status` for its combined "status & tags") reuses
+ * the same step number for both app screens in a pair.
  */
-export const ONBOARDING_TOTAL_STEPS = 8;
+export { ONBOARDING_TOTAL_STEPS };
 
 export interface OnboardingHeaderProps {
   /** 1-indexed design step (see the doc comment above); omit to render no progress bar at all (the welcome/auth screens before step 1). */
@@ -48,7 +52,13 @@ export function OnboardingHeader({ step, onBack, backTestID }: OnboardingHeaderP
         <View style={styles.spacer} />
       )}
       {step ? (
-        <View style={styles.progress} testID="onboarding-progress">
+        <View
+          style={styles.progress}
+          testID="onboarding-progress"
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={stepLabel(step)}
+        >
           {Array.from({ length: ONBOARDING_TOTAL_STEPS }, (_, index) => (
             <View
               key={index}

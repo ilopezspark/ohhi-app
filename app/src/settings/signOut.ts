@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { supabase } from '../api/client';
 import { usePresenceStore } from '../presence/store';
 import { setAppBadge } from '../badges/appBadge';
+import { resetVerificationSession } from '../verify/session';
 
 /**
  * The sign-out sequence architecture plan §4 step 5 specifies:
@@ -18,5 +19,6 @@ export async function signOutAndReset(queryClient: QueryClient): Promise<void> {
   queryClient.clear();
   void setAppBadge(0).catch(() => {});
   usePresenceStore.getState().reset();
+  resetVerificationSession();
   router.replace('/(auth)/email' as never);
 }

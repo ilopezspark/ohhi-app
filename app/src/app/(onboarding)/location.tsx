@@ -6,12 +6,13 @@ import { setMyTier } from '../../api/presence';
 import { Badge, Button, Text } from '../../ui';
 import { colors, spacing } from '../../theme/tokens';
 import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
+import { ONBOARDING_STEP_NUMBER } from '../../onboarding/stepResolver';
 
 /**
  * `Onb-Location.html` — new onboarding step, slotted in after `status` per
  * the design's own screen order (`docs/design/system.md`'s screen->route
  * map previously said this design has "**none** in onboarding" — location
- * was only ever requested later, from the grid). Design step 7 of 8.
+ * was only ever requested later, from the grid). Design step 8 of 9.
  * Skippable ("not now"); either way this is the flow's last step before
  * `finish`.
  *
@@ -85,7 +86,7 @@ export default function LocationScreen() {
 
   return (
     <OnboardingScreen
-      step={7}
+      step={ONBOARDING_STEP_NUMBER.location}
       onBack={goBack}
       backTestID="location-back"
       testID="location-screen"

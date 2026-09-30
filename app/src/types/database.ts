@@ -1772,6 +1772,7 @@ export type Database = {
           photos_count: number
           status: Database["public"]["Enums"]["user_status"]
           tags_count: number
+          verification_attempts_left: number
           verification_status: Database["public"]["Enums"]["verification_status"]
         }[]
       }

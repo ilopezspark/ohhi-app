@@ -2,7 +2,8 @@ import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { me as fetchMe } from '../../api/me';
-import { ScreenHeader, RowCard, SettingsRow, Text } from '../../ui';
+import { ScreenHeader, RowCard, SettingsRow, Text, useHeaderInsets } from '../../ui';
+import { footerBottomPadding } from '../../ui/keyboardInset';
 import { colors, spacing } from '../../theme/tokens';
 import { queryKeys } from '../../me/queryKeys';
 import { getCampusDetail } from '../../me/settings/queries';
@@ -13,6 +14,9 @@ import { getCampusDetail } from '../../me/settings/queries';
  * nothing to change.
  */
 export default function CampusScreen() {
+  // The last line clears the home indicator / navigation bar (the shared
+  // bottom rule, `ui/keyboardInset.ts#footerBottomPadding`).
+  const bottomInset = useHeaderInsets().bottom;
   const meQuery = useQuery({ queryKey: queryKeys.me.result, queryFn: fetchMe });
   const campusId = meQuery.data?.campus_id ?? null;
 
@@ -28,7 +32,7 @@ export default function CampusScreen() {
   return (
     <View style={styles.safe}>
       <ScreenHeader title="my campus" titleSize={26} onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={styles.scroll} testID="campus-screen">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.huge }) }]} testID="campus-screen">
         {loading ? (
           <View style={styles.center} testID="campus-loading">
             <ActivityIndicator size="large" color={colors.ink} />
@@ -54,7 +58,7 @@ export default function CampusScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, gap: spacing.xl },
   center: { paddingVertical: spacing.huge, alignItems: 'center' },
   cardPadding: { paddingHorizontal: spacing.lgXl },
 });

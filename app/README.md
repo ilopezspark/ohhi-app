@@ -71,7 +71,10 @@ Note: `@testing-library/react-native` 14.x made `render()` and `fireEvent.*` ret
   plain tiles (first name, grad year, tier word), empty-state copy, pull-to-refresh. No
   photos, tags, goals, or presence broadcast merge yet.
 - `restricted`: one shared screen, per-state copy, for `closed_age`/`suspended`/`banned`/
-  `deleted`.
+  `deleted`; `closed_age` carries the age gate's copy (see "Age gate" at the end).
+- The age gate (decision 97): only a verified adult with an `active`/`paused` account reaches
+  the tabs. `routing/AccessGate.tsx`, mounted once in the root layout, routes everyone else to
+  the step their state is on, whatever route or deep link they opened.
 - Root layout (`src/app/_layout.tsx` + `src/app/index.tsx`): restores the session via
   `getSession()` (SecureStore-backed), runs begin_signup -> me -> route before showing any
   screen, calls `touch_activity()` on cold start and every background->active transition.
@@ -85,14 +88,20 @@ Note: `@testing-library/react-native` 14.x made `render()` and `fireEvent.*` ret
 (onboarding)/index  -- resume entry, replaces to the first unmet step below
   -> dob      -- date of birth (write-once; skipped on resume once set)
   -> name     -- first name (2-20 chars) + optional grad year
+  -> verify   -- the ID check (government-issued photo id + selfie, Persona); decision 97
   -> goals    -- at least one user_goal, multi-select
   -> photo    -- main photo (position 0); owned by src/app/(onboarding)/photo.tsx,
                  src/api/photos.ts, src/photos/*
   -> tags     -- 0-3 tags, skippable
   -> status   -- status line (<=140 chars), skippable
-  -> finish   -- calls complete_onboarding(); 'active' -> grid, 'closed_age' -> restricted,
-                 a raise re-derives the unmet step and offers to go back to it
+  -> finish   -- waits until me() says verified, then calls complete_onboarding();
+                 'active' -> grid, 'closed_age' -> restricted (both through the gate),
+                 'identity verification is required' -> the verify state (not an error),
+                 any other raise re-derives the unmet step and offers to go back to it
 ```
+
+(`identity` and `location` also sit in the flow; see "Onboarding design" below and "Age gate"
+at the end for the full order and the step numbers.)
 
 Route contract: dob/name/goals write as each step is submitted (no batching) and
 `router.replace()` to the next step. The photo step calls
@@ -368,7 +377,9 @@ provider's server-to-server webhook, so the screen re-reads `me()` on dismiss ra
 trusting a redirect. 401/403 collapse into the same generic `RefusedError` as every other
 refusal (decision 24); 422 becomes the terminal `VerificationAttemptsExhaustedError` (the
 3-attempt cap, decision 27) and shows no retry; 404 means the function is not deployed yet.
-`id_pending` / `manual_review` / `id_failed` each get their own banner copy from `me()`.
+Since the age gate (decision 97) these states are no longer grid banners: they are the verify
+step's states (`verify/`), and the only caller of `startAndOpenVerification` is
+`verify/useVerifyFlow.ts`. See "Age gate" at the end.
 
 ### Testing on web (browser geolocation prompt)
 
@@ -1090,7 +1101,7 @@ decision 49's "Message" opener now goes through instead of calling `startConvers
 |---|---|
 | `Grid.html` | `(tabs)/grid.tsx` (header, count line, roam pill), `grid/GridTile.tsx` |
 | `Grid-Empty.html` | `(tabs)/grid.tsx`'s `ListEmptyComponent`, via `ui/EmptyState` |
-| `Grid-Verify.html` | `grid/VerifySheet.tsx`, opened from the "not visible because unverified/id_failed" banner's action instead of jumping straight to `startAndOpenVerification()` |
+| `Grid-Verify.html` | ~~`grid/VerifySheet.tsx`~~, removed by the age gate (decision 97): nobody unverified reaches the grid, so its "look at the grid now" line and "just look around for now" dismiss had nothing left to describe; the check is the onboarding `verify` step now (see "Age gate" at the end) |
 | `Profile.html` | `app/profile/[id].tsx` (full-bleed hero), `card/CtaButton.tsx`, `card/ChipList.tsx` |
 | `Profile-Message.html` | `card/MessageSheet.tsx`, opened by the CTA row's message icon when there's no conversation yet |
 | `Profile-Details.html` | ~~`card/DetailsSheet.tsx`~~, removed in the profile redesign: pronouns/orientation now render in the profile's "the basics" card (see "Profile redesign" at the end of this file) |
@@ -1099,9 +1110,7 @@ decision 49's "Message" opener now goes through instead of calling `startConvers
 
 ### Local components (`app/src/grid/`, `app/src/card/`)
 
-- `grid/VerifySheet.tsx` — `Grid-Verify.html`'s sheet: "verify now" (calls
-  `startAndOpenVerification`) and "just look around for now" (dismiss only) — a real dismiss
-  option the old single-button banner never had.
+- ~~`grid/VerifySheet.tsx`~~ — removed by the age gate (decision 97); see "Age gate" at the end.
 - `grid/Banner.tsx` — kept as a thin wrapper (same props/testIDs the grid already called it
   with) now rendering through `ui/Banner` underneath, so the paused/not-visible/location banners
   pick up the kit's tinted-panel styling without every call site in `grid.tsx` changing.
@@ -1209,11 +1218,14 @@ Design order (`docs/design/screens/index.html`'s contact sheet): welcome → ema
 basics → here for → about you → photos → status & tags → location. App route order is now:
 
 ```
-dob -> name -> goals -> identity -> photo -> tags -> status -> location -> finish
+dob -> name -> verify -> goals -> identity -> photo -> tags -> status -> location -> finish
 ```
 
-`identity` sits between `goals` and `photo` (design step 4 of 8); `location` sits between
-`status` and `finish` (design step 7 of 8) — both exactly where the design's own screen order
+(`verify` was added by the age gate, decision 97; the bar grew from 8 segments to 9 and every
+step from `goals` on moved up one: `ONBOARDING_STEP_NUMBER` in `onboarding/stepResolver.ts`.)
+
+`identity` sits between `goals` and `photo` (design step 4 of 8, now 5 of 9); `location` sits
+between `status` and `finish` (design step 7 of 8, now 8 of 9) — both exactly where the design's own screen order
 puts them. Both are optional/skippable and, like the pre-existing `tags`/`status` steps,
 **not** tracked by `resolveOnboardingStep()`/`complete_onboarding()` — the required-step check
 order (`dob` → `first_name` → `goals` → `photo`) is unchanged, so a resume still lands on the
@@ -1697,8 +1709,8 @@ exported and unit-tested directly against synthetic strings, separately from the
 
 Since the migration 0014 pass the scan also covers `app/(onboarding)/photo.tsx`, whose copy was
 lowercased then. The rest of onboarding is not covered yet: it still has sentence-case copy
-(`finish.tsx`, `name.tsx`, `onboarding/validation.ts`) and the date picker's `mode="date"`,
-which need their own pass and an allow-list call first. Only string literals are scanned; JSX
+(`finish.tsx`, `name.tsx`, `onboarding/validation.ts`), which need their own pass first. The
+birthday step (`dob.tsx`, three typed boxes, no native picker) is covered. Only string literals are scanned; JSX
 text children (`<Text>copy</Text>`) are not.
 
 ### Verification
@@ -2397,3 +2409,106 @@ profile view/model, card screen, Me data, completion, validation, owner-filter a
 suites. The new files are voice-linted; the catalog, program and work labels are exempt by
 construction (they are never literals in linted files).
 <!-- END: Tags and about (migration 0018) -->
+
+<!-- BEGIN: Age gate (decision 97) -->
+## Age gate (decision 97)
+
+Owner ruling (30 September 2026): people are let in once Persona has checked a government-issued
+photo ID and a selfie and shown they are 18 or over; nobody under 18 gets into the app. The
+server side is migration 0021 (live) and the `verification` function's ID-birthday check (in the
+repo, not deployed yet). The app side follows `docs/age-gate-contract.md`.
+
+### Routing (`routing/stateToRoute.ts`, `routing/guard.ts`, `routing/AccessGate.tsx`)
+
+`routeForMe` evaluates the contract's table in order:
+
+| `me()` | goes to |
+|---|---|
+| no session | `(auth)/welcome` |
+| `closed_age` (any verification) | `/restricted?status=closed_age` |
+| `suspended` / `banned` | `/restricted` |
+| `verified` + `active`/`paused` | `(tabs)/grid`: the only way into the tabs |
+| `onboarding` (any verification) | `(onboarding)`: the resume entry picks the step (below) |
+| `active`/`paused` + not verified | `/verify-id`, the standalone verify screen |
+
+The gate is layout-level: `AccessGate` is mounted once in `app/_layout.tsx` beside the root
+stack. It reads the current route's zone (`zoneForSegments`: boot, auth, onboarding, verify,
+restricted, open, app) and the shared access read, and `guardRedirect` replaces to the right
+place when the two disagree, so a deep link or a tab (`/profile/[id]`, `/chat/[id]`, `/me/*`,
+the editor, quick status, interests) can never show the app to someone who is not a verified
+adult. While the first read for a session is out, a protected screen is covered. It never
+touches the boot screen or sign-in (they route themselves), never moves anyone on an unknown or
+`deleted` state (the moment between deleting and signing out), and is the one place that moves
+people between zones (finish and the verify screens only refresh the read). The server gates
+every read and write anyway; this is so nobody sees an empty app instead of their step.
+
+The access read (`routing/access.ts`) is `me()` under `['me', 'access', <user id>]`: fresh on
+sign-in/sign-out (the key carries the id, from `routing/sessionUser.ts`), on app foreground, on
+screen focus, and every 5 s while `id_pending` and a verify screen is focused. The poll stops as
+soon as the state is anything else, or the screen loses focus. `me()` gained
+`verification_attempts_left` in `types/database.ts` (by hand).
+
+### Onboarding order
+
+`email -> code -> dob -> name -> verify -> goals -> about you (identity) -> photo -> tags ->
+status -> location -> finish`. The bar has 9 segments (email/code 1, dob/name 2, verify 3,
+goals 4, about you 5, photo 6, tags/status 7, location 8; the last is finish, never filled) and
+an accessible `step N of 9` label. `resolveOnboardingStep` returns `verify` after `name` when the
+check was never started, or failed with tries left and no attempt in this app session, or failed
+with no tries left (the contract's row 9; there is nothing past it that could be finished).
+`id_pending` and `manual_review` do not hold the steps after it: only `finish` waits.
+
+### The verify step (`verify/`, `(onboarding)/verify.tsx`, `verify-id.tsx`, `finish.tsx`)
+
+One flow, `verify/useVerifyFlow.ts`, used by the onboarding step, `finish` and the standalone
+screen; one Persona integration, `api/verification.ts#startAndOpenVerification`. The copy is the
+contract's, verbatim, in `verify/verifyState.ts`:
+
+| state | title | action |
+|---|---|---|
+| not started | `check it's you` + the small print | `start` |
+| `id_pending` | `checking your id` | onboarding: `continue` to goals; finish/standalone: `continue` resumes Persona, only once 2 minutes have passed since the flow last came back in this session (or none did), since a closed-early window can't be told apart |
+| `manual_review` | `taking a closer look` | onboarding: `continue`; elsewhere none |
+| `id_failed`, tries left | `we couldn't verify your id` + `{n} tries left` / `1 try left` | `try again` |
+| `id_failed`, none left (or a 422) | `we couldn't verify your id`, no tries left | `contact support` link only |
+| `verified` | — | onboarding step moves on to goals by itself; finish shows its button; the gate takes the standalone screen to the grid |
+
+When the Persona window comes back on the onboarding step, the flow moves on to goals whatever the
+state is. A failed start (function not deployed, Persona not configured, offline, 5xx) shows
+`that didn't work. try again.` with the button kept, and logs the cause in development only.
+There is no client-side bypass: only the server's `verification_status` moves anyone on.
+
+`finish` does not call `complete_onboarding()` until `me()` says verified; if the RPC still
+refuses with `identity verification is required` (`api/onboarding.ts#VerificationRequiredError`),
+it refreshes the read and shows the verify state, with no error banner.
+
+### What went
+
+`grid/VerifySheet.tsx` (its "you can look at the grid now" line and "just look around for now"
+dismiss), the grid's four verification reasons (`unverified`, `id_pending`, `manual_review`,
+`id_failed`) and their copy, the grid's verify action, and `/me/verification`'s start button and
+"real, current student" line (it shows the status and the small print; only verified people
+reach Me). The restricted screen's `closed_age` copy is the contract's (`ohhi is for people 18
+and over`), with `contact support` and `log out`; it offers no account deletion (deleting flips the
+account to `deleted`, which the next sign-in revives as a fresh signup, so that stays with
+support and the owner's open questions). `app/verify-id.tsx` has no back button, only `log out`.
+
+### Also in this pass
+
+- `undecided` is a major only: `ProgramPickerSheet` lists programs through
+  `programPickerModel.ts#programsForKind`, which leaves it out of the minor list.
+- `/me/{blocked,campus,report-help,verification,info/[slug],private-card}` end their scroll with
+  `footerBottomPadding(bottomInset, { edge: spacing.huge })`, so the last line clears the
+  navigation bar.
+
+### Tests
+
+`age-gate-routing.test.ts` (every row of the table, every zone, deep links, the access read, the
+poll rule), `age-gate-verify-step.test.tsx` (every state's copy, the Persona hand-off, moving on,
+the neutral start error, 422, polling and when it stops), `age-gate-finish.test.tsx` (waits,
+the refusal as routing, recovery), `age-gate-screens.test.tsx` (the gate component, the closed
+screen, the standalone screen), `age-gate-cleanup.test.ts` (removed copy, one Persona
+integration, `undecided`, the Me padding), plus updates to `stepResolver`, `stateToRoute`,
+`grid-visibility`, `grid-screen`, `name`, `program-picker` and `voice-rules` (the new files are
+voice-linted).
+<!-- END: Age gate (decision 97) -->

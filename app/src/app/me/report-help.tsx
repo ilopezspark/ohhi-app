@@ -1,6 +1,7 @@
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { ScreenHeader, Text } from '../../ui';
+import { ScreenHeader, Text, useHeaderInsets } from '../../ui';
+import { footerBottomPadding } from '../../ui/keyboardInset';
 import { colors, spacing } from '../../theme/tokens';
 
 /**
@@ -10,10 +11,13 @@ import { colors, spacing } from '../../theme/tokens';
  * already exists at `/settings/report/[id]`.
  */
 export default function ReportHelpScreen() {
+  // The last line clears the home indicator / navigation bar (the shared
+  // bottom rule, `ui/keyboardInset.ts#footerBottomPadding`).
+  const bottomInset = useHeaderInsets().bottom;
   return (
     <View style={styles.safe}>
       <ScreenHeader title="report someone" titleSize={24} onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={styles.scroll} testID="report-help-screen">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.huge }) }]} testID="report-help-screen">
         <Text variant="body" color={colors.muted}>
           there is no list to pick someone from here. open their profile or your chat with them,
           then use the overflow menu and choose report.
@@ -29,5 +33,5 @@ export default function ReportHelpScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, gap: spacing.xl },
 });

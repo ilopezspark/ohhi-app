@@ -73,6 +73,21 @@ describe('the list', () => {
     expect(onPick).toHaveBeenCalledWith(null);
   });
 
+  // First in the list here, so the virtualised list renders its row.
+  const withUndecided = [{ id: 'pu', label: 'undecided' }, ...PROGRAMS];
+
+  it('lists undecided as a major', async () => {
+    const screen = await renderPicker({ programs: withUndecided }).utils;
+    expect(screen.getByTestId('pp-pu')).toHaveTextContent('undecided');
+  });
+
+  it('never lists undecided as a minor, even when searched for', async () => {
+    const screen = await renderPicker({ kind: 'minor', clearLabel: 'no minor', programs: withUndecided }).utils;
+    expect(screen.queryByTestId('pp-pu')).toBeNull();
+    await fireEvent.changeText(screen.getByTestId('pp-search'), 'undecided');
+    expect(screen.queryByTestId('pp-pu')).toBeNull();
+  });
+
   it('offers no clear row when none is given', async () => {
     const { utils } = renderPicker({ clearLabel: undefined });
     expect((await utils).queryByTestId('pp-none')).toBeNull();

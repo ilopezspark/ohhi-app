@@ -15,6 +15,7 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { ThemeProvider } from '../theme';
 import { touchActivity } from '../api/presence';
 import { wireQueryLifecycle } from '../query/lifecycle';
+import { AccessGate } from '../routing/AccessGate';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -113,9 +114,18 @@ export default function RootLayout() {
             <Stack.Screen name="profile-editor" options={{ presentation: 'modal' }} />
             <Stack.Screen name="quick-status" options={{ presentation: 'modal' }} />
             <Stack.Screen name="interests" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="restricted" />
+            {/* The age gate's standalone verify screen (decision 97): an
+                active or paused account that is not verified. */}
+            <Stack.Screen name="verify-id" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="restricted" options={{ gestureEnabled: false }} />
             <Stack.Screen name="+not-found" />
           </Stack>
+          {/* The age gate at the layout level (decision 97,
+              docs/age-gate-contract.md): only a verified adult with an
+              active or paused account reaches the tabs and everything
+              behind them; everyone else is sent to the step their state is
+              on, whatever route or deep link they opened. */}
+          <AccessGate />
         </QueryClientProvider>
       </ThemeProvider>
     </KeyboardProvider>

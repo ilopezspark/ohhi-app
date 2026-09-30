@@ -12,9 +12,10 @@ import { Button, CapIcon, ChevronRightIcon, Text } from '../../ui';
 import { colors, radii, spacing } from '../../theme/tokens';
 import { OnboardingHeader } from '../../onboarding/components/OnboardingHeader';
 import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
+import { ONBOARDING_STEP_NUMBER } from '../../onboarding/stepResolver';
 
 /**
- * Onboarding's tag step (design step 6 of 8), after migration 0018 (decision
+ * Onboarding's tag step (design step 7 of 9), after migration 0018 (decision
  * 94, owner ruling 4): the full-screen interest picker, minimum 3, maximum
  * 10, no skip (`complete_onboarding()` refuses fewer than 3). The picked
  * order is saved through `set_my_tags`.
@@ -97,7 +98,7 @@ export default function TagsScreen() {
   if (!loaded) {
     return (
       <OnboardingScreen
-        step={6}
+        step={ONBOARDING_STEP_NUMBER.tags}
         onBack={goBack}
         backTestID="tags-back"
         testID="tags-screen"
@@ -142,7 +143,7 @@ export default function TagsScreen() {
     <View style={styles.flex} testID="tags-screen">
       <TagPicker
         testID="tags-picker"
-        header={<OnboardingHeader step={6} onBack={goBack} backTestID="tags-back" />}
+        header={<OnboardingHeader step={ONBOARDING_STEP_NUMBER.tags} onBack={goBack} backTestID="tags-back" />}
         title="what are you into"
         intro="pick 3 to 10. they show in the order you pick them."
         closeLabel="back"

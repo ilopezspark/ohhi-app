@@ -19,8 +19,3 @@ export function verificationLabel(status: VerificationStatus | null | undefined)
 export function isVerified(status: VerificationStatus | null | undefined): boolean {
   return status === 'verified';
 }
-
-/** Whether `/me/verification` should offer a "verify now" action — anything short of `verified` and not already mid-flow-only-waiting states can still be (re)started. */
-export function canStartVerification(status: VerificationStatus | null | undefined): boolean {
-  return status !== 'verified';
-}

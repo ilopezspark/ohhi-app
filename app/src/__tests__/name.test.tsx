@@ -48,7 +48,7 @@ describe('NameScreen', () => {
     expect(getByTestId('name-submit').props.accessibilityState?.disabled).toBe(true);
   });
 
-  it('updates the profile and navigates to goals on submit (grad year optional)', async () => {
+  it('updates the profile and navigates to the verify step on submit (grad year optional)', async () => {
     const { getByTestId } = await renderScreen();
     await fireEvent.changeText(getByTestId('name-input'), 'Sam');
     await waitFor(() => expect(getByTestId('name-submit').props.accessibilityState?.disabled).toBe(false));
@@ -56,6 +56,7 @@ describe('NameScreen', () => {
     await fireEvent.press(getByTestId('name-submit'));
 
     await waitFor(() => expect(updateProfile).toHaveBeenCalledWith({ first_name: 'Sam', grad_year: null }));
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(onboarding)/goals'));
+    // The age gate's verify step comes after name (decision 97).
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(onboarding)/verify'));
   });
 });

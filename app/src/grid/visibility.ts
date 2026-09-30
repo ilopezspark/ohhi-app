@@ -1,7 +1,6 @@
 import type { Database } from '../types/database';
 
 type UserStatus = Database['public']['Enums']['user_status'];
-type VerificationStatus = Database['public']['Enums']['verification_status'];
 type ModerationState = Database['public']['Enums']['photo_moderation_state'];
 
 /**
@@ -20,27 +19,23 @@ type ModerationState = Database['public']['Enums']['photo_moderation_state'];
  * (The remaining clause, `not is_blocked(...)`, is irrelevant to a self-check
  * and is not represented here.)
  *
+ * The verification clause is no longer a reason: since the age gate
+ * (decision 97, migration 0021) only a verified adult reaches the grid at
+ * all (`routing/AccessGate.tsx`); everyone else is on the verify step, so the
+ * old `unverified`/`id_pending`/`manual_review`/`id_failed` reasons can never
+ * occur here and are gone, with their copy and the grid's verify sheet.
+ *
  * Migration 0009 dropped the staleness and `tier <> 'away'` clauses entirely
- * — location and recency no longer hide anyone (decision 53), so this
- * derivation no longer reasons about either, and `tier_away`/`tier_stale`/
- * `permission_denied` are gone as reasons. A location denial is now a soft,
- * dismissible hint the grid screen shows on its own (`(tabs)/grid.tsx`,
- * `presence/index.ts`'s `LOCATION_DENIED_COPY`), never a "you're not
- * visible" reason.
+ * — location and recency no longer hide anyone (decision 53). A location
+ * denial is a soft, dismissible hint the grid screen shows on its own
+ * (`(tabs)/grid.tsx`, `presence/index.ts`'s `LOCATION_DENIED_COPY`), never a
+ * "you're not visible" reason.
  */
 
-export type NotVisibleReason =
-  | 'unverified'
-  | 'id_pending'
-  | 'manual_review'
-  | 'id_failed'
-  | 'photo_pending'
-  | 'paused'
-  | 'not_active';
+export type NotVisibleReason = 'photo_pending' | 'paused' | 'not_active';
 
 export interface VisibilityInput {
   status: UserStatus | null;
-  verificationStatus: VerificationStatus | null;
   /** `moderation_state` of the caller's own position-0 photo; null when absent. */
   mainPhotoState: ModerationState | null;
   /** `user_presence.is_visible` — false means paused. */
@@ -56,35 +51,19 @@ export interface VisibilityInput {
  * the screen doesn't flash a banner during the first render.
  */
 export function notVisibleReason(input: VisibilityInput): NotVisibleReason | null {
-  if (input.status === null || input.verificationStatus === null) return null;
+  if (input.status === null) return null;
 
-  // 1. Verification. Split by state because §5 gives each one different copy
-  //    and a different (or absent) action.
-  switch (input.verificationStatus) {
-    case 'verified':
-      break;
-    case 'id_pending':
-      return 'id_pending';
-    case 'manual_review':
-      return 'manual_review';
-    case 'id_failed':
-      return 'id_failed';
-    default:
-      // 'unverified' / 'email_verified' — the state every user is in after OTP.
-      return 'unverified';
-  }
-
-  // 2. An `ok` photo at position 0 is required by both the join in
+  // 1. An `ok` photo at position 0 is required by both the join in
   //    `grid_for_me` and `is_grid_visible` itself.
   if (input.mainPhotoState !== 'ok') return 'photo_pending';
 
-  // 3. Paused. The screen shows its own dedicated banner for this and
+  // 2. Paused. The screen shows its own dedicated banner for this and
   //    suppresses the reason banner, per §3.1's note that the two are
   //    redundant — this branch exists so the derivation stays faithful to
   //    `is_grid_visible` and stays testable on its own.
   if (input.isVisible === false) return 'paused';
 
-  // 4. Defensive only — an onboarding user shouldn't reach the grid at all.
+  // 3. Defensive only — an onboarding user never reaches the grid (the gate).
   if (input.status !== 'active' && input.status !== 'paused') return 'not_active';
 
   return null;
@@ -95,32 +74,10 @@ export interface ReasonCopy {
   message: string;
   /** Label for the call to action, or null when the state has no retry. */
   actionLabel: string | null;
-  action: 'verify' | 'resume' | null;
+  action: 'resume' | null;
 }
 
 export const REASON_COPY: Record<NotVisibleReason, ReasonCopy> = {
-  unverified: {
-    message: 'Verify your identity to be seen and to send a hi — takes about 2 minutes.',
-    actionLabel: 'Get verified',
-    action: 'verify',
-  },
-  id_pending: {
-    message: 'Verifying… this can take a few minutes.',
-    actionLabel: null,
-    action: null,
-  },
-  manual_review: {
-    // No SLA implied on purpose: this shares the moderation console's reviewer
-    // queue (decision 28) and can sit for a while.
-    message: 'We need a bit more time to review your ID.',
-    actionLabel: null,
-    action: null,
-  },
-  id_failed: {
-    message: "We couldn't verify your ID.",
-    actionLabel: 'Try again',
-    action: 'verify',
-  },
   photo_pending: {
     message: 'Your photo is still under review.',
     actionLabel: null,

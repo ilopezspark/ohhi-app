@@ -8,7 +8,6 @@ import {
 /** A caller who satisfies every clause of `is_grid_visible` (migration 0009). */
 const visible = (overrides: Partial<VisibilityInput> = {}): VisibilityInput => ({
   status: 'active',
-  verificationStatus: 'verified',
   mainPhotoState: 'ok',
   isVisible: true,
   ...overrides,
@@ -21,33 +20,15 @@ describe('notVisibleReason', () => {
 
   it('returns null while me() is still loading, rather than flashing a banner', () => {
     expect(notVisibleReason(visible({ status: null }))).toBeNull();
-    expect(notVisibleReason(visible({ verificationStatus: null }))).toBeNull();
   });
 
-  describe('priority 1 — verification (the hard-coded clause, rule 11)', () => {
-    it.each([
-      ['unverified', 'unverified'],
-      ['email_verified', 'unverified'],
-      ['id_pending', 'id_pending'],
-      ['manual_review', 'manual_review'],
-      ['id_failed', 'id_failed'],
-    ] as const)('maps %s to the %s reason', (status, expected) => {
-      expect(notVisibleReason(visible({ verificationStatus: status }))).toBe(expected);
-    });
-
-    it('outranks every other reason', () => {
-      const reason = notVisibleReason(
-        visible({
-          verificationStatus: 'email_verified',
-          mainPhotoState: 'pending',
-          isVisible: false,
-        })
-      );
-      expect(reason).toBe('unverified');
-    });
+  // The age gate (decision 97): only a verified adult reaches the grid, so
+  // verification is no longer a reason the grid can show.
+  it('has no verification input or reason any more', () => {
+    expect(Object.keys(visible())).not.toContain('verificationStatus');
   });
 
-  describe('priority 2 — the position-0 photo', () => {
+  describe('priority 1 — the position-0 photo', () => {
     it.each([['pending'], ['removed']] as const)('is photo_pending for %s', (state) => {
       expect(notVisibleReason(visible({ mainPhotoState: state }))).toBe('photo_pending');
     });
@@ -63,7 +44,7 @@ describe('notVisibleReason', () => {
     });
   });
 
-  describe('priority 3 — paused', () => {
+  describe('priority 2 — paused', () => {
     it('is paused when is_visible is false', () => {
       expect(notVisibleReason(visible({ isVisible: false }))).toBe('paused');
     });
@@ -78,7 +59,7 @@ describe('notVisibleReason', () => {
     });
   });
 
-  describe('priority 4 — status (defensive)', () => {
+  describe('priority 3 — status (defensive)', () => {
     it('flags a non-active, non-paused status last', () => {
       expect(notVisibleReason(visible({ status: 'onboarding' }))).toBe('not_active');
     });
@@ -90,15 +71,7 @@ describe('notVisibleReason', () => {
 });
 
 describe('REASON_COPY', () => {
-  const reasons: NotVisibleReason[] = [
-    'unverified',
-    'id_pending',
-    'manual_review',
-    'id_failed',
-    'photo_pending',
-    'paused',
-    'not_active',
-  ];
+  const reasons: NotVisibleReason[] = ['photo_pending', 'paused', 'not_active'];
 
   it('has copy for every reason', () => {
     for (const reason of reasons) {
@@ -112,16 +85,17 @@ describe('REASON_COPY', () => {
     expect(REASON_COPY).not.toHaveProperty('permission_denied');
   });
 
-  it('offers no retry for the states §5 says have none', () => {
-    for (const reason of ['id_pending', 'manual_review', 'photo_pending'] as const) {
-      expect(REASON_COPY[reason].action).toBeNull();
-      expect(REASON_COPY[reason].actionLabel).toBeNull();
+  it('drops the four verification reasons the age gate makes unreachable (decision 97)', () => {
+    for (const gone of ['unverified', 'id_pending', 'manual_review', 'id_failed']) {
+      expect(REASON_COPY).not.toHaveProperty(gone);
     }
+    expect(Object.keys(REASON_COPY).sort()).toEqual(['not_active', 'paused', 'photo_pending']);
   });
 
-  it('offers a retry for id_failed and a start for unverified', () => {
-    expect(REASON_COPY.id_failed.action).toBe('verify');
-    expect(REASON_COPY.unverified.action).toBe('verify');
+  it('offers no action for a photo under review, and resume for paused', () => {
+    expect(REASON_COPY.photo_pending.action).toBeNull();
+    expect(REASON_COPY.photo_pending.actionLabel).toBeNull();
+    expect(REASON_COPY.paused.action).toBe('resume');
   });
 
   it('never says blocked, denied or forbidden (decision 24)', () => {
@@ -130,11 +104,5 @@ describe('REASON_COPY', () => {
         /blocked|forbidden|not allowed|denied|unauthori[sz]ed/
       );
     }
-  });
-
-  it('implies no SLA for manual_review (decision 28)', () => {
-    expect(REASON_COPY.manual_review.message.toLowerCase()).not.toMatch(
-      /\b\d+\s*(hour|day|minute|business)/
-    );
   });
 });

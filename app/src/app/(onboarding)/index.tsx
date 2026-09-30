@@ -1,32 +1,21 @@
 import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { me } from '../../api/me';
-import { getFirstName } from '../../api/profile';
-import { getDateOfBirth } from '../../api/onboarding';
+import { readOnboardingProgress } from '../../onboarding/progress';
 import { resolveOnboardingStep, stepToPath } from '../../onboarding/stepResolver';
 
 /**
  * Resume entry for `status = 'onboarding'` (onboarding-grid plan §1.4).
- * `me()` only reports counts of goals/tags/photos (plus status and
- * verification_status) — `first_name` and DOB presence aren't in its
- * return shape, so both are read directly here under their owner select
- * grants (`profiles.first_name`, `users_private.date_of_birth`). Replaces
- * to the first unmet required step, in `complete_onboarding()`'s own check
- * order (`resolveOnboardingStep`).
+ * Replaces to the first unmet step (`resolveOnboardingStep`): the required
+ * steps in `complete_onboarding()`'s own check order, with the age gate's
+ * `verify` step after `name` (decision 97).
  */
 export default function OnboardingIndex() {
   useEffect(() => {
     let cancelled = false;
 
     async function resume() {
-      const [meResult, firstName, dob] = await Promise.all([me(), getFirstName(), getDateOfBirth()]);
-      const step = resolveOnboardingStep({
-        dobSet: dob !== null,
-        firstName,
-        goalsCount: meResult?.goals_count ?? 0,
-        photosCount: meResult?.photos_count ?? 0,
-      });
+      const step = resolveOnboardingStep(await readOnboardingProgress());
       if (!cancelled) {
         router.replace(stepToPath(step) as never);
       }

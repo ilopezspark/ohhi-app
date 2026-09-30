@@ -4,13 +4,14 @@ import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { GOAL_OPTIONS, setUserGoals, type UserGoal } from '../../api/goals';
 import { mapSupabaseError } from '../../api/errors';
-import { stepToPath } from '../../onboarding/stepResolver';
+import { stepToPath, ONBOARDING_STEP_NUMBER } from '../../onboarding/stepResolver';
 import { Button, CheckIcon, Text } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
+import { useAccessQuery } from '../../routing/access';
 
 /**
- * `Onb-Goal.html`'s checkbox-card list. Design step 3 of 8. Copy note: the
+ * `Onb-Goal.html`'s checkbox-card list. Design step 4 of 9 (after the age gate's `verify`, decision 97). Copy note: the
  * design's own option titles/subtitles ("friends" / "people to actually
  * hang out with", etc.) don't match `api/goals.ts`'s `GOAL_OPTIONS` labels
  * ("Making friends", "Study buddies", ...) — that file is `src/api/*`, out
@@ -35,6 +36,9 @@ const GOAL_SUBTITLES: Record<UserGoal, string> = {
 export default function GoalsScreen() {
   const [selected, setSelected] = useState<UserGoal[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Back goes to the `verify` step, unless the check already passed: that
+  // step moves a verified person straight back here, so skip it.
+  const { me: access } = useAccessQuery();
 
   const mutation = useMutation({
     mutationFn: () => setUserGoals(selected),
@@ -55,12 +59,12 @@ export default function GoalsScreen() {
   }
 
   function goBack() {
-    router.replace('/(onboarding)/name' as never);
+    router.replace(stepToPath(access?.verification_status === 'verified' ? 'name' : 'verify') as never);
   }
 
   return (
     <OnboardingScreen
-      step={3}
+      step={ONBOARDING_STEP_NUMBER.goals}
       onBack={goBack}
       backTestID="goals-back"
       testID="goals-screen"

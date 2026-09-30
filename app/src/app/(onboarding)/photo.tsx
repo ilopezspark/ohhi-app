@@ -6,7 +6,7 @@ import { supabase } from '../../api/client';
 import { uploadProfilePhoto, type UserPhotoRow } from '../../api/photos';
 import { tintForPhoto } from '../../photos/tint';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
-import { stepToPath } from '../../onboarding/stepResolver';
+import { stepToPath, ONBOARDING_STEP_NUMBER } from '../../onboarding/stepResolver';
 import { Badge, Button, PlusIcon, Text } from '../../ui';
 import { colors, radii, spacing } from '../../theme/tokens';
 import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
@@ -19,7 +19,7 @@ const MAIN_PHOTO_POSITION = 0;
 /**
  * `Onb-Photos.html`. Onboarding photo step (`docs/app-onboarding-grid-plan.md`
  * §2), main photo only (position 0) — kept exactly as before this pass.
- * Design step 5 of 8. On success: `router.replace('/(onboarding)/tags')`.
+ * Design step 6 of 9. On success: `router.replace('/(onboarding)/tags')`.
  * Back: `router.replace('/(onboarding)/identity')` (was `goals`; `identity`
  * now sits between `goals` and this step, see `identity.tsx`).
  *
@@ -139,7 +139,7 @@ export default function PhotoScreen() {
   const hasPreview = !!selected && (phase === 'preview' || phase === 'uploading' || phase === 'error');
 
   return (
-    <OnboardingScreen step={5} onBack={goBack} backTestID="photo-back-button" testID="photo-screen">
+    <OnboardingScreen step={ONBOARDING_STEP_NUMBER.photo} onBack={goBack} backTestID="photo-back-button" testID="photo-screen">
       <Text variant="headline" style={{ marginTop: spacing.md }}>
         add a photo
       </Text>

@@ -4,7 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { updateProfile } from '../../api/profile';
 import { mapSupabaseError } from '../../api/errors';
 import { validateFirstName, validateGradYear } from '../../onboarding/validation';
-import { stepToPath } from '../../onboarding/stepResolver';
+import { stepToPath, ONBOARDING_STEP_NUMBER } from '../../onboarding/stepResolver';
 import { Button, Input, Text } from '../../ui';
 import { colors, spacing } from '../../theme/tokens';
 import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
@@ -12,7 +12,7 @@ import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
 /**
  * `Onb-Basics.html`'s first-name + grad-year fields (the design's birthday
  * field is the separate `dob.tsx` step — see that screen's doc comment).
- * Design step 2 of 8, same as `dob.tsx`.
+ * Design step 2 of 9, same as `dob.tsx`.
  *
  * **Deviation**: the design shows grad year as a fixed row of 5 year chips
  * ('26/'27/'28/'29/"later"). Kept as the existing free-text numeric field
@@ -40,7 +40,8 @@ export default function NameScreen() {
         first_name: firstName.trim(),
         grad_year: parsedGradYear,
       }),
-    onSuccess: () => router.replace(stepToPath('goals') as never),
+    // The age gate's `verify` step comes next (decision 97).
+    onSuccess: () => router.replace(stepToPath('verify') as never),
     onError: (error: unknown) => setErrorMessage(mapSupabaseError(error).message),
   });
 
@@ -59,7 +60,7 @@ export default function NameScreen() {
 
   return (
     <OnboardingScreen
-      step={2}
+      step={ONBOARDING_STEP_NUMBER.name}
       onBack={goBack}
       backTestID="name-back"
       testID="name-screen"

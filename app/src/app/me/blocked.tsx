@@ -4,7 +4,8 @@ import { router } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listBlockedUsers, unblockUser } from '../../api/blocks';
 import { mapSupabaseError } from '../../api/errors';
-import { ScreenHeader, RowCard, SettingsRow, Text } from '../../ui';
+import { ScreenHeader, RowCard, SettingsRow, Text, useHeaderInsets } from '../../ui';
+import { footerBottomPadding } from '../../ui/keyboardInset';
 import { displayName } from '../../ui/displayName';
 import { colors, spacing } from '../../theme/tokens';
 import { queryKeys } from '../../me/queryKeys';
@@ -16,6 +17,9 @@ import { queryKeys } from '../../me/queryKeys';
  * toggle rows.
  */
 export default function BlockedScreen() {
+  // The last line clears the home indicator / navigation bar (the shared
+  // bottom rule, `ui/keyboardInset.ts#footerBottomPadding`).
+  const bottomInset = useHeaderInsets().bottom;
   const queryClient = useQueryClient();
   const { data: blocked, isLoading } = useQuery({ queryKey: queryKeys.me.blockedUsers, queryFn: listBlockedUsers });
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +41,7 @@ export default function BlockedScreen() {
   return (
     <View style={styles.safe}>
       <ScreenHeader title="blocked" titleSize={26} onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={styles.scroll} testID="blocked-screen">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.huge }) }]} testID="blocked-screen">
         {isLoading ? (
           <View style={styles.center} testID="blocked-loading">
             <ActivityIndicator size="large" color={colors.ink} />
@@ -72,7 +76,7 @@ export default function BlockedScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, gap: spacing.xl },
   center: { paddingVertical: spacing.huge, alignItems: 'center' },
   cardPadding: { paddingHorizontal: spacing.lgXl },
 });

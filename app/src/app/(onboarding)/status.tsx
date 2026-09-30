@@ -4,7 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { updateProfile } from '../../api/profile';
 import { mapSupabaseError } from '../../api/errors';
 import { validateStatusLine } from '../../onboarding/validation';
-import { stepToPath } from '../../onboarding/stepResolver';
+import { stepToPath, ONBOARDING_STEP_NUMBER } from '../../onboarding/stepResolver';
 import { Button, Input, Text } from '../../ui';
 import { colors, spacing } from '../../theme/tokens';
 import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
@@ -12,7 +12,7 @@ import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
 /**
  * `Onb-Status.html`'s status-line field ("what are you up to?" — see
  * `tags.tsx`'s doc comment on the design's combined-vs-split screen). Same
- * design step (6 of 8) as `tags.tsx`. Status-line step (onboarding-grid plan
+ * design step (7 of 9) as `tags.tsx`. Status-line step (onboarding-grid plan
  * §1.4), <=140 chars, skippable. Now routes on to `location` (was `finish`
  * — `location` slots in after `status` per the design's own screen order).
  */
@@ -49,7 +49,7 @@ export default function StatusScreen() {
 
   return (
     <OnboardingScreen
-      step={6}
+      step={ONBOARDING_STEP_NUMBER.status}
       onBack={goBack}
       backTestID="status-back"
       testID="status-screen"

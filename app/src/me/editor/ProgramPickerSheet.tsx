@@ -19,6 +19,7 @@ import {
   findListedProgram,
   isSearching,
   programOptions,
+  programsForKind,
   resultCountText,
   showClearRow,
   suggestionFromQuery,
@@ -95,7 +96,8 @@ export function ProgramPickerSheet({
 
   const searching = isSearching(query);
   const options = useMemo(
-    () => programOptions(programs, query, { selectedId, majorId: kind === 'minor' ? majorId : null }),
+    // `undecided` is a major only: the minor list leaves it out.
+    () => programOptions(programsForKind(programs, kind), query, { selectedId, majorId: kind === 'minor' ? majorId : null }),
     [programs, query, selectedId, majorId, kind]
   );
   const clearRow = showClearRow(clearLabel, query);
