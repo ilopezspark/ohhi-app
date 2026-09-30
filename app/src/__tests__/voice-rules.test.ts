@@ -473,6 +473,11 @@ const SCOPE_FILES: string[] = [
   ...listTsFiles(path.join(SRC, 'notices')),
   path.join(SRC, 'app', 'interests.tsx'),
   path.join(SRC, 'app', '(onboarding)', 'tags.tsx'),
+  // Onboarding's optional prompts step (owner ruling: onboarding asks if they
+  // want to answer a few prompts) and its answer-list helper. The shared
+  // pieces in `me/editor/PromptParts.tsx` are covered by the `me/` sweep.
+  path.join(SRC, 'app', '(onboarding)', 'prompts.tsx'),
+  path.join(SRC, 'onboarding', 'prompts.ts'),
   path.join(SRC, 'api', 'tags.ts'),
   path.join(SRC, 'api', 'about.ts'),
   path.join(SRC, 'api', 'notices.ts'),
@@ -574,6 +579,9 @@ describe('voice rules — real source tree', () => {
         path.join('notices', 'TagsChangedNotice.tsx'),
         path.join('app', 'interests.tsx'),
         path.join('app', '(onboarding)', 'tags.tsx'),
+        path.join('app', '(onboarding)', 'prompts.tsx'),
+        path.join('onboarding', 'prompts.ts'),
+        path.join('me', 'editor', 'PromptParts.tsx'),
         path.join('app', 'profile-editor', 'tags.tsx'),
         path.join('app', 'profile-editor', 'school-and-work.tsx'),
         path.join('profile', 'about.ts'),

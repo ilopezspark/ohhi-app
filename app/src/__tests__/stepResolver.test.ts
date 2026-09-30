@@ -94,8 +94,8 @@ describe('the verify step in the route and the progress bar', () => {
     expect(stepToPath('verify')).toBe('/(onboarding)/verify');
   });
 
-  it('numbers the flow email/code 1, dob/name 2, verify 3, goals 4, about you 5, photo 6, tags/status 7, location 8, of 9', () => {
-    expect(ONBOARDING_TOTAL_STEPS).toBe(9);
+  it('numbers the flow email/code 1, dob/name 2, verify 3, goals 4, about you 5, photo 6, tags/status 7, prompts 8, location 9, of 10', () => {
+    expect(ONBOARDING_TOTAL_STEPS).toBe(10);
     expect(ONBOARDING_STEP_NUMBER).toEqual({
       email: 1,
       code: 1,
@@ -107,8 +107,17 @@ describe('the verify step in the route and the progress bar', () => {
       photo: 6,
       tags: 7,
       status: 7,
-      location: 8,
+      prompts: 8,
+      location: 9,
     });
+  });
+
+  it('has paths for the optional steps, prompts sitting between status and location', () => {
+    expect(stepToPath('status')).toBe('/(onboarding)/status');
+    expect(stepToPath('prompts')).toBe('/(onboarding)/prompts');
+    expect(stepToPath('location')).toBe('/(onboarding)/location');
+    expect(ONBOARDING_STEP_NUMBER.prompts).toBeGreaterThan(ONBOARDING_STEP_NUMBER.status);
+    expect(ONBOARDING_STEP_NUMBER.prompts).toBeLessThan(ONBOARDING_STEP_NUMBER.location);
   });
 
   it('never fills the last segment on a step screen (it is finish)', () => {
@@ -116,6 +125,6 @@ describe('the verify step in the route and the progress bar', () => {
   });
 
   it('labels the bar "step N of M"', () => {
-    expect(stepLabel(3)).toBe('step 3 of 9');
+    expect(stepLabel(3)).toBe('step 3 of 10');
   });
 });

@@ -6,7 +6,7 @@ import { Stack } from 'expo-router';
  * optional steps (`docs/design/system.md`'s screen->route map) and the age
  * gate's `verify` step right after `name` (decision 97,
  * `docs/age-gate-contract.md`): dob -> name -> verify -> goals -> identity
- * (about you) -> photo -> tags -> status -> location -> finish. `index` is
+ * (about you) -> photo -> tags -> status -> prompts -> location -> finish. `index` is
  * the resume entry, replacing to the first unmet step
  * (`onboarding/stepResolver.ts#resolveOnboardingStep`).
  */
@@ -22,6 +22,7 @@ export default function OnboardingLayout() {
       <Stack.Screen name="photo" />
       <Stack.Screen name="tags" />
       <Stack.Screen name="status" />
+      <Stack.Screen name="prompts" />
       <Stack.Screen name="location" />
       <Stack.Screen name="finish" />
     </Stack>

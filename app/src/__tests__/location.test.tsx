@@ -53,9 +53,9 @@ describe('LocationScreen', () => {
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(onboarding)/finish'));
   });
 
-  it('navigates back to status', async () => {
+  it('navigates back to prompts', async () => {
     const { getByTestId } = await render(<LocationScreen />);
     await fireEvent.press(getByTestId('location-back'));
-    expect(router.replace).toHaveBeenCalledWith('/(onboarding)/status');
+    expect(router.replace).toHaveBeenCalledWith('/(onboarding)/prompts');
   });
 });

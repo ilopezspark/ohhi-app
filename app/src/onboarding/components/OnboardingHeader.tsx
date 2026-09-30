@@ -24,7 +24,7 @@ import { ONBOARDING_TOTAL_STEPS, stepLabel } from '../stepResolver';
  * `Onb-Basics` 2, `Onb-Goal` 3, `Onb-Identity` 4, `Onb-Photos` 5,
  * `Onb-Status` 6, `Onb-Location` 7, with the last segment for `finish`. The
  * age gate (decision 97) inserts the `verify` step after the basics, so the
- * bar has nine segments and every step from `goals` on moves up one
+ * bar grew a segment and every step from `goals` on moved up one (the optional `prompts` step later made it ten)
  * (`ONBOARDING_STEP_NUMBER` in `onboarding/stepResolver.ts`). The app's own
  * screen split (separate `dob`/`name` steps for the design's combined
  * "basics", separate `tags`/`status` for its combined "status & tags") reuses

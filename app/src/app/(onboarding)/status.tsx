@@ -13,8 +13,7 @@ import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
  * `Onb-Status.html`'s status-line field ("what are you up to?" — see
  * `tags.tsx`'s doc comment on the design's combined-vs-split screen). Same
  * design step (7 of 9) as `tags.tsx`. Status-line step (onboarding-grid plan
- * §1.4), <=140 chars, skippable. Now routes on to `location` (was `finish`
- * — `location` slots in after `status` per the design's own screen order).
+ * §1.4), <=140 chars, skippable. Routes on to `prompts`, then `location`.
  */
 export default function StatusScreen() {
   const [statusLine, setStatusLine] = useState('');
@@ -24,7 +23,7 @@ export default function StatusScreen() {
 
   const mutation = useMutation({
     mutationFn: (value: string | null) => updateProfile({ status_line: value }),
-    onSuccess: () => router.replace(stepToPath('location') as never),
+    onSuccess: () => router.replace(stepToPath('prompts') as never),
     onError: (error: unknown) => setErrorMessage(mapSupabaseError(error).message),
   });
 

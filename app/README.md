@@ -94,13 +94,14 @@ Note: `@testing-library/react-native` 14.x made `render()` and `fireEvent.*` ret
                  src/api/photos.ts, src/photos/*
   -> tags     -- 0-3 tags, skippable
   -> status   -- status line (<=140 chars), skippable
+  -> prompts  -- optional: answer up to 3 prompts from the bank (owner ruling), skippable
   -> finish   -- waits until me() says verified, then calls complete_onboarding();
                  'active' -> grid, 'closed_age' -> restricted (both through the gate),
                  'identity verification is required' -> the verify state (not an error),
                  any other raise re-derives the unmet step and offers to go back to it
 ```
 
-(`identity` and `location` also sit in the flow; see "Onboarding design" below and "Age gate"
+(`identity`, `prompts` and `location` also sit in the flow; see "Onboarding design" below and "Age gate"
 at the end for the full order and the step numbers.)
 
 Route contract: dob/name/goals write as each step is submitted (no batching) and
@@ -1224,9 +1225,9 @@ dob -> name -> verify -> goals -> identity -> photo -> tags -> status -> locatio
 (`verify` was added by the age gate, decision 97; the bar grew from 8 segments to 9 and every
 step from `goals` on moved up one: `ONBOARDING_STEP_NUMBER` in `onboarding/stepResolver.ts`.)
 
-`identity` sits between `goals` and `photo` (design step 4 of 8, now 5 of 9); `location` sits
-between `status` and `finish` (design step 7 of 8, now 8 of 9) — both exactly where the design's own screen order
-puts them. Both are optional/skippable and, like the pre-existing `tags`/`status` steps,
+`identity` sits between `goals` and `photo` (design step 4 of 8, now 5 of 9); `prompts` (answer a few prompts, step 8 of 10) sits
+between `status` and `location`; `location` (design step 7 of 8, now 9 of 10) sits before `finish`.
+All three are optional/skippable and, like the pre-existing `tags`/`status` steps,
 **not** tracked by `resolveOnboardingStep()`/`complete_onboarding()` — the required-step check
 order (`dob` → `first_name` → `goals` → `photo`) is unchanged, so a resume still lands on the
 same required step it always did (`onboarding/stepResolver.ts`'s doc comment covers this).
@@ -2451,9 +2452,9 @@ soon as the state is anything else, or the screen loses focus. `me()` gained
 ### Onboarding order
 
 `email -> code -> dob -> name -> verify -> goals -> about you (identity) -> photo -> tags ->
-status -> location -> finish`. The bar has 9 segments (email/code 1, dob/name 2, verify 3,
-goals 4, about you 5, photo 6, tags/status 7, location 8; the last is finish, never filled) and
-an accessible `step N of 9` label. `resolveOnboardingStep` returns `verify` after `name` when the
+status -> prompts -> location -> finish`. The bar has 10 segments (email/code 1, dob/name 2, verify 3,
+goals 4, about you 5, photo 6, tags/status 7, prompts 8, location 9; the last is finish, never filled) and
+an accessible `step N of 10` label. `resolveOnboardingStep` returns `verify` after `name` when the
 check was never started, or failed with tries left and no attempt in this app session, or failed
 with no tries left (the contract's row 9; there is nothing past it that could be finished).
 `id_pending` and `manual_review` do not hold the steps after it: only `finish` waits.

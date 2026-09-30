@@ -11,6 +11,7 @@ export type OnboardingStepId =
   | 'photo'
   | 'tags'
   | 'status'
+  | 'prompts'
   | 'location';
 
 export interface OnboardingProgress {
@@ -79,7 +80,7 @@ export function resolveOnboardingStep(progress: OnboardingProgress): OnboardingS
 /**
  * Every route this group can land on, in flow order
  * (`(onboarding)/_layout.tsx`) — a superset of `resolveOnboardingStep`'s own
- * return type, since `identity`/`status`/`location` are reachable by the
+ * return type, since `identity`/`status`/`prompts`/`location` are reachable by the
  * screen-to-screen forward flow (each screen's own `stepToPath` call) even
  * though the resolver above never returns them itself.
  */
@@ -92,6 +93,7 @@ const STEP_PATHS: Record<OnboardingStepId, string> = {
   photo: '/(onboarding)/photo',
   tags: '/(onboarding)/tags',
   status: '/(onboarding)/status',
+  prompts: '/(onboarding)/prompts',
   location: '/(onboarding)/location',
 };
 
@@ -103,7 +105,8 @@ export function stepToPath(step: OnboardingStepId): string {
  * The progress bar's step for each screen (`OnboardingHeader`): the design's
  * eight, with `verify` inserted as step 3 (decision 97). The app's split
  * screens share a number, as they always have: `email`/`code` are 1,
- * `dob`/`name` 2, `tags`/`status` 7. `finish` shows no bar.
+ * `dob`/`name` 2, `tags`/`status` 7; `prompts` is 8 and `location` 9 (the
+ * prompts step sits between `status` and `location`). `finish` shows no bar.
  */
 export const ONBOARDING_STEP_NUMBER = {
   email: 1,
@@ -116,11 +119,12 @@ export const ONBOARDING_STEP_NUMBER = {
   photo: 6,
   tags: 7,
   status: 7,
-  location: 8,
+  prompts: 8,
+  location: 9,
 } as const;
 
 /** Segments in the progress bar: the last one is `finish`, never filled on a step screen. */
-export const ONBOARDING_TOTAL_STEPS = 9;
+export const ONBOARDING_TOTAL_STEPS = 10;
 
 /** The progress bar's accessible label. */
 export function stepLabel(step: number, total: number = ONBOARDING_TOTAL_STEPS): string {
