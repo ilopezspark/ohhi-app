@@ -35,7 +35,31 @@ export async function getDateOfBirth(): Promise<string | null> {
 export async function setDateOfBirth(dob: string): Promise<void> {
   const uid = await currentUserId();
   const { error } = await supabase.from('users_private').update({ date_of_birth: dob }).eq('user_id', uid);
-  if (error) throw mapSupabaseError(error);
+  if (error) {
+    // The trigger refusing a change to a set birthday is a routing signal (the
+    // step is already done), not an error to show: the DOB screen moves on.
+    if (isDateOfBirthAlreadySet(error)) throw new DateOfBirthAlreadySetError();
+    throw mapSupabaseError(error);
+  }
+}
+
+/**
+ * `dob_write_once()` (migration 0002, `core_schema.sql`) refuses a change to
+ * a set `date_of_birth` with a plain `raise exception` (`P0001`) carrying this
+ * exact message. Matched on the message the way `isVerificationRequired` is.
+ */
+export const DATE_OF_BIRTH_ALREADY_SET_MESSAGE = 'date_of_birth cannot be changed once set';
+
+export class DateOfBirthAlreadySetError extends Error {
+  constructor() {
+    super(DATE_OF_BIRTH_ALREADY_SET_MESSAGE);
+    this.name = 'DateOfBirthAlreadySetError';
+  }
+}
+
+function isDateOfBirthAlreadySet(error: unknown): boolean {
+  const message = (error as { message?: string } | null | undefined)?.message;
+  return typeof message === 'string' && message.includes(DATE_OF_BIRTH_ALREADY_SET_MESSAGE);
 }
 
 /**

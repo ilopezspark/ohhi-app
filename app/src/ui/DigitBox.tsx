@@ -1,8 +1,14 @@
 import { forwardRef } from 'react';
-import { StyleSheet, TextInput, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native';
+import { StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native';
 import { colors, radii, shadows } from '../theme/tokens';
 
-export interface DigitBoxProps extends Omit<TextInputProps, 'style'> {
+export interface DigitBoxProps extends Omit<TextInputProps, 'style' | 'placeholder' | 'placeholderTextColor'> {
+  /**
+   * Hint shown while `value` is empty. Drawn as a centred overlay, not the
+   * native placeholder: on Android a centred `TextInput` with a native
+   * placeholder parks the caret at the start of the field instead of the centre.
+   */
+  placeholder?: string;
   /** The box's height (the wrapper's; the field fills it). */
   height: number;
   fontSize: number;
@@ -28,12 +34,27 @@ export interface DigitBoxProps extends Omit<TextInputProps, 'style'> {
  * `TextInput`'s, so focus moves between boxes as before.
  */
 export const DigitBox = forwardRef<TextInput, DigitBoxProps>(function DigitBox(
-  { height, fontSize, containerStyle, ...rest },
+  { height, fontSize, containerStyle, placeholder, accessibilityLabel, value, ...rest },
   ref
 ) {
+  // Same line height on the field and the overlay so the digits, the caret
+  // and the hint all sit on one line.
+  const lineHeight = Math.round(fontSize * 1.25);
+  const showPlaceholder = Boolean(placeholder) && !value;
   return (
     <View style={[styles.box, { height }, containerStyle]}>
-      <TextInput ref={ref} style={[styles.field, { fontSize }]} {...rest} />
+      {showPlaceholder ? (
+        <View style={styles.overlay} pointerEvents="none" importantForAccessibility="no-hide-descendants">
+          <Text style={[styles.placeholder, { fontSize, lineHeight }]}>{placeholder}</Text>
+        </View>
+      ) : null}
+      <TextInput
+        ref={ref}
+        style={[styles.field, { fontSize, lineHeight }]}
+        accessibilityLabel={accessibilityLabel ?? placeholder}
+        value={value}
+        {...rest}
+      />
     </View>
   );
 });
@@ -43,6 +64,22 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     backgroundColor: colors.surface,
     ...shadows.sm,
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholder: {
+    color: colors.subtle,
+    fontWeight: '700',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   field: {
     flex: 1,

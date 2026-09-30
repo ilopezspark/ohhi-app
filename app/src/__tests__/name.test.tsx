@@ -27,6 +27,11 @@ describe('NameScreen', () => {
     jest.clearAllMocks();
   });
 
+  it('has no back button (the birthday step before it is write-once and already done)', async () => {
+    const { queryByTestId } = await renderScreen();
+    expect(queryByTestId('name-back')).toBeNull();
+  });
+
   it('keeps submit disabled until the first name is 2-20 characters', async () => {
     const { getByTestId } = await renderScreen();
     expect(getByTestId('name-submit').props.accessibilityState?.disabled).toBe(true);

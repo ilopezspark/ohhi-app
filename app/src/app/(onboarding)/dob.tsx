@@ -1,8 +1,15 @@
-import { useRef, useState } from 'react';
-import { StyleSheet, View, type NativeSyntheticEvent, type TextInput, type TextInputKeyPressEventData } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  View,
+  type NativeSyntheticEvent,
+  type TextInput,
+  type TextInputKeyPressEventData,
+} from 'react-native';
 import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
-import { setDateOfBirth } from '../../api/onboarding';
+import { DateOfBirthAlreadySetError, getDateOfBirth, setDateOfBirth } from '../../api/onboarding';
 import { mapSupabaseError } from '../../api/errors';
 import { DEFAULT_CAMPUS_TIMEZONE, isEighteen } from '../../onboarding/age';
 import { BIRTHDAY_LENGTHS, birthdayToDob } from '../../onboarding/birthday';
@@ -27,9 +34,11 @@ const BOX_FONT_SIZE = 26;
  * screen; `docs/design/system.md`'s screen->route map already documents
  * this app splitting it into `dob.tsx` + `name.tsx` — unchanged by this
  * pass). Design step 2 of 9 (`name.tsx` shares the same step number, same
- * reasoning). Write-once — `(onboarding)/index` only routes here when
- * `getDateOfBirth()` came back null, so this screen doesn't re-check that
- * itself. The 18+ hint below is local, non-authoritative UX only (see
+ * reasoning). Write-once — so this screen checks
+ * `getDateOfBirth()` on mount (a spinner until it answers) and replaces to
+ * `name` if a birthday is already set, however the person got here; a submit
+ * the server refuses as already set (`dob_write_once()`) routes to `name` too
+ * rather than showing an error. The 18+ hint below is local, non-authoritative UX only (see
  * `onboarding/age.ts`): the value is written either way and the real gate
  * is server-side (`complete_onboarding()` and the ID check that follows
  * this step, `docs/age-gate-contract.md`).
@@ -54,7 +63,33 @@ const BOX_FONT_SIZE = 26;
 export default function DobScreen() {
   const [values, setValues] = useState<Record<Part, string>>({ month: '', day: '', year: '' });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // The birthday is write-once, so a value already on the server means there
+  // is nothing to do here: check on mount and move on to `name`. Until that
+  // read settles, a spinner stands in for the boxes.
+  const [checked, setChecked] = useState(false);
   const inputRefs = useRef<Array<TextInput | null>>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getDateOfBirth()
+      .then((existing) => {
+        if (cancelled) return;
+        if (existing !== null) {
+          router.replace(stepToPath('name') as never);
+          return;
+        }
+        setChecked(true);
+      })
+      .catch(() => {
+        // A failed read must not strand the person: show the boxes. The
+        // server still refuses a change to a set birthday, and the submit
+        // below handles that refusal.
+        if (!cancelled) setChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const mutation = useMutation({
     mutationFn: (value: string) => setDateOfBirth(value),
@@ -62,6 +97,12 @@ export default function DobScreen() {
       router.replace(stepToPath('name') as never);
     },
     onError: (error: unknown) => {
+      // `dob_write_once()` refused: the birthday is already set, so this step
+      // is done. Route forward, no error.
+      if (error instanceof DateOfBirthAlreadySetError) {
+        router.replace(stepToPath('name') as never);
+        return;
+      }
       setErrorMessage(mapSupabaseError(error).message);
     },
   });
@@ -93,6 +134,16 @@ export default function DobScreen() {
 
   const submitDisabled = !isValid || mutation.isPending;
 
+  if (!checked) {
+    return (
+      <OnboardingScreen step={ONBOARDING_STEP_NUMBER.dob} testID="dob-screen">
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" testID="dob-loading" />
+        </View>
+      </OnboardingScreen>
+    );
+  }
+
   return (
     <OnboardingScreen
       step={ONBOARDING_STEP_NUMBER.dob}
@@ -123,7 +174,6 @@ export default function DobScreen() {
               fontSize={BOX_FONT_SIZE}
               keyboardType="number-pad"
               placeholder={PLACEHOLDERS[part]}
-              placeholderTextColor={colors.subtle}
               maxLength={BIRTHDAY_LENGTHS[part]}
               value={values[part]}
               onChangeText={(value) => handleChange(index, value)}
@@ -154,4 +204,5 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: spacing.smMd },
   column: { gap: spacing.xs },
   caption: { textAlign: 'center' },
+  loading: { alignItems: 'center', paddingTop: spacing.xxl },
 });

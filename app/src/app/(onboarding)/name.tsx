@@ -14,6 +14,11 @@ import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
  * field is the separate `dob.tsx` step — see that screen's doc comment).
  * Design step 2 of 9, same as `dob.tsx`.
  *
+ * No back button: the only step before this one is `dob`, whose birthday is
+ * write-once and already set by the time anyone is here (the resume resolver
+ * and `dob.tsx`'s own check both send a set birthday on to `name`), so a back
+ * to it could only bounce straight forward again.
+ *
  * **Deviation**: the design shows grad year as a fixed row of 5 year chips
  * ('26/'27/'28/'29/"later"). Kept as the existing free-text numeric field
  * instead. The range is this year to this year + 8 since migration 0018
@@ -54,15 +59,9 @@ export default function NameScreen() {
     mutation.mutate();
   }
 
-  function goBack() {
-    router.replace('/(onboarding)/dob' as never);
-  }
-
   return (
     <OnboardingScreen
       step={ONBOARDING_STEP_NUMBER.name}
-      onBack={goBack}
-      backTestID="name-back"
       testID="name-screen"
       footer={
         <Button

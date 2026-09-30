@@ -6,22 +6,34 @@ jest.mock('expo-router', () => ({
   router: { push: jest.fn(), replace: jest.fn() },
 }));
 
-jest.mock('../api/onboarding', () => ({
-  setDateOfBirth: jest.fn().mockResolvedValue(undefined),
-}));
+jest.mock('../api/onboarding', () => {
+  class DateOfBirthAlreadySetError extends Error {}
+  return {
+    DateOfBirthAlreadySetError,
+    getDateOfBirth: jest.fn().mockResolvedValue(null),
+    setDateOfBirth: jest.fn().mockResolvedValue(undefined),
+  };
+});
 
 import { router } from 'expo-router';
-import { setDateOfBirth } from '../api/onboarding';
+import { DateOfBirthAlreadySetError, getDateOfBirth, setDateOfBirth } from '../api/onboarding';
 import DobScreen from '../app/(onboarding)/dob';
 import { birthdayToDob } from '../onboarding/birthday';
 
-function renderScreen() {
+function renderBare() {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <DobScreen />
     </QueryClientProvider>
   );
+}
+
+/** Renders and waits for the on-mount birthday check to settle with nothing set (the boxes appear). */
+async function renderScreen() {
+  const screen = await renderBare();
+  await screen.findByTestId('dob-month');
+  return screen;
 }
 
 type Screen = Awaited<ReturnType<typeof renderScreen>>;
@@ -43,6 +55,7 @@ function focusedTestIDs(): string[] {
 describe('DobScreen (three boxes, no native picker)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (getDateOfBirth as jest.Mock).mockResolvedValue(null);
     (TextInput.prototype.focus as unknown as jest.Mock).mockClear();
   });
 
@@ -55,6 +68,21 @@ describe('DobScreen (three boxes, no native picker)', () => {
     expect(screen.getByText('month')).toBeTruthy();
     expect(screen.getByText('day')).toBeTruthy();
     expect(screen.getByText('year')).toBeTruthy();
+  });
+
+  it('hints mm / dd / yyyy with an overlay (not the native placeholder) until a part is filled', async () => {
+    const screen = await renderScreen();
+    for (const id of ['dob-month', 'dob-day', 'dob-year']) {
+      expect(screen.getByTestId(id).props.placeholder).toBeUndefined();
+    }
+    expect(screen.getByText('mm', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByText('dd', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByText('yyyy', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByTestId('dob-month').props.accessibilityLabel).toBe('birthday month');
+
+    await fireEvent.changeText(screen.getByTestId('dob-month'), '12');
+    expect(screen.queryByText('mm', { includeHiddenElements: true })).toBeNull();
+    expect(screen.getByText('dd', { includeHiddenElements: true })).toBeTruthy();
   });
 
   it('keeps submit disabled until all three boxes hold a valid birthday', async () => {
@@ -169,6 +197,67 @@ describe('DobScreen (three boxes, no native picker)', () => {
     (setDateOfBirth as jest.Mock).mockRejectedValueOnce(new Error('boom'));
     const screen = await renderScreen();
     await type(screen, '01', '01', '2000');
+    await waitFor(() => expect(submitDisabled(screen)).toBe(false));
+
+    await fireEvent.press(screen.getByTestId('dob-submit'));
+
+    await waitFor(() => expect(screen.getByTestId('dob-error')).toBeTruthy());
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+});
+
+describe('DobScreen (write-once birthday)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (getDateOfBirth as jest.Mock).mockResolvedValue(null);
+  });
+
+  it('shows a spinner, not the boxes, until the birthday check answers', async () => {
+    let resolve: (value: string | null) => void = () => {};
+    (getDateOfBirth as jest.Mock).mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    const screen = await renderBare();
+    expect(screen.getByTestId('dob-loading')).toBeTruthy();
+    expect(screen.queryByTestId('dob-month')).toBeNull();
+
+    resolve(null);
+    await screen.findByTestId('dob-month');
+    expect(screen.queryByTestId('dob-loading')).toBeNull();
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('redirects to the name step when a birthday is already set', async () => {
+    (getDateOfBirth as jest.Mock).mockResolvedValue('2000-01-01');
+    const screen = await renderBare();
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(onboarding)/name'));
+    expect(screen.queryByTestId('dob-month')).toBeNull();
+    expect(setDateOfBirth).not.toHaveBeenCalled();
+  });
+
+  it('shows the boxes when the birthday check itself fails', async () => {
+    (getDateOfBirth as jest.Mock).mockRejectedValue(new Error('offline'));
+    const screen = await renderBare();
+
+    await screen.findByTestId('dob-month');
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('routes to the name step, with no error, when the server says the birthday is already set', async () => {
+    (setDateOfBirth as jest.Mock).mockRejectedValueOnce(new DateOfBirthAlreadySetError());
+    const screen = await renderScreen();
+    await type(screen, '05', '05', '1999');
+    await waitFor(() => expect(submitDisabled(screen)).toBe(false));
+
+    await fireEvent.press(screen.getByTestId('dob-submit'));
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(onboarding)/name'));
+    expect(screen.queryByTestId('dob-error')).toBeNull();
+  });
+
+  it('keeps showing the error for any other failure', async () => {
+    (setDateOfBirth as jest.Mock).mockRejectedValueOnce(new Error('network down'));
+    const screen = await renderScreen();
+    await type(screen, '05', '05', '1999');
     await waitFor(() => expect(submitDisabled(screen)).toBe(false));
 
     await fireEvent.press(screen.getByTestId('dob-submit'));

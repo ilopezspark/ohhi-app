@@ -17,7 +17,8 @@ jest.mock('../api/client', () => ({
   },
 }));
 
-import { getDateOfBirth, setDateOfBirth } from '../api/onboarding';
+import { DateOfBirthAlreadySetError, getDateOfBirth, setDateOfBirth } from '../api/onboarding';
+import { UnknownError } from '../api/errors';
 
 const USER_ID = 'c3c3c3c3-3333-4333-8333-333333333333';
 
@@ -46,5 +47,22 @@ describe('setDateOfBirth', () => {
 
     expect(mockUpdate).toHaveBeenCalledWith({ date_of_birth: '2000-01-01' });
     expect(mockUpdateEq).toHaveBeenCalledWith('user_id', USER_ID);
+  });
+
+  it("throws DateOfBirthAlreadySetError for dob_write_once()'s refusal", async () => {
+    mockUpdateEq.mockResolvedValue({
+      error: { code: 'P0001', message: 'date_of_birth cannot be changed once set' },
+    });
+
+    await expect(setDateOfBirth('1999-05-05')).rejects.toBeInstanceOf(DateOfBirthAlreadySetError);
+  });
+
+  it('maps any other failure to the generic error', async () => {
+    mockUpdateEq.mockResolvedValue({ error: { code: 'XX000', message: 'boom' } });
+
+    const error = await setDateOfBirth('1999-05-05').catch((e: unknown) => e);
+
+    expect(error).not.toBeInstanceOf(DateOfBirthAlreadySetError);
+    expect(error).toBeInstanceOf(UnknownError);
   });
 });
