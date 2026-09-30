@@ -172,7 +172,11 @@ One row; none when not signed in. `me()` is unchanged.
 ### Tables
 - `public.prompts (id text, question text, gated boolean, sort_order smallint, active boolean)`:
   readable by every signed-in user; service-role writes only. Seeded with 11 questions; `gated`
-  on `find_me_on_campus` ("you'll find me on campus at") and `secret_study_spot`.
+  on `find_me_on_campus` ("you'll find me on campus at") and `secret_study_spot`. Migration 0020
+  (decision 96) added six more at `sort_order` 12-17: `ideal_first_hang` ("the ideal first hang
+  is"), `get_coffee_if` ("we should get coffee if"), `meet_me_at` ("meet me at", gated),
+  `good_first_hang` ("a good first hang for me looks like"), `say_hi_if` ("say hi if you also"),
+  `after_class` ("the move after class is", gated). 17 in all, four gated.
 - `public.user_prompts`, `public.user_usual_places`: owner-only select, no client writes (the
   RPCs above are the only write path). Other users read them only through the card.
 

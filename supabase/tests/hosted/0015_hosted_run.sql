@@ -27,6 +27,13 @@
 -- fixture helper sets 3 catalog tags before onboarding. The profile_card_for() return-type
 -- assertion now includes 0018's trailing about jsonb column; the plan count is
 -- unchanged.
+--
+-- Amended by migration 0020 (more_prompts): the bank grew from 11 to 17
+-- prompts, and one 0020 question keeps the brief's wording with a voice-rule
+-- word (decision 96). The seed-list assertion now checks 0015's own eleven
+-- rows (by id), and "any signed-in user reads the prompt list" compares with
+-- the table's row count instead of a hard-coded 11. The plan count is
+-- unchanged.
 
 create extension if not exists pgtap with schema public;
 
@@ -359,8 +366,11 @@ begin
     (select count(*) = 11 and bool_and(question = lower(question)) and bool_and(question !~ '!')
             and bool_and(question !~* '\y(match|swipe|like|date|single|catch|perfect|connection|journey)\y')
             and bool_and(active)
-       from public.prompts),
-    'eleven prompts, all lowercase, no exclamation points, none of the banned words') into v_line; out := out || v_line || E'\n';
+       from public.prompts
+      -- (amended by migration 0020: the 0015 seed only; 0020's rows are checked by its own runner)
+      where id in ('ruining_my_life', 'find_me_on_campus', 'secret_study_spot', 'last_googled', 'take_again', 'cafe_order',
+                   'unpopular_opinion', 'on_repeat', 'late_excuse', 'ask_me_about', 'after_this')),
+    'the eleven 0015 seed prompts: all present, lowercase, no exclamation points, none of the banned words') into v_line; out := out || v_line || E'\n';
 
   select ok(
     exists (select 1 from public.prompts where question = 'the class that''s ruining my life right now' and not gated)
@@ -529,7 +539,9 @@ begin
   select is(pg_temp._q15(c_mia, 'select count(*)::text from public.user_prompts where user_id = auth.uid()')
          || pg_temp._q15(c_mia, 'select count(*)::text from public.user_usual_places where user_id = auth.uid()'),
     '33', 'the owner reads their own rows directly') into v_line; out := out || v_line || E'\n';
-  select is(pg_temp._q15(c_dee, 'select count(*)::text from public.prompts'), '11', 'any signed-in user reads the prompt list') into v_line; out := out || v_line || E'\n';
+  -- (amended by migration 0020: the whole table, not a hard-coded 11)
+  select is(pg_temp._q15(c_dee, 'select count(*)::text from public.prompts'), (select count(*)::text from public.prompts),
+    'any signed-in user reads the whole prompt list') into v_line; out := out || v_line || E'\n';
 
   perform pg_temp._claims15(c_mia); execute 'set local role authenticated';
   select throws_ok($q$insert into public.user_prompts (user_id, position, prompt_id, answer) values (auth.uid(), 2, 'on_repeat', 'x')$q$,
