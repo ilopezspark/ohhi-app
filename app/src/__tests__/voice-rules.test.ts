@@ -427,6 +427,9 @@ const SCOPE_FILES: string[] = [
   path.join(SRC, 'app', 'profile-preview.tsx'),
   path.join(SRC, 'card', 'CtaButton.tsx'),
   path.join(SRC, 'card', 'OverflowMenu.tsx'),
+  // The first-message sheet, which also carries a reply to a prompt answer or
+  // photo from the profile (migration 0024, decision 100).
+  path.join(SRC, 'card', 'MessageSheet.tsx'),
   // Profile redesign phase 2 (migration 0015). Everything else it added sits
   // under `profile/`, `me/`, `app/profile-editor/` or `app/quick-status*`,
   // which the sweeps above already cover; the API module is listed on its

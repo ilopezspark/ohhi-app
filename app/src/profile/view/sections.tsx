@@ -4,7 +4,6 @@ import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { tintForPhoto } from '../../photos/tint';
 import {
   CapIcon,
-  ChatIcon,
   CheckIcon,
   Chip,
   FlagIcon,
@@ -22,13 +21,20 @@ import { GATED_NOTE, joinedMonthLabel } from '../fields';
 import { type ProfilePrompt, type ProfileViewData } from './model';
 import { aboutRows, type AboutRowKey } from '../about';
 import { BriefcaseIcon, CalendarIcon } from '../../ui/icons/AboutIcons';
+import { BeforeYouMessageCard } from './BeforeYouMessage';
+import { beforeYouMessageItems, CARD_HEADER_ICONS, identityCardModels } from './identityCards';
+import { PHOTO_REPLY_A11Y, PROMPT_REPLY_A11Y, photoReplySubject, promptReplySubject, type ProfileReplyOptions } from './reply';
+import { ReplyAction } from './ReplyAction';
 
 /**
  * The profile's detail list (`03-profile-scrolled.png`, `04-profile-full*.png`)
  * as a plain ordered list of sections, in the brief's section order: what
- * you two share, about (migration 0018: major, graduating, work), the basics
- * (pronouns and orientation, when public), photo 2, a prompt, into, photo 3, the next
- * prompt(s), around campus, the footer. Each section renders only when it
+ * you two share, about (migration 0018: major, graduating, work), the profile
+ * restructure's cards (identity, background, lifestyle, when i'm around,
+ * before you message me: `identityCards.tsx`, in the brief's card order),
+ * photo 2, a prompt, into, photo 3, the next prompt(s), around campus, the
+ * footer. `the basics` (pronouns and orientation) is gone: both now live in
+ * the identity card. Each section renders only when it
  * has data; a section with nothing to show is left out, not drawn empty.
  * Classes, commute and year-in-school rows are not built (ruling 1).
  */
@@ -48,6 +54,11 @@ export interface DetailSectionOptions {
    * others see it only once a hi has been answered.
    */
   preview?: boolean;
+  /**
+   * Reply actions (migration 0024, decision 100): each prompt answer and
+   * photo card listed in `reply.index` gets one. Never in a preview.
+   */
+  reply?: ProfileReplyOptions;
   /** "Now" for the footer's month label (tests). */
   now?: Date;
 }
@@ -80,25 +91,47 @@ export function placePrompts(isPhoto: boolean[], count: number): number[][] {
 
 export function detailSections(
   data: ProfileViewData,
-  { prefix, onReportOrBlock, preview = false, now }: DetailSectionOptions
+  { prefix, onReportOrBlock, preview = false, reply, now }: DetailSectionOptions
 ): DetailSection[] {
   const sections: DetailSection[] = [];
+  const replies = preview ? undefined : reply;
   const name = displayName(data.firstName);
 
   if (data.sharedLines.length > 0) {
     sections.push({ key: 'shared', render: () => <SharedCard lines={data.sharedLines} testID={`${prefix}-shared`} /> });
   }
 
-  // Migration 0018: the about card sits above the basics. Rows with no
+  // Migration 0018: the about card comes first. Rows with no
   // value are left out, and with none the card is not drawn at all.
   const about = aboutCardRows(data, prefix);
   if (about.length > 0) {
     sections.push({ key: 'about', render: () => <BasicsCard title="about" rows={about} testID={`${prefix}-about`} /> });
   }
 
-  const basics = basicsRows(data, prefix);
-  if (basics.length > 0) {
-    sections.push({ key: 'basics', render: () => <BasicsCard rows={basics} testID={`${prefix}-basics`} /> });
+  // Profile restructure (brief §2 "Rendering"): about -> identity ->
+  // background -> lifestyle -> when i'm around -> before you message me.
+  // Whatever `GET /identity/:id` returned, and only that; empty cards and
+  // rows are skipped. The audience note is the owner's preview only.
+  for (const model of identityCardModels(data.identityCards, prefix, preview ? data.identityAudiences : null)) {
+    sections.push({
+      key: `card-${model.card}`,
+      render: () => (
+        <BasicsCard
+          title={model.title}
+          icon={CARD_HEADER_ICONS[model.card]}
+          rows={model.rows}
+          note={model.note}
+          testID={`${prefix}-card-${model.card}`}
+        />
+      ),
+    });
+  }
+  const requests = beforeYouMessageItems(data.identityCards);
+  if (requests.length > 0) {
+    sections.push({
+      key: 'card-before_you_message',
+      render: () => <BeforeYouMessageCard items={requests} testID={`${prefix}-card-before_you_message`} />,
+    });
   }
 
   // The cards the prompts are spread between: photo 2, into, photo 3.
@@ -106,6 +139,7 @@ export function detailSections(
   const photo = (position: number) => {
     const path = data.photoPaths[position];
     if (!path) return;
+    const subject = replies ? photoReplySubject(path, position, replies.index) : null;
     blocks.push({
       isPhoto: true,
       section: {
@@ -116,6 +150,7 @@ export function detailSections(
             position={position}
             url={data.photoUrls[path]}
             firstName={name}
+            onReply={subject && replies ? () => replies.onReply(subject) : undefined}
             testID={`${prefix}-photo-card-${position}`}
           />
         ),
@@ -133,10 +168,16 @@ export function detailSections(
 
   const promptSection = (index: number): DetailSection => {
     const prompt = data.prompts[index];
+    const subject = replies ? promptReplySubject(prompt, replies.index) : null;
     return {
       key: `prompt-${prompt.promptId}`,
       render: () => (
-        <PromptCard prompt={prompt} note={preview && prompt.gated ? GATED_NOTE : null} testID={`${prefix}-prompt-${index}`} />
+        <PromptCard
+          prompt={prompt}
+          note={preview && prompt.gated ? GATED_NOTE : null}
+          onReply={subject && replies ? () => replies.onReply(subject) : undefined}
+          testID={`${prefix}-prompt-${index}`}
+        />
       ),
     };
   };
@@ -248,38 +289,26 @@ export function aboutCardRows(data: Pick<ProfileViewData, 'about'>, prefix: stri
 }
 
 /**
- * The basics card's rows: pronouns and orientation, each only when the
- * person made them public. The major and graduating year moved to the about
- * card (migration 0018), so nothing shows twice; with neither row the card
- * is not drawn.
+ * An icon-and-value card with hairline-separated rows: the about card and
+ * the restructured identity, background, lifestyle and when-i'm-around
+ * cards. `note` is the owner-preview line under the rows (a card's audience).
  */
-export function basicsRows(data: ProfileViewData, prefix: string): BasicsRow[] {
-  const rows: BasicsRow[] = [];
-  if (data.pronouns) {
-    rows.push({
-      key: 'pronouns',
-      icon: <ChatIcon size={20} color={colors.muted} />,
-      primary: data.pronouns,
-      testID: `${prefix}-identity`,
-    });
-  }
-  if (data.orientation.length > 0) {
-    rows.push({
-      key: 'orientation',
-      icon: <PersonIcon size={20} color={colors.muted} />,
-      primary: data.orientation.join(', '),
-      secondary: 'orientation',
-      testID: `${prefix}-identity-orientation`,
-    });
-  }
-  return rows;
-}
-
-/** An icon-and-value card with hairline-separated rows: `the basics`, and the about card (`title="about"`). */
-export function BasicsCard({ rows, title = 'the basics', testID }: { rows: BasicsRow[]; title?: string; testID?: string }) {
+export function BasicsCard({
+  rows,
+  title,
+  icon,
+  note,
+  testID,
+}: {
+  rows: BasicsRow[];
+  title: string;
+  icon?: ReactNode;
+  note?: string | null;
+  testID?: string;
+}) {
   return (
     <View style={[styles.card, shadows.card]} testID={testID}>
-      <CardHeader icon={<PersonIcon size={16} color={colors.muted} />} label={title} />
+      <CardHeader icon={icon ?? <PersonIcon size={16} color={colors.muted} />} label={title} />
       <View>
         {rows.map((row, i) => (
           <View key={row.key} style={[styles.basicsRow, i < rows.length - 1 && styles.divider]} testID={row.testID}>
@@ -297,6 +326,7 @@ export function BasicsCard({ rows, title = 'the basics', testID }: { rows: Basic
           </View>
         ))}
       </View>
+      {note ? <GatedNote text={note} testID={testID ? `${testID}-note` : undefined} /> : null}
     </View>
   );
 }
@@ -326,8 +356,22 @@ function GatedNote({ text, testID }: { text: string; testID?: string }) {
   );
 }
 
-/** `04-profile-full-part2.png`: the question small and grey, the answer large and bold. */
-export function PromptCard({ prompt, note, testID }: { prompt: ProfilePrompt; note?: string | null; testID?: string }) {
+/**
+ * `04-profile-full-part2.png`: the question small and grey, the answer large
+ * and bold. With `onReply` (an answer the viewer may reply to), a quiet
+ * `reply` pill sits at the card's bottom right.
+ */
+export function PromptCard({
+  prompt,
+  note,
+  onReply,
+  testID,
+}: {
+  prompt: ProfilePrompt;
+  note?: string | null;
+  onReply?: () => void;
+  testID?: string;
+}) {
   return (
     <View style={[styles.card, shadows.card]} testID={testID}>
       <Text variant="labelLg" color={colors.muted} testID={testID ? `${testID}-question` : undefined}>
@@ -337,6 +381,14 @@ export function PromptCard({ prompt, note, testID }: { prompt: ProfilePrompt; no
         {prompt.answer}
       </Text>
       {note ? <GatedNote text={note} testID={testID ? `${testID}-note` : undefined} /> : null}
+      {onReply ? (
+        <ReplyAction
+          appearance="card"
+          onPress={onReply}
+          accessibilityLabel={PROMPT_REPLY_A11Y}
+          testID={testID ? `${testID}-reply` : undefined}
+        />
+      ) : null}
     </View>
   );
 }
@@ -379,27 +431,45 @@ export function AroundCampusCard({
   );
 }
 
+/**
+ * A photo between the detail cards. With `onReply` (a photo the viewer may
+ * reply to), a frosted reply button sits in its bottom right corner. The
+ * image itself stays one accessible element; the button is its own.
+ */
 export function PhotoCard({
   userId,
   position,
   url,
   firstName,
+  onReply,
   testID,
 }: {
   userId: string;
   position: number;
   url?: string;
   firstName: string;
+  onReply?: () => void;
   testID?: string;
 }) {
   const [failed, setFailed] = useState(false);
   return (
-    <View style={styles.photoCard} testID={testID} accessible accessibilityRole="image" accessibilityLabel={`photo ${position + 1} of ${firstName}`}>
-      {url && !failed ? (
-        <Image source={{ uri: url }} style={styles.photo} resizeMode="cover" onError={() => setFailed(true)} />
-      ) : (
-        <TintedPlaceholder tint={tintForPhoto(userId, position)} style={styles.photoPlaceholder} />
-      )}
+    <View style={styles.photoCard} testID={testID}>
+      <View style={styles.photoFill} accessible accessibilityRole="image" accessibilityLabel={`photo ${position + 1} of ${firstName}`}>
+        {url && !failed ? (
+          <Image source={{ uri: url }} style={styles.photo} resizeMode="cover" onError={() => setFailed(true)} />
+        ) : (
+          <TintedPlaceholder tint={tintForPhoto(userId, position)} style={styles.photoPlaceholder} />
+        )}
+      </View>
+      {onReply ? (
+        <ReplyAction
+          appearance="photo"
+          onPress={onReply}
+          accessibilityLabel={PHOTO_REPLY_A11Y}
+          style={styles.photoReply}
+          testID={testID ? `${testID}-reply` : undefined}
+        />
+      ) : null}
     </View>
   );
 }
@@ -519,7 +589,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.tint,
   },
+  photoFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   photo: { width: '100%', height: '100%' },
+  photoReply: { position: 'absolute', right: spacing.mdLg, bottom: spacing.mdLg },
   photoPlaceholder: { borderRadius: 0 },
   footer: { gap: spacing.mdLg, paddingHorizontal: spacing.xs, paddingTop: spacing.xs },
   footerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.smMd },

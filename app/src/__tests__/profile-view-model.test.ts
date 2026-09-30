@@ -122,7 +122,12 @@ describe('profile view model', () => {
       catalog: CATALOG,
       myTagIds: ['t-gym', 'unknown'],
       myAbout: { major: NURSING, minor: null, graduatingTerm: null, graduatingYear: null, graduatingUnsure: false, workType: null, jobTitle: null, workHours: [] },
-      identity: { pronouns: 'she/her', orientation: [] },
+      identity: {
+        cards: {
+          identity: { pronouns: ['she/her'], orientation: [], interested_in: [], relationship: null },
+          before_you_message: { photos_content: ["don't screenshot"] },
+        },
+      },
       campusShort: 'CLC',
       photoUrls: { p0: 'https://example.test/0.jpg' },
     });
@@ -136,8 +141,12 @@ describe('profile view model', () => {
       majorLabel: 'nursing',
       tagLabels: ['nursing', 'gym', 'coffee'],
       sharedLines: ["you're both in nursing", "you're both into gym"],
-      pronouns: 'she/her',
-      orientation: [],
+      // The cards exactly as the identity read returned them; no audiences for a viewer.
+      identityCards: {
+        identity: { pronouns: ['she/her'], orientation: [], interested_in: [], relationship: null },
+        before_you_message: { photos_content: ["don't screenshot"] },
+      },
+      identityAudiences: null,
       campusShort: 'CLC',
       verified: true,
       hereNow: true,
@@ -145,7 +154,7 @@ describe('profile view model', () => {
     });
   });
 
-  it('buildProfileViewData leaves identity fields empty on a 404 (null identity)', () => {
+  it('buildProfileViewData leaves the identity cards empty on a 404 (null identity)', () => {
     const data = buildProfileViewData({
       card: {
         user_id: 'u',
@@ -165,8 +174,8 @@ describe('profile view model', () => {
       campusShort: null,
       photoUrls: {},
     });
-    expect(data.pronouns).toBeNull();
-    expect(data.orientation).toEqual([]);
+    expect(data.identityCards).toEqual({});
+    expect(data.identityAudiences).toBeNull();
     expect(data.goals).toEqual([]);
     expect(data.photoPaths).toEqual([]);
     expect(data.sharedLines).toEqual([]);

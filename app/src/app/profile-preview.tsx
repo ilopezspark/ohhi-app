@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { getMyIdentity } from '../api/identity';
 import { CtaButton } from '../card/CtaButton';
 import { getPreviewDraft, previewSourceOf, type PreviewSource } from '../me/editor/previewDraft';
 import { buildPreviewData } from '../me/editor/previewData';
@@ -29,8 +31,15 @@ import { colors, spacing } from '../theme/tokens';
  * own-row reads; never `profile_card_for`), or, when opened from the editor
  * with `?from=editor`, the editor's draft as handed over by
  * `me/editor/previewDraft.ts`, so an unsaved edit shows at once. Tier and
- * here-now are live from the presence store.
+ * here-now are live from the presence store. The public cards (identity,
+ * background, lifestyle, when i'm around, before you message me) come from
+ * `getMyIdentity()`, the owner's read: every card they filled, whatever its
+ * audience, each one not shown to everyone marked with its note. That read
+ * never blocks the preview: loading or failed, the cards are just left out.
  */
+
+/** Own query key: `queryKeys.me.about` holds a different shape (`me/card/summary.ts`). */
+export const MY_IDENTITY_CARDS_KEY = ['me', 'identity_cards'] as const;
 export default function ProfilePreviewScreen() {
   const params = useLocalSearchParams<{ from?: string | string[] }>();
   const from = Array.isArray(params.from) ? params.from[0] : params.from;
@@ -43,6 +52,7 @@ export default function ProfilePreviewScreen() {
   const { photos, urls } = useMyPhotos();
   const tier = usePresenceStore((state) => state.tier) ?? 'away';
   const hereNow = usePresenceStore((state) => state.hereNow);
+  const identityQuery = useQuery({ queryKey: MY_IDENTITY_CARDS_KEY, queryFn: getMyIdentity, retry: false });
 
   if (!source) {
     return (
@@ -81,6 +91,7 @@ export default function ProfilePreviewScreen() {
     photoUrls: urls,
     tier,
     hereNow,
+    identity: identityQuery.data ?? null,
   });
 
   return (

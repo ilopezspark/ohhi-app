@@ -67,6 +67,38 @@ export function replyDraftFor(message: ThreadMessage, meId: string, otherFirstNa
   };
 }
 
+/** The `reply_kind` the server will write for this target: for an optimistic row only, never sent. */
+export function replyKindFor(replyTo: ReplyTarget | null | undefined): string | null {
+  if (!replyTo) return null;
+  if ('messageId' in replyTo) return 'message';
+  if ('albumPhotoId' in replyTo) return 'album_photo';
+  if ('userPromptId' in replyTo) return 'user_prompt';
+  return 'user_photo';
+}
+
+/** The four reference columns of a row about to be drawn (an optimistic reply): exactly one set, or none. */
+export function replyReferenceColumns(
+  replyTo: ReplyTarget | null | undefined
+): Pick<ThreadMessage, 'reply_to_message_id' | 'reply_to_album_photo_id' | 'reply_to_user_prompt_id' | 'reply_to_user_photo_id'> {
+  return {
+    reply_to_message_id: replyTo && 'messageId' in replyTo ? replyTo.messageId : null,
+    reply_to_album_photo_id: replyTo && 'albumPhotoId' in replyTo ? replyTo.albumPhotoId : null,
+    reply_to_user_prompt_id: replyTo && 'userPromptId' in replyTo ? replyTo.userPromptId : null,
+    reply_to_user_photo_id: replyTo && 'userPhotoId' in replyTo ? replyTo.userPhotoId : null,
+  };
+}
+
+/** A row's reply reference back as a target, e.g. to retry a failed reply. */
+export function replyTargetOf(
+  row: Pick<ThreadMessage, 'reply_to_message_id' | 'reply_to_album_photo_id' | 'reply_to_user_prompt_id' | 'reply_to_user_photo_id'>
+): ReplyTarget | null {
+  if (row.reply_to_message_id) return { messageId: row.reply_to_message_id };
+  if (row.reply_to_album_photo_id) return { albumPhotoId: row.reply_to_album_photo_id };
+  if (row.reply_to_user_prompt_id) return { userPromptId: row.reply_to_user_prompt_id };
+  if (row.reply_to_user_photo_id) return { userPhotoId: row.reply_to_user_photo_id };
+  return null;
+}
+
 /** The reply bar's first line. */
 export function replyingToLabel(name: string): string {
   return `replying to ${name}`;
@@ -98,7 +130,43 @@ export type QuoteView =
       senderId: string | null;
       /** `album-photos` path for the thumbnail. */
       thumbPath: string | null;
+    }
+  | {
+      /** Migration 0024: a prompt answer, replied to from its owner's profile. */
+      state: 'prompt';
+      /** The answer's owner. */
+      senderId: string | null;
+      question: string;
+      answer: string;
+    }
+  | {
+      /** Migration 0024: a profile photo, replied to from its owner's profile. */
+      state: 'profile_photo';
+      /** The photo's owner. */
+      senderId: string | null;
+      /** `profile-photos` path for the thumbnail. */
+      thumbPath: string | null;
     };
+
+/** The line under a profile photo quote's name. */
+export const PROFILE_PHOTO_QUOTE_COPY = 'photo';
+
+type ReplyRefs = Pick<
+  ThreadMessage,
+  'reply_kind' | 'reply_to_message_id' | 'reply_to_album_photo_id' | 'reply_to_user_prompt_id' | 'reply_to_user_photo_id'
+>;
+
+function referenceKind(reply: ReplyRefs): string | null {
+  if (reply.reply_to_message_id) return 'message';
+  if (reply.reply_to_album_photo_id) return 'album_photo';
+  if (reply.reply_to_user_prompt_id) return 'user_prompt';
+  if (reply.reply_to_user_photo_id) return 'user_photo';
+  return null;
+}
+
+function hasReference(reply: ReplyRefs): boolean {
+  return referenceKind(reply) !== null;
+}
 
 /**
  * How a reply's quote renders, from (in order) the server's live answer,
@@ -113,15 +181,26 @@ export type QuoteView =
  * - Not a reply: null.
  */
 export function resolveQuote(
-  reply: Pick<ThreadMessage, 'reply_kind' | 'reply_to_message_id' | 'reply_to_album_photo_id'>,
+  reply: ReplyRefs,
   quote: MessageQuote | undefined,
   loaded: ReadonlyMap<string, ThreadMessage>
 ): QuoteView | null {
-  const kind = reply.reply_kind ?? (reply.reply_to_message_id ? 'message' : reply.reply_to_album_photo_id ? 'album_photo' : null);
+  const kind = reply.reply_kind ?? referenceKind(reply);
   if (!kind) return null;
 
   if (quote) {
     if (!quote.available) return { state: 'unavailable' };
+    // Migration 0024: a profile quote is only ever the server's live answer.
+    if (quote.replyKind === 'user_prompt') {
+      const question = quote.promptQuestion?.trim();
+      const answer = quote.promptAnswer?.replace(/\s+/g, ' ').trim();
+      if (!question || !answer) return { state: 'unavailable' };
+      return { state: 'prompt', senderId: quote.quotedSenderId, question, answer };
+    }
+    if (quote.replyKind === 'user_photo') {
+      if (!quote.photoPath) return { state: 'unavailable' };
+      return { state: 'profile_photo', senderId: quote.quotedSenderId, thumbPath: quote.photoPath };
+    }
     if (quote.replyKind === 'album_photo') {
       if (!quote.quotedAlbumPhotoId) return { state: 'unavailable' };
       return {
@@ -164,7 +243,7 @@ export function resolveQuote(
   }
 
   // `reply_kind` set with no reference left: the target was deleted.
-  if (!reply.reply_to_message_id && !reply.reply_to_album_photo_id) return { state: 'unavailable' };
+  if (!hasReference(reply)) return { state: 'unavailable' };
   return { state: 'loading' };
 }
 
@@ -183,6 +262,10 @@ export function quoteAccessibilityLabel(view: QuoteView, name: string): string {
       return `reply, ${QUOTE_UNAVAILABLE_COPY}`;
     case 'album_photo':
       return `reply to ${name}, album photo`;
+    case 'prompt':
+      return `reply to ${name === 'you' ? 'your' : `${name}'s`} answer, ${view.question}, ${view.answer}`;
+    case 'profile_photo':
+      return `reply to ${name === 'you' ? 'your' : `${name}'s`} photo`;
     case 'message':
       return view.line ? `reply to ${name}, ${view.line}` : `reply to ${name}`;
   }

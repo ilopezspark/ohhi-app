@@ -1,4 +1,5 @@
 import { type ProfileViewData } from '../../profile/view/model';
+import type { Audiences, IdentityCards } from '../../profile/fields';
 import type { ProfileEditorDraft, ProfileFieldsMeta, Tag } from './useProfileEditorDraft';
 
 export interface PreviewDataInput {
@@ -17,6 +18,12 @@ export interface PreviewDataInput {
   /** Live, from the presence store. */
   tier: ProfileViewData['tier'];
   hereNow: boolean;
+  /**
+   * `getMyIdentity()`: every public card the owner has, whatever its
+   * audience, plus the audiences (so each card not shown to everyone carries
+   * its note). Null while it loads or when it failed: no cards.
+   */
+  identity?: { cards: Partial<IdentityCards>; audiences: Audiences } | null;
 }
 
 /**
@@ -26,10 +33,13 @@ export interface PreviewDataInput {
  * about section, so an unsaved edit shows at once), plus `my_profile_fields()`'s join date and
  * place-line state, plus the live photos, tier and here-now.
  *
- * What others would see, with two owner-only differences the view itself
+ * What others would see, with three owner-only differences the view itself
  * marks: gated prompts and usual places are included (with the "only shown
- * after a hi has been answered" note, drawn by `ProfileView` in `preview`),
- * and there is no "what you two share" (there is no second person).
+ * after a hi has been answered" note, drawn by `ProfileView` in `preview`);
+ * every filled public card is included whatever its audience, with a note on
+ * the ones not shown to everyone ("only you can see this", "shown after a hi
+ * is answered"); and there is no "what you two share" (there is no second
+ * person).
  *
  * The place line follows the server's rule as far as the app can know it: a
  * saved line that is no longer showing (expired, or away) is left out; an
@@ -67,10 +77,10 @@ export function buildPreviewData(input: PreviewDataInput): ProfileViewData {
     tagLabels: labels,
     sharedLines: [],
     about,
-    // Pronouns/orientation are their own opt-in read (`about you`), not part
-    // of the draft; the Preview has never shown them.
-    pronouns: null,
-    orientation: [],
+    // The public cards are saved by their own editors, not the draft: the
+    // preview screen reads them with `getMyIdentity()`.
+    identityCards: input.identity?.cards ?? {},
+    identityAudiences: input.identity?.audiences ?? null,
     campusShort: input.campusShort,
     photoPaths: input.photoPaths,
     photoUrls: input.photoUrls,

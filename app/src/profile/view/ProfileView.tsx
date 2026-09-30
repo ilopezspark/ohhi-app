@@ -16,7 +16,10 @@ import { isSparse, sparseNotice, type ProfileViewData } from './model';
 import { PhotoPager } from './PhotoPager';
 import { PhotoIconButton, ProfileHero } from './ProfileHero';
 import { detailSections } from './sections';
+import { BeforeYouMessageSheet, BeforeYouMessageStrip } from './BeforeYouMessage';
+import { beforeYouMessageItems } from './identityCards';
 import { useInsets, useScreenFrame } from './useInsets';
+import { photoReplySubject, type ProfileReplyOptions } from './reply';
 
 /**
  * Wider than this (tablets, open foldables) the view's *content* stops
@@ -28,6 +31,9 @@ export const PROFILE_MAX_WIDTH = 560;
 const HEADER_BAR = 56;
 /** First-frame guess for the action bar's height, before `onLayout` measures it. */
 const ACTION_BAR_ESTIMATE = 88;
+/** The hero's top buttons (`ProfileHero`'s bleed `topRow`): this far under the top inset, 44 tall. */
+const HERO_BUTTON_OFFSET = 26;
+const HERO_BUTTON_SIZE = 44;
 
 export interface ProfileViewActionState {
   /** True once the view has scrolled off the photo: the bar sits on paper, not on the photo. */
@@ -50,6 +56,12 @@ export interface ProfileViewProps {
   preview?: boolean;
   /** testID prefix for every part, default `profile`. */
   testIDPrefix?: string;
+  /**
+   * Reply to a prompt answer or photo (migration 0024, decision 100): what
+   * `profile_reply_targets` allows, and what a tap does. Only those get a
+   * reply action. Ignored in `preview`.
+   */
+  reply?: ProfileReplyOptions;
 }
 
 /**
@@ -60,9 +72,25 @@ export interface ProfileViewProps {
  * say-hi/message state machine and the report/block sheet stay with the
  * caller (`app/profile/[id].tsx`). Your own preview (`app/profile-preview.tsx`)
  * renders it too (`preview`), keeping preview and reality on one component.
+ *
+ * "before you message me" (reconcile C4): when the person set any requests,
+ * a one-line strip is docked inside the sticky action bar directly above
+ * say-hi, so it is in view at every scroll position; tapping it opens a
+ * small sheet with the full list. The bar grows by that one line only when
+ * there is something to show. In `preview` it is greyed and untouchable with
+ * the rest of the bar.
  */
-export function ProfileView({ data, onBack, onOverflow, renderActions, preview = false, testIDPrefix = 'profile' }: ProfileViewProps) {
+export function ProfileView({
+  data,
+  onBack,
+  onOverflow,
+  renderActions,
+  preview = false,
+  testIDPrefix = 'profile',
+  reply,
+}: ProfileViewProps) {
   const p = testIDPrefix;
+  const replies = preview ? undefined : reply;
   const insets = useInsets();
   const screen = useScreenFrame();
   // The hero is exactly as tall as this view: on the profile screen that is
@@ -83,6 +111,7 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
   const scrollRef = useRef<ScrollView>(null);
   const [scrollY, setScrollY] = useState(0);
   const [barHeight, setBarHeight] = useState(ACTION_BAR_ESTIMATE + insets.bottom);
+  const [requestsOpen, setRequestsOpen] = useState(false);
 
   function onRootLayout(event: LayoutChangeEvent) {
     const { width, height } = event.nativeEvent.layout;
@@ -116,8 +145,28 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
   }
 
   const sparse = isSparse(data);
-  const sections = detailSections(data, { prefix: p, onReportOrBlock: preview ? undefined : onOverflow, preview });
+  const sections = detailSections(data, { prefix: p, onReportOrBlock: preview ? undefined : onOverflow, preview, reply: replies });
+  // The hero's reply button sits in the top right corner, under the `…`
+  // when there is one.
+  const heroButtonsTop = insets.top + HERO_BUTTON_OFFSET;
+  const hasOverflowButton = !!onOverflow && !preview;
+  const heroReply = replies
+    ? {
+        top: hasOverflowButton ? heroButtonsTop + HERO_BUTTON_SIZE + spacing.smMd : heroButtonsTop,
+        canReply: (path: string) => !!replies.index.photos[path],
+        onReply: (path: string, position: number) => {
+          const subject = photoReplySubject(path, position, replies.index);
+          if (subject) replies.onReply(subject);
+        },
+      }
+    : undefined;
   const actions = renderActions?.({ onPaper });
+  const requests = beforeYouMessageItems(data.identityCards);
+  const strip =
+    requests.length > 0 ? (
+      <BeforeYouMessageStrip items={requests} onPress={() => setRequestsOpen(true)} testID={`${p}-before-you-message-strip`} />
+    ) : null;
+  const hasBar = !!actions || !!strip;
 
   return (
     <View style={styles.root} testID={`${p}-view`} onLayout={onRootLayout}>
@@ -136,7 +185,7 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
           width={viewWidth}
           topInset={insets.top}
           sideInset={sideInset}
-          bottomSpace={actions ? barHeight : insets.bottom}
+          bottomSpace={hasBar ? barHeight : insets.bottom}
           data={data}
           tint={tintForPhoto(data.userId, 0)}
           photoSlot={
@@ -148,6 +197,7 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
               barsTop={insets.top + spacing.md}
               sideInset={sideInset}
               testIDPrefix={p}
+              reply={heroReply}
             />
           }
           topLeft={
@@ -241,7 +291,7 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
         </View>
       ) : null}
 
-      {actions ? (
+      {hasBar ? (
         // Full width and down to the bottom edge (the home-indicator /
         // gesture inset is inside its padding), so on paper its fill
         // leaves no gap; the buttons are held to the content column.
@@ -259,9 +309,18 @@ export function ProfileView({ data, onBack, onOverflow, renderActions, preview =
           importantForAccessibility={preview ? 'no-hide-descendants' : 'auto'}
         >
           <View style={[styles.actionBarContent, { width: contentWidth }]} pointerEvents="box-none" testID={`${p}-action-bar-content`}>
+            {strip}
             {actions}
           </View>
         </View>
+      ) : null}
+
+      {requestsOpen && requests.length > 0 && !preview ? (
+        <BeforeYouMessageSheet
+          items={requests}
+          onDismiss={() => setRequestsOpen(false)}
+          testID={`${p}-before-you-message-sheet`}
+        />
       ) : null}
     </View>
   );
@@ -313,7 +372,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     paddingTop: spacing.mdLg,
   },
-  actionBarContent: { alignSelf: 'center', maxWidth: '100%', paddingHorizontal: spacing.lgXl },
+  actionBarContent: { alignSelf: 'center', maxWidth: '100%', paddingHorizontal: spacing.lgXl, gap: spacing.smMd },
   actionBarOnPaper: {
     backgroundColor: colors.paper,
     borderTopWidth: hairline.width,

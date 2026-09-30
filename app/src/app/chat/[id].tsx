@@ -22,7 +22,8 @@ import {
 } from '../../api/chatMedia';
 import { me as fetchMe } from '../../api/me';
 import { getAlbum, listMyAlbums, signedAlbumPhotoUrls, type AlbumRow } from '../../api/albums';
-import { shareAlbum, sharePrivateCard } from '../../api/shares';
+import { shareAlbum, shareCard } from '../../api/shares';
+import type { GatedSection } from '../../profile/fields';
 import { GoneError, isUnavailableError, mapSupabaseError } from '../../api/errors';
 import { signedPhotoUrls } from '../../api/photos';
 import { Composer } from '../../chat/Composer';
@@ -43,7 +44,16 @@ import { MessageMenu, type MessageMenuAction } from '../../chat/MessageMenu';
 import type { MenuAnchor } from '../../chat/menuPlacement';
 import { ReplyPreviewBar } from '../../chat/ReplyPreviewBar';
 import { ReplyQuote } from '../../chat/ReplyQuote';
-import { quoteName, replyDraftFor, resolveQuote, type QuoteView, type ReplyDraft } from '../../chat/replies';
+import {
+  quoteName,
+  replyDraftFor,
+  replyKindFor,
+  replyReferenceColumns,
+  replyTargetOf,
+  resolveQuote,
+  type QuoteView,
+  type ReplyDraft,
+} from '../../chat/replies';
 import { quotesKey, useThreadQuotes } from '../../chat/useThreadQuotes';
 import { useConversationRealtime } from '../../chat/useChatRealtime';
 import { messageId as newMessageId } from '../../chat/uuid';
@@ -417,6 +427,24 @@ export default function ChatThreadScreen() {
     staleTime: 45_000,
   });
 
+  // Profile photo quotes (migration 0024) sign from `profile-photos`, like
+  // the profile itself; a path that no longer qualifies just fails to sign
+  // and the quote keeps its placeholder.
+  const profileQuotePaths = useMemo(
+    () =>
+      Object.values(quoteViews)
+        .map((view) => (view.state === 'profile_photo' ? view.thumbPath : null))
+        .filter((path): path is string => !!path),
+    [quoteViews]
+  );
+  const profileQuoteKey = useMemo(() => [...profileQuotePaths].sort().join('|'), [profileQuotePaths]);
+  const { data: profileQuoteUrls } = useQuery({
+    queryKey: ['chat_quote_profile_urls', profileQuoteKey],
+    queryFn: () => signedPhotoUrls(profileQuotePaths),
+    enabled: profileQuotePaths.length > 0,
+    staleTime: 45_000,
+  });
+
   const otherPhotoPath = conversation?.other.photoPath ?? null;
   const { data: headerPhotoUrls } = useQuery({
     queryKey: ['thread_header_photo', otherPhotoPath],
@@ -489,9 +517,8 @@ export default function ChatThreadScreen() {
         media_height: input.mediaHeight ?? null,
         media_poster_path: input.mediaPosterPath ?? null,
         created_at: new Date().toISOString(),
-        reply_to_message_id: replyTo && 'messageId' in replyTo ? replyTo.messageId : null,
-        reply_to_album_photo_id: replyTo && 'albumPhotoId' in replyTo ? replyTo.albumPhotoId : null,
-        reply_kind: replyTo ? ('messageId' in replyTo ? 'message' : 'album_photo') : null,
+        ...replyReferenceColumns(replyTo),
+        reply_kind: replyKindFor(replyTo),
         pending: true,
       };
       setPending((current) => [
@@ -566,11 +593,7 @@ export default function ChatThreadScreen() {
         mediaWidth: message.media_width,
         mediaHeight: message.media_height,
         mediaPosterPath: message.media_poster_path,
-        replyTo: message.reply_to_message_id
-          ? { messageId: message.reply_to_message_id }
-          : message.reply_to_album_photo_id
-            ? { albumPhotoId: message.reply_to_album_photo_id }
-            : null,
+        replyTo: replyTargetOf(message),
       });
     },
     [send]
@@ -843,12 +866,12 @@ export default function ChatThreadScreen() {
     [otherId, refetchShareFeed, queryClient, conversationId]
   );
 
-  const onSharePrivateCard = useCallback(async () => {
+  const onSharePrivateCard = useCallback(async (sections: GatedSection[]) => {
     if (!otherId) return;
     setShareError(null);
     setSharingCard(true);
     try {
-      await sharePrivateCard(otherId);
+      await shareCard(otherId, sections);
       setShareSheetOpen(false);
       void refetchShareFeed();
     } catch (error) {
@@ -983,12 +1006,14 @@ export default function ChatThreadScreen() {
   const renderQuote = (message: ThreadMessage) => {
     const view = quoteViews[message.id];
     if (!view) return undefined;
-    const senderId = view.state === 'message' || view.state === 'album_photo' ? view.senderId : null;
-    const thumbPath = view.state === 'message' || view.state === 'album_photo' ? view.thumbPath : null;
+    const senderId = 'senderId' in view ? view.senderId : null;
+    const thumbPath = 'thumbPath' in view ? view.thumbPath : null;
     const thumbUrl = thumbPath
       ? view.state === 'album_photo'
         ? albumQuoteUrls?.[thumbPath]
-        : mediaUrls?.[thumbPath]
+        : view.state === 'profile_photo'
+          ? profileQuoteUrls?.[thumbPath]
+          : mediaUrls?.[thumbPath]
       : undefined;
     return (
       <ReplyQuote
@@ -1212,7 +1237,8 @@ export default function ChatThreadScreen() {
         albumsLoading={albumsLoading}
         onShareAlbum={(albumId) => void onShareAlbum(albumId)}
         sharingAlbumId={sharingAlbumId}
-        onSharePrivateCard={() => void onSharePrivateCard()}
+        onSharePrivateCard={(sections) => void onSharePrivateCard(sections)}
+        otherId={otherId ?? undefined}
         sharingCard={sharingCard}
         error={shareError}
       />

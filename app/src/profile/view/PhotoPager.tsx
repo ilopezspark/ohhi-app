@@ -4,6 +4,8 @@ import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { tintForPhoto } from '../../photos/tint';
 import { BackIcon, ChevronRightIcon } from '../../ui';
 import { colors, radii, spacing } from '../../theme/tokens';
+import { PHOTO_REPLY_A11Y } from './reply';
+import { ReplyAction } from './ReplyAction';
 
 export interface PhotoPagerProps {
   /** Owner's id — the tint fallback is deterministic per `{userId, position}`, same as the grid. */
@@ -19,6 +21,16 @@ export interface PhotoPagerProps {
   sideInset?: number;
   /** testID prefix, e.g. `profile` -> `profile-photo-progress`. */
   testIDPrefix?: string;
+  /**
+   * Reply to the photo on screen (migration 0024, decision 100). Only a
+   * photo `canReply` accepts shows the button, in the top right corner under
+   * the `…` (`top` from the hero's top edge). Omitted: no button.
+   */
+  reply?: {
+    top: number;
+    canReply: (path: string) => boolean;
+    onReply: (path: string, position: number) => void;
+  };
 }
 
 /**
@@ -32,7 +44,16 @@ export interface PhotoPagerProps {
  * progress bars are hidden from the screen reader — the adjustable value
  * already says where you are.
  */
-export function PhotoPager({ userId, firstName, paths, urls, barsTop, sideInset = 0, testIDPrefix = 'profile' }: PhotoPagerProps) {
+export function PhotoPager({
+  userId,
+  firstName,
+  paths,
+  urls,
+  barsTop,
+  sideInset = 0,
+  testIDPrefix = 'profile',
+  reply,
+}: PhotoPagerProps) {
   const [index, setIndex] = useState(0);
   const [failed, setFailed] = useState<Record<string, boolean>>({});
   const count = paths.length;
@@ -40,6 +61,8 @@ export function PhotoPager({ userId, firstName, paths, urls, barsTop, sideInset 
   const atStart = current === 0;
   const atEnd = current >= count - 1;
   const p = testIDPrefix;
+  const currentPath = paths[current];
+  const canReplyHere = !!reply && !!currentPath && reply.canReply(currentPath);
 
   function go(delta: number) {
     setIndex((prev) => Math.max(0, Math.min(count - 1, prev + delta)));
@@ -146,6 +169,16 @@ export function PhotoPager({ userId, firstName, paths, urls, barsTop, sideInset 
           </Pressable>
         </>
       ) : null}
+
+      {canReplyHere && reply && currentPath ? (
+        <ReplyAction
+          appearance="photo"
+          onPress={() => reply.onReply(currentPath, current)}
+          accessibilityLabel={PHOTO_REPLY_A11Y}
+          style={[styles.reply, { top: reply.top, right: spacing.lgXl + sideInset }]}
+          testID={`${p}-photo-reply`}
+        />
+      ) : null}
     </View>
   );
 }
@@ -179,4 +212,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   chevronDisabled: { opacity: 0.4 },
+  reply: { position: 'absolute' },
 });

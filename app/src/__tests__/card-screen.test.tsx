@@ -11,10 +11,10 @@ jest.mock('expo-router', () => ({
   },
 }));
 jest.mock('../api/client', () => ({ supabase: {}, SUPABASE_URL: 'https://example.test' }));
-jest.mock('../api/profileCard', () => ({ getProfileCard: jest.fn() }));
+jest.mock('../api/profileCard', () => ({ getProfileCard: jest.fn(), getProfileReplyTargets: jest.fn(() => Promise.resolve([])) }));
 jest.mock('../api/identity', () => ({ getIdentity: jest.fn() }));
 jest.mock('../api/his', () => ({ sendHi: jest.fn() }));
-jest.mock('../api/conversations', () => ({ startConversation: jest.fn() }));
+jest.mock('../api/conversations', () => ({ startConversation: jest.fn(), getConversation: jest.fn(() => Promise.resolve(null)) }));
 jest.mock('../api/messages', () => ({ sendMessage: jest.fn() }));
 jest.mock('../api/photos', () => ({ signedPhotoUrls: jest.fn() }));
 jest.mock('../api/me', () => ({ me: jest.fn() }));
@@ -163,21 +163,67 @@ describe('ProfileScreen', () => {
     });
   });
 
-  it('hides the identity row when getIdentity resolves to null (404 — collapsed silently)', async () => {
+  it('hides the identity cards when getIdentity resolves to null (404 — collapsed silently)', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card());
     (getIdentity as jest.Mock).mockResolvedValue(null);
     const { findByTestId, queryByTestId } = await renderScreen();
     await findByTestId('profile-screen');
     await waitFor(() => expect(getIdentity).toHaveBeenCalled());
-    expect(queryByTestId('profile-identity')).toBeNull();
+    expect(queryByTestId('profile-card-identity')).toBeNull();
   });
 
-  it('shows pronouns and orientation as rows in the basics card when getIdentity resolves with data', async () => {
+  it("reads the target's cards with getIdentity(targetId) and renders exactly the cards that came back", async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(card());
-    (getIdentity as jest.Mock).mockResolvedValue({ pronouns: 'she/her', orientation: ['bi'] });
-    const { findByTestId } = await renderScreen();
-    expect(await findByTestId('profile-identity')).toHaveTextContent('she/her');
-    expect(await findByTestId('profile-identity-orientation')).toHaveTextContent(/bi/);
+    (getIdentity as jest.Mock).mockResolvedValue({
+      user_id: TARGET,
+      cards: {
+        identity: { pronouns: ['she/her'], orientation: ['bi'], interested_in: [], relationship: null },
+        lifestyle: { drinking: 'socially', smoking: null, four_twenty: null, kids: null },
+      },
+      audiences: null,
+      is_public: null,
+      pronouns: 'she/her',
+      orientation: ['bi'],
+    });
+    const { findByTestId, queryByTestId } = await renderScreen();
+    expect(await findByTestId('profile-card-identity-pronouns')).toHaveTextContent(/she\/her/);
+    expect(await findByTestId('profile-card-identity-orientation')).toHaveTextContent(/bi/);
+    expect(await findByTestId('profile-card-lifestyle-drinking')).toHaveTextContent(/socially/);
+    expect(getIdentity).toHaveBeenCalledWith(TARGET);
+    // Cards the audience withheld are simply absent; nothing is inferred client-side.
+    expect(queryByTestId('profile-card-background')).toBeNull();
+    expect(queryByTestId('profile-card-around')).toBeNull();
+    expect(queryByTestId('profile-before-you-message-strip')).toBeNull();
+  });
+
+  it('shows the before-you-message strip above say-hi and the same line in the first-message sheet', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: null, conversation_id: null }));
+    (getIdentity as jest.Mock).mockResolvedValue({
+      user_id: TARGET,
+      cards: { before_you_message: { photos_content: ['ask before you send anything', "don't screenshot"] } },
+      audiences: null,
+      is_public: null,
+      pronouns: null,
+      orientation: [],
+    });
+    const { findByTestId, getByTestId } = await renderScreen();
+    expect(await findByTestId('profile-before-you-message-strip-text')).toHaveTextContent(
+      'before you message me · ask before you send anything +1'
+    );
+    await fireEvent.press(await findByTestId('profile-cta-message'));
+    await findByTestId('profile-message-sheet');
+    // Every request spelled out: there is no second sheet to open from here.
+    expect(getByTestId('profile-message-sheet-before-you-message')).toHaveTextContent(
+      "before you message me · ask before you send anything · don't screenshot"
+    );
+  });
+
+  it('the first-message sheet has no before-you-message line when nothing is set', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ my_hi_state: null, conversation_id: null }));
+    const { findByTestId, queryByTestId } = await renderScreen();
+    await fireEvent.press(await findByTestId('profile-cta-message'));
+    await findByTestId('profile-message-sheet');
+    expect(queryByTestId('profile-message-sheet-before-you-message')).toBeNull();
   });
 
   it('shows both Hi and Message as equal openers when there is no prior hi and no conversation', async () => {

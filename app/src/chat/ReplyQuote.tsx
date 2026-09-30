@@ -4,13 +4,19 @@ import { colors, spacing } from '../theme/tokens';
 import { AlbumIcon, CameraIcon } from '../ui/icons';
 import { Text } from '../ui';
 import { PlayIcon } from './mediaIcons';
-import { QUOTE_LOADING_COPY, QUOTE_UNAVAILABLE_COPY, quoteAccessibilityLabel, type QuoteView } from './replies';
+import {
+  PROFILE_PHOTO_QUOTE_COPY,
+  QUOTE_LOADING_COPY,
+  QUOTE_UNAVAILABLE_COPY,
+  quoteAccessibilityLabel,
+  type QuoteView,
+} from './replies';
 
 interface Props {
   view: QuoteView;
   /** `you`, or their lowercase name. */
   name: string;
-  /** Signed URL for the thumbnail (kept media or an album photo), when there is one. */
+  /** Signed URL for the thumbnail (kept media, an album photo or a profile photo), when there is one. */
   thumbUrl?: string;
   /** Mine sit on the right; the quote lines up with its reply. */
   mine: boolean;
@@ -30,6 +36,9 @@ const THUMB = 36;
  *   thumbnail: a quote has no path to it and never opens it.
  * - An unavailable quote says `unavailable` and nothing else.
  * - A quote whose answer has not come back yet holds its place quietly.
+ * - A prompt answer (migration 0024, decision 100) shows the question small
+ *   and the answer under it; a profile photo shows its thumbnail and
+ *   `photo`. Neither is tappable: there is nothing in the thread to jump to.
  */
 export function ReplyQuote({ view, name, thumbUrl, mine, onPress, testID }: Props) {
   const [thumbFailed, setThumbFailed] = useState(false);
@@ -48,26 +57,45 @@ export function ReplyQuote({ view, name, thumbUrl, mine, onPress, testID }: Prop
     showName = false;
   } else if (view.state === 'album_photo') {
     line = 'album photo';
+  } else if (view.state === 'profile_photo') {
+    line = PROFILE_PHOTO_QUOTE_COPY;
+  } else if (view.state === 'prompt') {
+    line = view.answer;
   } else {
     line = view.line;
   }
 
   const hasThumbSlot =
-    (view.state === 'message' && (view.limited || !!view.thumbPath)) || view.state === 'album_photo';
+    (view.state === 'message' && (view.limited || !!view.thumbPath)) ||
+    view.state === 'album_photo' ||
+    view.state === 'profile_photo';
   const showImage = hasThumbSlot && !!thumbUrl && !thumbFailed && !(view.state === 'message' && view.limited);
 
   const content = (
     <View style={[styles.quote, mine ? styles.quoteMine : styles.quoteTheirs]}>
       <View style={styles.accent} />
       <View style={styles.text}>
-        {showName ? (
-          <Text variant="caption" color={colors.ink} numberOfLines={1} style={styles.name}>
-            {name}
-          </Text>
-        ) : null}
-        <Text variant="captionMuted" numberOfLines={1} testID={`${testID}-line`}>
-          {line}
-        </Text>
+        {view.state === 'prompt' ? (
+          <>
+            <Text variant="captionMuted" numberOfLines={1} testID={`${testID}-question`}>
+              {view.question}
+            </Text>
+            <Text variant="caption" color={colors.ink} numberOfLines={2} testID={`${testID}-line`}>
+              {line}
+            </Text>
+          </>
+        ) : (
+          <>
+            {showName ? (
+              <Text variant="caption" color={colors.ink} numberOfLines={1} style={styles.name}>
+                {name}
+              </Text>
+            ) : null}
+            <Text variant="captionMuted" numberOfLines={1} testID={`${testID}-line`}>
+              {line}
+            </Text>
+          </>
+        )}
       </View>
       {hasThumbSlot ? (
         <View style={styles.thumb} testID={`${testID}-thumb`}>

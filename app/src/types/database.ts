@@ -424,6 +424,11 @@ export type Database = {
           reply_kind: string | null
           reply_to_album_photo_id: string | null
           reply_to_message_id: string | null
+          // Migration 0024. Optional here (the generator would make them
+          // required) only so rows the app builds by hand without them, such
+          // as the chat list's realtime patch, still type-check.
+          reply_to_user_photo_id?: string | null
+          reply_to_user_prompt_id?: string | null
           sender_id: string
           view_limit: number | null
           views_used: number
@@ -442,6 +447,8 @@ export type Database = {
           media_width?: number | null
           reply_to_album_photo_id?: string | null
           reply_to_message_id?: string | null
+          reply_to_user_photo_id?: string | null
+          reply_to_user_prompt_id?: string | null
           sender_id: string
           view_limit?: number | null
           views_used?: number
@@ -461,6 +468,8 @@ export type Database = {
           reply_kind?: string | null
           reply_to_album_photo_id?: string | null
           reply_to_message_id?: string | null
+          reply_to_user_photo_id?: string | null
+          reply_to_user_prompt_id?: string | null
           sender_id?: string
           view_limit?: number | null
           views_used?: number
@@ -485,6 +494,20 @@ export type Database = {
             columns: ["reply_to_message_id"]
             isOneToOne: false
             referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_reply_to_user_photo_id_fkey"
+            columns: ["reply_to_user_photo_id"]
+            isOneToOne: false
+            referencedRelation: "user_photos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_reply_to_user_prompt_id_fkey"
+            columns: ["reply_to_user_prompt_id"]
+            isOneToOne: false
+            referencedRelation: "user_prompts"
             referencedColumns: ["id"]
           },
           {
@@ -1156,6 +1179,7 @@ export type Database = {
         Row: {
           answer: string
           created_at: string
+          id: string
           position: number
           prompt_id: string
           user_id: string
@@ -1163,6 +1187,7 @@ export type Database = {
         Insert: {
           answer: string
           created_at?: string
+          id?: string
           position: number
           prompt_id: string
           user_id: string
@@ -1170,6 +1195,7 @@ export type Database = {
         Update: {
           answer?: string
           created_at?: string
+          id?: string
           position?: number
           prompt_id?: string
           user_id?: string
@@ -1770,6 +1796,10 @@ export type Database = {
           quoted_message_id: string | null
           quoted_sender_id: string | null
           reply_kind: string
+          quote_kind: string | null
+          prompt_question: string | null
+          prompt_answer: string | null
+          photo_path: string | null
         }[]
       }
       my_badge_counts: {
@@ -1851,6 +1881,15 @@ export type Database = {
       }
       postgis_version: { Args: never; Returns: string }
       postgis_wagyu_version: { Args: never; Returns: string }
+      profile_reply_targets: {
+        Args: { p_target: string }
+        Returns: {
+          kind: string
+          target_id: string
+          prompt_id: string | null
+          photo_path: string | null
+        }[]
+      }
       profile_card_for: {
         Args: { p_target: string }
         Returns: {

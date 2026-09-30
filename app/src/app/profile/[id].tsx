@@ -2,25 +2,37 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getProfileCard } from '../../api/profileCard';
+import { getProfileCard, getProfileReplyTargets } from '../../api/profileCard';
 import { getIdentity } from '../../api/identity';
 import { me as fetchMe } from '../../api/me';
 import { getUserTags, listTagCatalog } from '../../api/tags';
 import { getMyAbout } from '../../api/about';
 import { sendHi } from '../../api/his';
-import { startConversation } from '../../api/conversations';
+import { getConversation, startConversation } from '../../api/conversations';
 import { sendMessage } from '../../api/messages';
 import { isUnavailableError } from '../../api/errors';
 import { signedPhotoUrls } from '../../api/photos';
 import { CtaButton } from '../../card/CtaButton';
 import { OverflowSheet } from '../../card/OverflowMenu';
-import { MessageSheet } from '../../card/MessageSheet';
+import { MessageSheet, type MessageSheetQuote } from '../../card/MessageSheet';
 import { cardCta } from '../../card/cta';
 import { tierWord } from '../../grid/tierLabel';
 import { tintForPhoto } from '../../photos/tint';
 import { queryKeys } from '../../me/queryKeys';
 import { buildProfileViewData } from '../../profile/view/model';
 import { ProfileView } from '../../profile/view/ProfileView';
+import { BeforeYouMessageLine } from '../../profile/view/BeforeYouMessage';
+import { beforeYouMessageItems } from '../../profile/view/identityCards';
+import {
+  EMPTY_REPLY_INDEX,
+  indexReplyTargets,
+  profileReplyMode,
+  profileReplyTarget,
+  replySubjectKey,
+  type ProfileReplyOptions,
+  type ProfileReplySubject,
+} from '../../profile/view/reply';
+import { MAX_OPENER_LENGTH } from '../../chat/rules';
 import { useInsets } from '../../profile/view/useInsets';
 import { forgetGridRow, forgetProfile, leaveScreen, useGoneLatch, useLeaveWhenGone } from '../../query/gone';
 import { refreshBadges } from '../../badges/badgeCounts';
@@ -54,8 +66,9 @@ class ConversationCreatedSendFailedError extends Error {
  * the report/block sheet.
  *
  * Reads, in parallel: `profile_card_for` (the card), the `identity` edge
- * function (pronouns/orientation, only when the person opted in; a 404
- * just leaves the rows out), and the reads for the client-side joins:
+ * function (`getIdentity`: the restructured public cards, only those this
+ * viewer's audience admits, rendered as returned; a 404 just leaves them
+ * out), and the reads for the client-side joins:
  * `me()` (the footer's campus name), the tag catalog and my own tags and
  * about section (what you two share: shared interests, and the shared major,
  * which since migration 0018 comes from `about`, never from tags). None of
@@ -76,6 +89,13 @@ export default function ProfileScreen() {
 
   const [messageSheetOpen, setMessageSheetOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  // A reply to a prompt answer or photo (migration 0024, decision 100): what
+  // the sheet quotes, and a fresh draft per opening.
+  const [replySubject, setReplySubject] = useState<ProfileReplySubject | null>(null);
+  const [replyOpenCount, setReplyOpenCount] = useState(0);
+  // A reply opener whose `startConversation` went through but whose send did
+  // not: the retry goes into that conversation, never a second start.
+  const replyConversationRef = useRef<string | null>(null);
 
   const { gone, latch } = useGoneLatch();
 
@@ -122,6 +142,41 @@ export default function ProfileScreen() {
   });
 
   const cta = card ? cardCta(card.my_hi_state, card.conversation_id) : ({ kind: 'none' } as const);
+
+  // What on this profile can be replied to (migration 0024): read beside the
+  // card, under the card's own rules. A failure just means no reply actions.
+  const replyTargetsQuery = useQuery({
+    queryKey: ['profile_reply_targets', targetId],
+    queryFn: () => getProfileReplyTargets(targetId),
+    enabled: !!card && !gone,
+    retry: false,
+  });
+  const replyIndex = replyTargetsQuery.data ? indexReplyTargets(replyTargetsQuery.data) : EMPTY_REPLY_INDEX;
+
+  // With a conversation, whether it takes a message from me now (the same
+  // thread read the chat screen uses).
+  const existingConversationId = cta.kind === 'message' ? cta.conversationId : null;
+  const threadQuery = useQuery({
+    queryKey: ['conversation', existingConversationId],
+    queryFn: () => getConversation(existingConversationId as string),
+    enabled: !!existingConversationId && !gone,
+    retry: false,
+  });
+  const thread = threadQuery.data ?? null;
+  const replyMode = profileReplyMode(
+    cta.kind,
+    thread
+      ? {
+          state: thread.state,
+          user_a_id: thread.userAId,
+          user_b_id: thread.userBId,
+          opened_by_id: thread.openedById,
+          blocked_by: thread.blockedBy,
+        }
+      : null,
+    meQuery.data?.id ?? null,
+    thread?.lastMessage ?? null
+  );
 
   // The `answered` + null-conversation combination is a stale read racing
   // hi_back()'s two atomic writes (§1) — refetch once rather than getting
@@ -200,6 +255,48 @@ export default function ProfileScreen() {
     },
   });
 
+  // A reply from the profile: into the conversation if there is one (or the
+  // one a failed attempt already started), else `startConversation` then the
+  // send, as the opener. Unlike the plain opener, the sheet stays open until
+  // the reply has gone, so a failure (the neutral line for a refusal) leaves
+  // the draft and the quote in place to try again or close.
+  const replyMutation = useMutation({
+    mutationFn: async ({ subject, draft }: { subject: ProfileReplySubject; draft: string }) => {
+      let conversationId = existingConversationId ?? replyConversationRef.current;
+      if (!conversationId) {
+        conversationId = await startConversation(targetId);
+        replyConversationRef.current = conversationId;
+      }
+      await sendMessage({ conversationId, body: draft, replyTo: profileReplyTarget(subject) });
+      return conversationId;
+    },
+    onSuccess: (conversationId) => {
+      setReplySubject(null);
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      router.push(`/chat/${conversationId}` as never);
+    },
+    onError: (error) => {
+      // A refusal can mean the answer or photo is not there for me any more,
+      // or the person is not: re-read both (an empty card leaves the screen).
+      if (isUnavailableError(error)) {
+        void cardQuery.refetch();
+        void replyTargetsQuery.refetch();
+        if (existingConversationId) void threadQuery.refetch();
+      }
+    },
+  });
+
+  function onReply(subject: ProfileReplySubject) {
+    replyMutation.reset();
+    setReplyOpenCount((n) => n + 1);
+    setReplySubject(subject);
+  }
+
+  const reply: ProfileReplyOptions | undefined =
+    replyMode && (Object.keys(replyIndex.prompts).length > 0 || Object.keys(replyIndex.photos).length > 0)
+      ? { index: replyIndex, onReply }
+      : undefined;
+
   function onMessage() {
     if (cta.kind === 'message') {
       router.push(`/chat/${cta.conversationId}` as never);
@@ -267,6 +364,9 @@ export default function ProfileScreen() {
     photoUrls: photoUrlsQuery.data ?? {},
   });
 
+  // "before you message me" (reconcile C4): also in the first-message sheet.
+  const requests = beforeYouMessageItems(viewData.identityCards);
+
   const hiError = hiMutation.isError
     ? hiMutation.error instanceof Error
       ? hiMutation.error.message
@@ -277,6 +377,23 @@ export default function ProfileScreen() {
       ? messageMutation.error.message
       : "that didn't work."
     : null;
+  const replyError = replyMutation.isError
+    ? replyMutation.error instanceof Error
+      ? replyMutation.error.message
+      : "that didn't work."
+    : null;
+  const replyQuote: MessageSheetQuote | undefined = !replySubject
+    ? undefined
+    : replySubject.kind === 'prompt'
+      ? { kind: 'prompt', question: replySubject.question, answer: replySubject.answer }
+      : {
+          kind: 'photo',
+          photoUrl: photoUrlsQuery.data?.[replySubject.path],
+          tint: tintForPhoto(card.user_id, replySubject.position),
+        };
+  const sheetSubtitle = [tierWord(card.tier), card.here_now ? 'here now' : null].filter(Boolean).join('  ·  ');
+  const requestsNotice =
+    requests.length > 0 ? <BeforeYouMessageLine items={requests} testID="profile-message-sheet-before-you-message" /> : undefined;
 
   return (
     <View style={styles.container} testID="profile-screen">
@@ -284,6 +401,7 @@ export default function ProfileScreen() {
         data={viewData}
         onBack={goBack}
         onOverflow={() => setOverflowOpen(true)}
+        reply={reply}
         renderActions={({ onPaper }) =>
           cta.kind === 'none' && !hiError && !messageError ? null : (
             <View style={styles.actions}>
@@ -316,11 +434,34 @@ export default function ProfileScreen() {
         firstName={card.first_name}
         photoUrl={photoPaths[0] ? photoUrlsQuery.data?.[photoPaths[0]] : undefined}
         tint={heroTint}
-        subtitle={[tierWord(card.tier), card.here_now ? 'here now' : null].filter(Boolean).join('  ·  ')}
+        subtitle={sheetSubtitle}
         busy={messageMutation.isPending}
+        notice={requestsNotice}
         onSend={onSendMessage}
         onDismiss={() => setMessageSheetOpen(false)}
       />
+
+      {replySubject ? (
+        <MessageSheet
+          key={`${replySubjectKey(replySubject)}-${replyOpenCount}`}
+          visible
+          firstName={card.first_name}
+          photoUrl={photoPaths[0] ? photoUrlsQuery.data?.[photoPaths[0]] : undefined}
+          tint={heroTint}
+          subtitle={sheetSubtitle}
+          quote={replyQuote}
+          mode={replyMode?.mode ?? 'opener'}
+          maxLength={replyMode?.maxLength ?? MAX_OPENER_LENGTH}
+          notice={replyMode?.mode === 'thread' ? undefined : requestsNotice}
+          busy={replyMutation.isPending}
+          error={replyError}
+          clearOnSend={false}
+          onSend={(draft) => replyMutation.mutate({ subject: replySubject, draft })}
+          onDismiss={() => {
+            if (!replyMutation.isPending) setReplySubject(null);
+          }}
+        />
+      ) : null}
 
       <OverflowSheet visible={overflowOpen} targetId={card.user_id} onDismiss={() => setOverflowOpen(false)} />
     </View>

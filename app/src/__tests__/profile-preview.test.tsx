@@ -1,4 +1,6 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import type { ReactNode } from 'react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn(), replace: jest.fn() },
@@ -6,6 +8,7 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('../me/editor/useProfileEditorDraft', () => ({ useProfileEditorDraft: jest.fn() }));
 jest.mock('../me/editor/useMyPhotos', () => ({ useMyPhotos: jest.fn() }));
+jest.mock('../api/identity', () => ({ getMyIdentity: jest.fn(), getIdentity: jest.fn() }));
 
 import { router, useLocalSearchParams } from 'expo-router';
 import { useProfileEditorDraft } from '../me/editor/useProfileEditorDraft';
@@ -15,6 +18,31 @@ import ProfilePreviewScreen from '../app/profile-preview';
 import { buildPreviewData } from '../me/editor/previewData';
 import { usePresenceStore } from '../presence/store';
 import { EMPTY_ABOUT, type AboutSection } from '../profile/about';
+import { getIdentity, getMyIdentity } from '../api/identity';
+import { emptyIdentityCards, defaultAudiences, type Audiences, type IdentityCards } from '../profile/fields';
+
+/** Renders the screen and lets its `getMyIdentity()` read settle inside `act`, so no update leaks into the next test. */
+async function renderPreview() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  const screen = await render(<ProfilePreviewScreen />, { wrapper });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  return screen;
+}
+
+/** `getMyIdentity()`'s shape: every card (filled or not) and the owner's audiences. */
+function ownIdentity(cards: Partial<IdentityCards>, audiences: Partial<Audiences> = {}) {
+  return {
+    user_id: 'u1',
+    cards: { ...emptyIdentityCards(), ...cards },
+    audiences: { ...defaultAudiences(), ...audiences },
+    is_public: true,
+    pronouns: null,
+    orientation: [],
+  };
+}
 
 const thisYear = new Date().getFullYear();
 
@@ -82,6 +110,7 @@ beforeEach(() => {
     invalidate: jest.fn(),
   });
   usePresenceStore.setState({ tier: 'on_campus', hereNow: false, permission: 'granted', paused: false });
+  (getMyIdentity as jest.Mock).mockResolvedValue(ownIdentity({}));
 });
 
 /**
@@ -93,7 +122,7 @@ beforeEach(() => {
  */
 describe('ProfilePreviewScreen', () => {
   it('renders the full ProfileView (hero, details, footer)', async () => {
-    const { findByTestId } = await render(<ProfilePreviewScreen />);
+    const { findByTestId } = await renderPreview();
     await findByTestId('profile-preview-view');
     expect(await findByTestId('profile-preview-name')).toHaveTextContent('izaac');
     await findByTestId('profile-preview-details');
@@ -104,7 +133,7 @@ describe('ProfilePreviewScreen', () => {
   });
 
   it('greys out the say-hi/message bar and hides report/block', async () => {
-    const screen = await render(<ProfilePreviewScreen />);
+    const screen = await renderPreview();
     const bar = screen.getByTestId('profile-preview-action-bar', { includeHiddenElements: true });
     expect(bar.props.pointerEvents).toBe('none');
     expect(bar.props.accessibilityElementsHidden).toBe(true);
@@ -116,7 +145,7 @@ describe('ProfilePreviewScreen', () => {
 
   it('reflects the DRAFT status line, goals and tags', async () => {
     withDraft({ statusLine: 'a brand new unsaved status', goals: ['study'], tagIds: ['t2', 't3'] });
-    const screen = await render(<ProfilePreviewScreen />);
+    const screen = await renderPreview();
     expect(screen.getByTestId('profile-preview-status-line')).toHaveTextContent('a brand new unsaved status');
     expect(screen.getByTestId('profile-preview-goals')).toHaveTextContent('here for study');
     expect(screen.getByTestId('profile-preview-tags')).toHaveTextContent('here for studygymanime'); // every tag is an interest chip, in picked order
@@ -135,7 +164,7 @@ describe('ProfilePreviewScreen', () => {
         workHours: ['weekends'],
       },
     });
-    const screen = await render(<ProfilePreviewScreen />);
+    const screen = await renderPreview();
     expect(screen.getByTestId('profile-preview-about-major')).toHaveTextContent('cs');
     expect(screen.getByTestId('profile-preview-about-graduating')).toHaveTextContent('not sure yet');
     expect(screen.getByTestId('profile-preview-about-work')).toHaveTextContent(/retail · cashier/);
@@ -151,7 +180,7 @@ describe('ProfilePreviewScreen', () => {
         { promptId: 'cafe_order', question: 'my order at the campus cafe', gated: false, answer: 'oat latte' },
       ],
     });
-    const screen = await render(<ProfilePreviewScreen />);
+    const screen = await renderPreview();
     expect(screen.getByTestId('profile-preview-prompt-0-note')).toHaveTextContent('only shown after a hi has been answered.');
     expect(screen.getByTestId('profile-preview-prompt-1-answer')).toHaveTextContent('oat latte');
     expect(screen.queryByTestId('profile-preview-prompt-1-note')).toBeNull();
@@ -159,27 +188,27 @@ describe('ProfilePreviewScreen', () => {
 
   it('shows the owner their own usual places, with the note', async () => {
     withDraft({ usualPlaces: ['library', 'the gym'] });
-    const screen = await render(<ProfilePreviewScreen />);
+    const screen = await renderPreview();
     expect(screen.getByTestId('profile-preview-around-campus-places')).toHaveTextContent('library, the gym');
     expect(screen.getByTestId('profile-preview-around-campus-note')).toHaveTextContent('only shown after a hi has been answered.');
   });
 
   it('reads tier and here-now from the presence store', async () => {
     usePresenceStore.setState({ tier: 'nearby', hereNow: true });
-    const screen = await render(<ProfilePreviewScreen />);
+    const screen = await renderPreview();
     screen.getByTestId('profile-preview-here-now-badge');
     expect(screen.getByTestId('profile-preview-tier-pill')).toHaveTextContent('nearby');
   });
 
   it('back is a plain router.back(), from the photo button', async () => {
-    const screen = await render(<ProfilePreviewScreen />);
+    const screen = await renderPreview();
     await fireEvent.press(screen.getByTestId('profile-preview-back'));
     expect(router.back).toHaveBeenCalledTimes(1);
     expect(router.replace).not.toHaveBeenCalled();
   });
 
   it('has the real screen chrome: a back button and no edit controls or tab bar', async () => {
-    const screen = await render(<ProfilePreviewScreen />);
+    const screen = await renderPreview();
     screen.getByTestId('profile-preview-back');
     expect(screen.queryByTestId('profile-editor-done')).toBeNull();
     expect(screen.queryByTestId('profile-editor-cancel')).toBeNull();
@@ -192,28 +221,28 @@ describe('ProfilePreviewScreen', () => {
       draft: { ...BASE_DRAFT_STATE.draft, statusLine: 'saved status' },
     });
     setPreviewDraft(previewSourceOf({ ...BASE_DRAFT_STATE, draft: { ...BASE_DRAFT_STATE.draft, statusLine: 'stale draft' } } as never));
-    const screen = await render(<ProfilePreviewScreen />);
+    const screen = await renderPreview();
     expect(screen.getByTestId('profile-preview-status-line')).toHaveTextContent('saved status');
   });
 
   it('shows the editor draft, unsaved edits included, when opened from the editor', async () => {
     (useLocalSearchParams as jest.Mock).mockReturnValue({ from: 'editor' });
     setPreviewDraft(previewSourceOf({ ...BASE_DRAFT_STATE, draft: { ...BASE_DRAFT_STATE.draft, statusLine: 'not saved yet' } } as never));
-    const screen = await render(<ProfilePreviewScreen />);
+    const screen = await renderPreview();
     expect(screen.getByTestId('profile-preview-status-line')).toHaveTextContent('not saved yet');
   });
 
   it('shows a spinner with a back while the profile loads, and a retry when it fails', async () => {
     (useProfileEditorDraft as jest.Mock).mockReturnValue({ ...BASE_DRAFT_STATE, ready: false, loading: true });
-    const loading = await render(<ProfilePreviewScreen />);
+    const loading = await renderPreview();
     loading.getByTestId('profile-preview-loading');
     await fireEvent.press(loading.getByLabelText('Back'));
     expect(router.back).toHaveBeenCalledTimes(1);
-    loading.unmount();
+    await loading.unmount();
 
     const retry = jest.fn();
     (useProfileEditorDraft as jest.Mock).mockReturnValue({ ...BASE_DRAFT_STATE, ready: false, loading: false, loadError: "that didn't load. try again.", retry });
-    const failed = await render(<ProfilePreviewScreen />);
+    const failed = await renderPreview();
     await fireEvent.press(failed.getByTestId('profile-preview-retry'));
     expect(retry).toHaveBeenCalled();
   });
@@ -256,5 +285,82 @@ describe('buildPreviewData — the place line', () => {
     expect(data.sharedLines).toEqual([]);
     expect(data.prompts).toEqual([]);
     expect(data.joinedMonth).toBeNull();
+  });
+});
+
+describe('ProfilePreviewScreen — the public cards (owner view)', () => {
+  const CARDS: Partial<IdentityCards> = {
+    identity: { pronouns: ['he/him'], orientation: [], interested_in: [], relationship: null },
+    background: { languages: ['english', 'spanish'], faith: null, faith_weight: null, politics: null, politics_weight: null },
+    lifestyle: { drinking: 'rarely', smoking: null, four_twenty: null, kids: null },
+    around: { when_free: [], communication: [] },
+    before_you_message: { photos_content: ["don't screenshot"] },
+  };
+
+  it("reads the owner's own cards with getMyIdentity, never getIdentity", async () => {
+    (getMyIdentity as jest.Mock).mockResolvedValue(ownIdentity(CARDS));
+    const screen = await renderPreview();
+    await waitFor(() => expect(screen.getByTestId('profile-preview-card-identity-pronouns')).toHaveTextContent(/he\/him/));
+    expect(getMyIdentity).toHaveBeenCalled();
+    expect(getIdentity).not.toHaveBeenCalled();
+  });
+
+  it('shows every filled card whatever its audience, each not shown to everyone with its note', async () => {
+    (getMyIdentity as jest.Mock).mockResolvedValue(ownIdentity(CARDS, { background: 'after_hi', lifestyle: 'only_me' }));
+    const screen = await renderPreview();
+    await waitFor(() => expect(screen.getByTestId('profile-preview-card-lifestyle')).toBeTruthy());
+    expect(screen.getByTestId('profile-preview-card-background-note')).toHaveTextContent('shown after a hi is answered');
+    expect(screen.getByTestId('profile-preview-card-lifestyle-note')).toHaveTextContent('only you can see this');
+    expect(screen.queryByTestId('profile-preview-card-identity-note')).toBeNull();
+    // An empty card is skipped even for the owner; before you message me is always everyone.
+    expect(screen.queryByTestId('profile-preview-card-around')).toBeNull();
+    expect(screen.getByTestId('profile-preview-card-before_you_message')).toBeTruthy();
+    expect(screen.queryByTestId('profile-preview-card-before_you_message-note')).toBeNull();
+    screen.getByTestId('profile-preview-before-you-message-strip', { includeHiddenElements: true });
+  });
+
+  it('a failed identity read never blocks the preview: the cards are just left out', async () => {
+    (getMyIdentity as jest.Mock).mockRejectedValue(new Error('nope'));
+    const screen = await renderPreview();
+    await waitFor(() => expect(getMyIdentity).toHaveBeenCalled());
+    screen.getByTestId('profile-preview-details');
+    expect(screen.queryByTestId('profile-preview-card-identity')).toBeNull();
+  });
+
+  it('buildPreviewData carries the cards and audiences through', () => {
+    const identity = ownIdentity(CARDS, { lifestyle: 'only_me' });
+    const data = buildPreviewData({
+      userId: 'u1',
+      firstName: 'izaac',
+      gradYear: 2027,
+      verified: true,
+      campusShort: 'CLC',
+      catalog: [],
+      draft: { ...BASE_DRAFT_STATE.draft, goals: [] },
+      fieldsMeta: null,
+      photoPaths: [],
+      photoUrls: {},
+      tier: 'on_campus',
+      hereNow: false,
+      identity,
+    });
+    expect(data.identityCards).toBe(identity.cards);
+    expect(data.identityAudiences).toEqual(identity.audiences);
+    const none = buildPreviewData({
+      userId: 'u1',
+      firstName: 'i',
+      gradYear: null,
+      verified: true,
+      campusShort: null,
+      catalog: [],
+      draft: { ...BASE_DRAFT_STATE.draft, goals: [] },
+      fieldsMeta: null,
+      photoPaths: [],
+      photoUrls: {},
+      tier: 'away',
+      hereNow: false,
+    });
+    expect(none.identityCards).toEqual({});
+    expect(none.identityAudiences).toBeNull();
   });
 });

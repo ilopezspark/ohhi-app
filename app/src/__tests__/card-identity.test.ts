@@ -1,11 +1,17 @@
 const mockGetSession = jest.fn();
+const mockGetUser = jest.fn();
 
 jest.mock('../api/client', () => ({
-  supabase: { auth: { getSession: (...args: unknown[]) => mockGetSession(...args) } },
+  supabase: {
+    auth: {
+      getSession: (...args: unknown[]) => mockGetSession(...args),
+      getUser: (...args: unknown[]) => mockGetUser(...args),
+    },
+  },
   SUPABASE_URL: 'https://example.test',
 }));
 
-import { getIdentity } from '../api/identity';
+import { getIdentity, getMyIdentity } from '../api/identity';
 
 const USER_ID = '33333333-3333-4333-8333-333333333333';
 
@@ -56,5 +62,74 @@ describe('getIdentity', () => {
     const result = await getIdentity(USER_ID);
 
     expect(result).toMatchObject({ pronouns: null, orientation: [], cards: {} });
+  });
+});
+
+/**
+ * Profile restructure, phase 4b: what the profile renders. A viewer's
+ * profile renders `getIdentity(targetId).cards` exactly as returned (the
+ * function already dropped every card the audience withholds); the owner's
+ * preview renders `getMyIdentity()` (every card, plus audiences).
+ */
+describe('identity cards for the profile view', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetSession.mockResolvedValue({ data: { session: { access_token: 'jwt-token' } }, error: null });
+    mockGetUser.mockResolvedValue({ data: { user: { id: USER_ID } } });
+    (globalThis as unknown as { fetch: jest.Mock }).fetch = jest.fn();
+  });
+
+  it('getIdentity (a viewer): only the cards that came back, no audiences', async () => {
+    (globalThis.fetch as jest.Mock).mockResolvedValue({
+      status: 200,
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          user_id: USER_ID,
+          cards: {
+            identity: { pronouns: ['she/her'], orientation: [], interested_in: [], relationship: 'single' },
+            before_you_message: { photos_content: ["don't screenshot"] },
+          },
+          pronouns: 'she/her',
+          orientation: [],
+        }),
+    });
+
+    const result = await getIdentity(USER_ID);
+
+    expect(Object.keys(result!.cards)).toEqual(['identity', 'before_you_message']);
+    expect(result!.cards.identity?.relationship).toBe('single');
+    expect(result!.cards.before_you_message?.photos_content).toEqual(["don't screenshot"]);
+    expect(result!.audiences).toBeNull();
+  });
+
+  it('getMyIdentity (the owner): every card, filled or not, and the audiences', async () => {
+    (globalThis.fetch as jest.Mock).mockResolvedValue({
+      status: 200,
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          user_id: USER_ID,
+          cards: { lifestyle: { drinking: 'rarely', smoking: null, four_twenty: null, kids: null } },
+          audiences: { identity: 'everyone', background: 'after_hi', lifestyle: 'only_me', around: 'everyone' },
+          is_public: true,
+        }),
+    });
+
+    const result = await getMyIdentity();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(`https://example.test/functions/v1/identity/${USER_ID}`, expect.anything());
+    expect(Object.keys(result.cards)).toEqual(['identity', 'background', 'lifestyle', 'around', 'before_you_message']);
+    expect(result.cards.lifestyle.drinking).toBe('rarely');
+    expect(result.audiences).toEqual({ identity: 'everyone', background: 'after_hi', lifestyle: 'only_me', around: 'everyone' });
+  });
+
+  it('getMyIdentity on the owner 404 (never written): every card empty, every audience everyone', async () => {
+    (globalThis.fetch as jest.Mock).mockResolvedValue({ status: 404, ok: false, json: () => Promise.resolve({}) });
+
+    const result = await getMyIdentity();
+
+    expect(result.cards.identity.pronouns).toEqual([]);
+    expect(result.audiences).toEqual({ identity: 'everyone', background: 'everyone', lifestyle: 'everyone', around: 'everyone' });
   });
 });

@@ -79,6 +79,9 @@ const quote = (overrides: Partial<MessageQuote> = {}): MessageQuote => ({
   mediaPath: null,
   mediaPosterPath: null,
   albumId: null,
+  promptQuestion: null,
+  promptAnswer: null,
+  photoPath: null,
   ...overrides,
 });
 

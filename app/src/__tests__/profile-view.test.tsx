@@ -5,6 +5,12 @@ import { ProfileView, PROFILE_MAX_WIDTH } from '../profile/view/ProfileView';
 import { BOTTOM_SCRIM_FADE, BOTTOM_SCRIM_SHARE, heroScrimHeights } from '../profile/view/ProfileHero';
 import type { ProfileViewData } from '../profile/view/model';
 import { Icon, type IconName } from '../ui/icons';
+import { emptyIdentityCards, type IdentityCards } from '../profile/fields';
+
+/** One card's values with every key present (the function's shape), overridden. */
+function cardOf<C extends keyof IdentityCards>(card: C, values: Partial<IdentityCards[C]>): IdentityCards[C] {
+  return { ...emptyIdentityCards()[card], ...values };
+}
 
 const MAYA: ProfileViewData = {
   userId: 'u-maya',
@@ -19,8 +25,8 @@ const MAYA: ProfileViewData = {
   majorLabel: 'nursing',
   tagLabels: ['gym', 'coffee'],
   sharedLines: ["you're both into gym"],
-  pronouns: 'she/her',
-  orientation: [],
+  identityCards: { identity: cardOf('identity', { pronouns: ['she/her'] }) },
+  identityAudiences: null,
   campusShort: 'CLC',
   photoPaths: ['p0', 'p1', 'p2'],
   photoUrls: { p0: 'https://example.test/0.jpg', p1: 'https://example.test/1.jpg' },
@@ -55,7 +61,7 @@ const LUIS: ProfileViewData = {
   majorLabel: 'business',
   tagLabels: [],
   sharedLines: [],
-  pronouns: null,
+  identityCards: {},
   photoPaths: ['p0'],
   photoUrls: {},
   about: null,
@@ -196,10 +202,10 @@ describe('ProfileView — photo pager', () => {
 });
 
 describe('ProfileView — detail list (03, 04)', () => {
-  it('renders shared, about, basics, photo 2, into, photo 3 and the footer, in that order (about above the basics)', async () => {
+  it('renders shared, about, the identity card, photo 2, into, photo 3 and the footer, in that order', async () => {
     const screen = await renderView(MAYA);
     const details = screen.getByTestId('profile-details');
-    const order = ['profile-shared', 'profile-about', 'profile-basics', 'profile-photo-card-1', 'profile-into', 'profile-photo-card-2', 'profile-footer'];
+    const order = ['profile-shared', 'profile-about', 'profile-card-identity', 'profile-photo-card-1', 'profile-into', 'profile-photo-card-2', 'profile-footer'];
     const ids = details.children.map((child) => {
       const node = typeof child === 'string' ? null : child.children[0];
       return node && typeof node !== 'string' ? node.props.testID : null;
@@ -226,10 +232,10 @@ describe('ProfileView — detail list (03, 04)', () => {
     expect(screen.getByTestId('profile-about-work')).toHaveTextContent(/part time · weekends/);
   });
 
-  it('nothing shows twice: the major and year are only in the about card', async () => {
+  it('nothing shows twice: the major and year are only in the about card, and there is no basics card', async () => {
     const screen = await renderView(MAYA);
-    expect(screen.queryByTestId('profile-basics-major')).toBeNull();
-    expect(screen.getByTestId('profile-basics')).not.toHaveTextContent(/nursing|class of/);
+    expect(screen.queryByTestId('profile-basics')).toBeNull();
+    expect(screen.getByTestId('profile-card-identity')).not.toHaveTextContent(/nursing|class of/);
   });
 
   it('skips empty about rows, shows not sure yet, and hides the card when empty', async () => {
@@ -245,13 +251,13 @@ describe('ProfileView — detail list (03, 04)', () => {
     expect(none.queryByTestId('profile-about')).toBeNull();
   });
 
-  it('the basics shows pronouns only when public, and is hidden when empty', async () => {
+  it('pronouns now sit in the identity card, which is left out when the identity read returned nothing', async () => {
     const screen = await renderView(MAYA);
-    expect(screen.getByTestId('profile-identity')).toHaveTextContent('she/her');
+    expect(screen.getByTestId('profile-card-identity-pronouns')).toHaveTextContent(/she\/her/);
 
-    const privateIdentity = await renderView({ ...MAYA, pronouns: null });
-    expect(privateIdentity.queryByTestId('profile-identity')).toBeNull();
-    expect(privateIdentity.queryByTestId('profile-basics')).toBeNull();
+    const none = await renderView({ ...MAYA, identityCards: {} });
+    expect(none.queryByTestId('profile-card-identity')).toBeNull();
+    expect(none.queryByText('she/her')).toBeNull();
   });
 
   it('into lists the tags and is hidden without any', async () => {

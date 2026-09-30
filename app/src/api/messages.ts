@@ -40,7 +40,7 @@ export interface MessagePage {
  * falling back to an untyped `GenericStringError` result.
  */
 const MESSAGE_SELECT =
-  'id, conversation_id, sender_id, body, media_path, media_kind, view_limit, views_used, media_duration_ms, media_bytes, media_width, media_height, media_poster_path, created_at, reply_to_message_id, reply_to_album_photo_id, reply_kind' as const;
+  'id, conversation_id, sender_id, body, media_path, media_kind, view_limit, views_used, media_duration_ms, media_bytes, media_width, media_height, media_poster_path, created_at, reply_to_message_id, reply_to_album_photo_id, reply_to_user_prompt_id, reply_to_user_photo_id, reply_kind' as const;
 
 export async function listMessages(
   conversationId: string,
@@ -93,23 +93,44 @@ export interface SendMessageInput {
   id?: string;
   /**
    * What this message replies to (migration 0017, decision 93): a message in
-   * the same thread, or an album photo from the story viewer. Exactly one
-   * reference is sent, and only when there is one. `reply_kind` is never
-   * sent: the insert trigger writes it, and it is not insertable.
+   * the same thread, or an album photo from the story viewer; since migration
+   * 0024 (decision 100) also the other participant's prompt answer or profile
+   * photo, from their profile. Exactly one reference is sent, and only when
+   * there is one. `reply_kind` is never sent: the insert trigger writes it,
+   * and it is not insertable. A reference the sender may not use (someone
+   * else's, a gated prompt before the gate, a photo no longer `ok`, a block)
+   * is the generic refusal like every other.
    */
   replyTo?: ReplyTarget | null;
 }
 
-/** One reference per reply, never both (a send with both is refused). */
-export type ReplyTarget = { messageId: string } | { albumPhotoId: string };
+/**
+ * One reference per reply, never two (a send with two is refused). Since
+ * migration 0024 (decision 100) a reply may also name the other person's
+ * prompt answer (`user_prompts.id`) or profile photo (`user_photos.id`), sent
+ * from their profile: the ids come from `profile_reply_targets`
+ * (`api/profileCard.ts#getProfileReplyTargets`).
+ */
+export type ReplyTarget =
+  | { messageId: string }
+  | { albumPhotoId: string }
+  | { userPromptId: string }
+  | { userPhotoId: string };
 
-/** The insert columns for a reply target: none, or exactly one of the two references. */
-export function replyColumns(
-  replyTo: ReplyTarget | null | undefined
-): { reply_to_message_id: string } | { reply_to_album_photo_id: string } | Record<string, never> {
+export type ReplyColumns =
+  | { reply_to_message_id: string }
+  | { reply_to_album_photo_id: string }
+  | { reply_to_user_prompt_id: string }
+  | { reply_to_user_photo_id: string }
+  | Record<string, never>;
+
+/** The insert columns for a reply target: none, or exactly one of the four references. */
+export function replyColumns(replyTo: ReplyTarget | null | undefined): ReplyColumns {
   if (!replyTo) return {};
   if ('messageId' in replyTo) return { reply_to_message_id: replyTo.messageId };
-  return { reply_to_album_photo_id: replyTo.albumPhotoId };
+  if ('albumPhotoId' in replyTo) return { reply_to_album_photo_id: replyTo.albumPhotoId };
+  if ('userPromptId' in replyTo) return { reply_to_user_prompt_id: replyTo.userPromptId };
+  return { reply_to_user_photo_id: replyTo.userPhotoId };
 }
 
 /**

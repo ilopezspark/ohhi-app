@@ -13,13 +13,18 @@ import { mapSupabaseError } from './errors';
 export interface MessageQuote {
   /** The reply (the id that was asked about). */
   messageId: string;
-  replyKind: 'message' | 'album_photo';
+  /**
+   * What the reply quotes. `user_prompt` and `user_photo` (migration 0024,
+   * decision 100) are the other person's prompt answer or profile photo,
+   * replied to from their profile.
+   */
+  replyKind: QuoteReplyKind;
   available: boolean;
   /** A message quote: the original, to scroll to. */
   quotedMessageId: string | null;
   /** An album photo quote: the photo, to open the story at. */
   quotedAlbumPhotoId: string | null;
-  /** Who wrote the quoted message, or who owns the quoted photo. */
+  /** Who wrote the quoted message, or who owns the quoted photo or prompt answer. */
   quotedSenderId: string | null;
   quotedCreatedAt: string | null;
   /** The first 120 characters of the quoted message's text, or null. */
@@ -33,6 +38,21 @@ export interface MessageQuote {
   mediaPosterPath: string | null;
   /** An album photo quote's album, to open the story. */
   albumId: string | null;
+  /** A prompt quote: the prompt's question now. */
+  promptQuestion: string | null;
+  /** A prompt quote: the answer text now (an edit shows through). */
+  promptAnswer: string | null;
+  /** A profile photo quote: its `profile-photos` path now. Sign with `photos.signedPhotoUrls`. */
+  photoPath: string | null;
+}
+
+export type QuoteReplyKind = 'message' | 'album_photo' | 'user_prompt' | 'user_photo';
+
+const REPLY_KINDS: readonly QuoteReplyKind[] = ['message', 'album_photo', 'user_prompt', 'user_photo'];
+
+/** An unknown kind reads as a message quote, which with no quoted message renders `unavailable`. */
+function replyKindOf(value: string | null | undefined): QuoteReplyKind {
+  return REPLY_KINDS.includes(value as QuoteReplyKind) ? (value as QuoteReplyKind) : 'message';
 }
 
 /** The RPC looks at no more than this many ids per call. */
@@ -52,13 +72,17 @@ interface QuoteRow {
   media_path: string | null;
   media_poster_path: string | null;
   album_id: string | null;
+  quote_kind?: string | null;
+  prompt_question?: string | null;
+  prompt_answer?: string | null;
+  photo_path?: string | null;
 }
 
 function toQuote(row: QuoteRow): MessageQuote {
   const available = row.available === true;
   return {
     messageId: row.message_id,
-    replyKind: row.reply_kind === 'album_photo' ? 'album_photo' : 'message',
+    replyKind: replyKindOf(row.reply_kind),
     available,
     quotedMessageId: available ? row.quoted_message_id : null,
     quotedAlbumPhotoId: available ? row.quoted_album_photo_id : null,
@@ -72,6 +96,9 @@ function toQuote(row: QuoteRow): MessageQuote {
     mediaPath: available && row.is_limited !== true ? row.media_path : null,
     mediaPosterPath: available && row.is_limited !== true ? row.media_poster_path : null,
     albumId: available ? row.album_id : null,
+    promptQuestion: available ? (row.prompt_question ?? null) : null,
+    promptAnswer: available ? (row.prompt_answer ?? null) : null,
+    photoPath: available ? (row.photo_path ?? null) : null,
   };
 }
 

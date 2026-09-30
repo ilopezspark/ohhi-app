@@ -7,6 +7,7 @@ import {
   type ProfilePrompt,
 } from '../fields';
 import { parseAbout, type AboutSection } from '../about';
+import type { Audiences, IdentityCards } from '../identityFields';
 
 export type { JoinedRecency, ProfilePrompt };
 
@@ -38,9 +39,16 @@ export interface ProfileViewData {
   sharedLines: string[];
   /** The structured about section (migration 0018). Null or empty rows hide the about card. */
   about: AboutSection | null;
-  /** Only present when the person opted in (`user_identity.is_public`); the identity function 404s otherwise. */
-  pronouns: string | null;
-  orientation: string[];
+  /**
+   * The restructured public cards (identity, background, lifestyle, when i'm
+   * around, before you message me) exactly as `GET /identity/:id` returned
+   * them: for anyone but the owner, only the cards their audience admits
+   * (ruling 1), so the view renders what is here and decides nothing. Empty
+   * on a 404.
+   */
+  identityCards: Partial<IdentityCards>;
+  /** The owner's own audiences, in their preview only (the per-card note). Null on anyone else's profile. */
+  identityAudiences: Audiences | null;
   /** The viewer's campus short name (same campus as the card, by RLS). `null` drops it from the footer. */
   campusShort: string | null;
   photoPaths: string[];
@@ -194,7 +202,8 @@ export interface BuildProfileViewInput {
   myTagIds: string[];
   /** The viewer's own about section (`my_about()`), for the shared major. */
   myAbout?: AboutSection | null;
-  identity: { pronouns: string | null; orientation: string[] } | null;
+  /** `getIdentity(targetId)`: only the cards this viewer may see; null on the 404 (no cards). */
+  identity: { cards: Partial<IdentityCards> } | null;
   campusShort: string | null;
   photoUrls: Record<string, string>;
 }
@@ -231,8 +240,8 @@ export function buildProfileViewData({
     tagLabels: theirLabels,
     sharedLines: sharedLines({ myLabels, theirLabels, myMajor: myAbout?.major ?? null, theirMajor: about?.major ?? null }),
     about,
-    pronouns: identity?.pronouns ?? null,
-    orientation: identity?.orientation ?? [],
+    identityCards: identity?.cards ?? {},
+    identityAudiences: null,
     campusShort,
     photoPaths: card.photos ?? [],
     photoUrls,

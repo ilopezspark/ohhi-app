@@ -23,8 +23,10 @@ const MAYA: ProfileViewData = {
   majorLabel: 'nursing',
   tagLabels: ['gym', 'coffee'],
   sharedLines: ["you're both into gym"],
-  pronouns: 'she/her',
-  orientation: [],
+  identityCards: {
+    identity: { pronouns: ['she/her'], orientation: [], interested_in: [], relationship: null },
+  },
+  identityAudiences: null,
   campusShort: 'CLC',
   photoPaths: ['p0', 'p1', 'p2'],
   photoUrls: {},
@@ -48,7 +50,7 @@ const LUIS: ProfileViewData = {
   majorLabel: 'business',
   tagLabels: [],
   sharedLines: [],
-  pronouns: null,
+  identityCards: {},
   photoPaths: ['p0'],
 };
 
@@ -132,7 +134,7 @@ describe('ProfileView — prompts between the photos (04)', () => {
     const screen = await renderView({ ...MAYA, prompts: PROMPTS.slice(0, 2) });
     expect(detailIds(screen)).toEqual([
       'profile-shared',
-      'profile-basics',
+      'profile-card-identity',
       'profile-photo-card-1',
       'profile-prompt-0',
       'profile-into',
@@ -146,7 +148,7 @@ describe('ProfileView — prompts between the photos (04)', () => {
     const screen = await renderView({ ...MAYA, prompts: PROMPTS });
     expect(detailIds(screen)).toEqual([
       'profile-shared',
-      'profile-basics',
+      'profile-card-identity',
       'profile-photo-card-1',
       'profile-prompt-0',
       'profile-into',
@@ -161,7 +163,7 @@ describe('ProfileView — prompts between the photos (04)', () => {
     const screen = await renderView({ ...MAYA, photoPaths: ['p0'], prompts: PROMPTS });
     expect(detailIds(screen)).toEqual([
       'profile-shared',
-      'profile-basics',
+      'profile-card-identity',
       'profile-prompt-0',
       'profile-into',
       'profile-prompt-1',

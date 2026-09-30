@@ -33,8 +33,13 @@ jest.mock('../api/chatMedia', () => ({
 jest.mock('../api/me', () => ({ me: jest.fn() }));
 jest.mock('../api/photos', () => ({ signedPhotoUrls: jest.fn() }));
 jest.mock('../api/albums', () => ({ listMyAlbums: jest.fn(), getAlbum: jest.fn() }));
-jest.mock('../api/shares', () => ({ shareAlbum: jest.fn(), sharePrivateCard: jest.fn() }));
-jest.mock('../api/identity', () => ({ getSharedPrivateCard: jest.fn() }));
+jest.mock('../api/shares', () => ({
+  shareAlbum: jest.fn(),
+  shareCard: jest.fn(),
+  listSharesForSubject: jest.fn(() => Promise.resolve([])),
+  shareCardSections: jest.fn(() => []),
+}));
+jest.mock('../api/identity', () => ({ getCard: jest.fn(), revealCardSection: jest.fn() }));
 jest.mock('../chat/shareFeed', () => ({ listShareFeed: jest.fn(() => Promise.resolve([])) }));
 jest.mock('expo-image-picker', () => ({
   requestMediaLibraryPermissionsAsync: jest.fn(),
@@ -66,8 +71,8 @@ import { resendChatMedia, signedChatMediaUrls, uploadChatMedia, uploadChatMediaP
 import { me } from '../api/me';
 import { signedPhotoUrls } from '../api/photos';
 import { listMyAlbums } from '../api/albums';
-import { shareAlbum, sharePrivateCard } from '../api/shares';
-import { getSharedPrivateCard } from '../api/identity';
+import { shareAlbum, shareCard } from '../api/shares';
+import { getCard } from '../api/identity';
 import { listShareFeed } from '../chat/shareFeed';
 import { checkVideo, generateVideoPoster } from '../chat/video';
 import ChatThreadScreen from '../app/chat/[id]';
@@ -115,6 +120,13 @@ function renderScreen(client = new QueryClient({ defaultOptions: { queries: { re
       <ChatThreadScreen />
     </QueryClientProvider>
   );
+}
+
+/** The share sheet's card step: wait for its reads to settle, then confirm with nothing ticked. */
+async function pressCardConfirm(screen: Awaited<ReturnType<typeof renderScreen>>) {
+  const confirm = await screen.findByTestId('share-sheet-card-confirm');
+  await waitFor(() => expect(confirm.props.accessibilityState?.disabled).toBeFalsy());
+  await fireEvent.press(confirm);
 }
 
 beforeEach(() => {
@@ -298,21 +310,24 @@ describe('thread — gone (migration 0014, decision 90)', () => {
   });
 
   it('a refused share re-reads the thread, and leaves when the thread is gone', async () => {
-    (sharePrivateCard as jest.Mock).mockRejectedValue(new RefusedError());
+    (shareCard as jest.Mock).mockRejectedValue(new RefusedError());
     const screen = await renderScreen();
     await fireEvent.press(await screen.findByTestId('composer-attach'));
-    (getConversation as jest.Mock).mockResolvedValue(null);
     await fireEvent.press(await screen.findByTestId('share-sheet-card'));
+    (getConversation as jest.Mock).mockResolvedValue(null);
+    await pressCardConfirm(screen);
 
     await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
-    expect(sharePrivateCard).toHaveBeenCalledTimes(1);
+    expect(shareCard).toHaveBeenCalledTimes(1);
+    expect(shareCard).toHaveBeenCalledWith(THEM, []);
   });
 
   it('a refused share in a live thread stays put, with the neutral line', async () => {
-    (sharePrivateCard as jest.Mock).mockRejectedValue(new RefusedError());
+    (shareCard as jest.Mock).mockRejectedValue(new RefusedError());
     const screen = await renderScreen();
     await fireEvent.press(await screen.findByTestId('composer-attach'));
     await fireEvent.press(await screen.findByTestId('share-sheet-card'));
+    await pressCardConfirm(screen);
 
     await waitFor(() => expect(screen.getByText("That didn't work.")).toBeTruthy());
     await waitFor(() => expect((getConversation as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(2));
@@ -827,7 +842,7 @@ describe('thread — share sheet', () => {
   });
 
   it('shares the private card with the other participant', async () => {
-    (sharePrivateCard as jest.Mock).mockResolvedValue({
+    (shareCard as jest.Mock).mockResolvedValue({
       id: 'share-2',
       owner_id: ME,
       viewer_id: THEM,
@@ -840,8 +855,9 @@ describe('thread — share sheet', () => {
     const screen = await renderScreen();
     await fireEvent.press(await screen.findByTestId('composer-attach'));
     await fireEvent.press(await screen.findByTestId('share-sheet-card'));
+    await pressCardConfirm(screen);
 
-    await waitFor(() => expect(sharePrivateCard).toHaveBeenCalledWith(THEM));
+    await waitFor(() => expect(shareCard).toHaveBeenCalledWith(THEM, []));
   });
 
   it('disables album and private-card sharing with neutral copy outside an open thread — never a reason', async () => {
@@ -878,13 +894,13 @@ describe('private card share bubbles', () => {
 
   it("opens the full card they shared with me, through PrivateCardSheet", async () => {
     (listShareFeed as jest.Mock).mockResolvedValue([cardShare()]);
-    (getSharedPrivateCard as jest.Mock).mockResolvedValue({ into: ['hiking'], safer_sex: [], kinks: [], hard_nos: ['smoking'] });
+    (getCard as jest.Mock).mockResolvedValue({ user_id: THEM, sections: { hard_nos: ['no calls'] }, gated: [] });
     const screen = await renderScreen();
 
     await fireEvent.press(await screen.findByTestId('share-bubble-press-share-card'));
     await screen.findByTestId('private-card-sheet');
-    await screen.findByTestId('private-card-sheet-card-group-hard_nos');
-    expect(getSharedPrivateCard).toHaveBeenCalledWith(THEM);
+    await screen.findByTestId('private-card-sheet-card-group-always_attached');
+    expect(getCard).toHaveBeenCalledWith(THEM);
     expect(router.push).not.toHaveBeenCalledWith(`/profile/${THEM}`);
   });
 
@@ -892,7 +908,7 @@ describe('private card share bubbles', () => {
     // The first read has the bubble; every later one (after the card read came
     // back empty) no longer does.
     (listShareFeed as jest.Mock).mockResolvedValueOnce([cardShare()]).mockResolvedValue([]);
-    (getSharedPrivateCard as jest.Mock).mockResolvedValue(null);
+    (getCard as jest.Mock).mockResolvedValue(null);
     const screen = await renderScreen();
 
     await fireEvent.press(await screen.findByTestId('share-bubble-press-share-card'));
@@ -910,7 +926,7 @@ describe('private card share bubbles', () => {
 
     await fireEvent.press(await screen.findByTestId('share-bubble-press-share-card'));
     expect(router.push).toHaveBeenCalledWith('/me/private-card');
-    expect(getSharedPrivateCard).not.toHaveBeenCalled();
+    expect(getCard).not.toHaveBeenCalledWith(THEM);
   });
 });
 
