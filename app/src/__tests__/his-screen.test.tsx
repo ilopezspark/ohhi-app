@@ -11,14 +11,16 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('../api/client', () => ({ supabase: {}, SUPABASE_URL: 'https://example.test' }));
 jest.mock('../api/his', () => ({
+  HIS_SENT_QUERY_KEY: ['his_sent'],
   listReceivedHis: jest.fn(),
+  listSentHis: jest.fn(),
   dismissHi: jest.fn(),
   hiBack: jest.fn(),
 }));
 jest.mock('../api/photos', () => ({ signedPhotoUrls: jest.fn() }));
 
 import { router } from 'expo-router';
-import { dismissHi, hiBack, listReceivedHis } from '../api/his';
+import { dismissHi, hiBack, listReceivedHis, listSentHis } from '../api/his';
 import { signedPhotoUrls } from '../api/photos';
 import HisScreen from '../app/(tabs)/his';
 import { GoneError } from '../api/errors';
@@ -42,9 +44,20 @@ const hiRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const sentRow = (overrides: Record<string, unknown> = {}) => ({
+  id: 'sent-1',
+  createdAt: '2026-09-20T10:00:00Z',
+  expiresAt: '2026-09-27T10:00:00Z',
+  toUserId: 'recipient-1',
+  firstName: 'Cy',
+  photoPath: 'recipient-1/0.jpg',
+  ...overrides,
+});
+
 beforeEach(() => {
   jest.clearAllMocks();
   capturedFocusCallback = null;
+  (listSentHis as jest.Mock).mockResolvedValue([]);
   (signedPhotoUrls as jest.Mock).mockResolvedValue({});
 });
 
@@ -116,6 +129,100 @@ describe('HisScreen', () => {
 
     await waitFor(() => expect(hiBack).toHaveBeenCalledWith('hi-1'));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/chat/conv-9'));
+  });
+});
+
+describe("HisScreen — sent hi's", () => {
+  it('shows received and sent sections, each with its rows', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
+    (listSentHis as jest.Mock).mockResolvedValue([sentRow()]);
+    const { findByTestId, getByText, getByTestId } = await renderScreen();
+    await findByTestId('his-sent-row-sent-1');
+    expect(getByTestId('his-row-hi-1')).toBeTruthy();
+    expect(getByTestId('his-received-label')).toBeTruthy();
+    expect(getByTestId('his-sent-label')).toBeTruthy();
+    expect(getByText('received')).toBeTruthy();
+    expect(getByText('sent')).toBeTruthy();
+    expect(getByText('cy')).toBeTruthy();
+  });
+
+  it('says it is waiting, with how long ago it was sent, and never a dismissed state', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
+    (listSentHis as jest.Mock).mockResolvedValue([
+      sentRow({ createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString() }),
+    ]);
+    const { findByTestId, queryByText } = await renderScreen();
+    const waiting = await findByTestId('his-sent-waiting-sent-1');
+    expect(waiting.props.children).toBe('waiting · sent 3 days ago');
+    expect(queryByText(/dismissed|declined|expired|ignored/i)).toBeNull();
+  });
+
+  it("tapping a sent row opens that person's profile", async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([]);
+    (listSentHis as jest.Mock).mockResolvedValue([sentRow()]);
+    const { findByTestId } = await renderScreen();
+    await fireEvent.press(await findByTestId('his-sent-row-sent-1'));
+    expect(router.push).toHaveBeenCalledWith('/profile/recipient-1');
+  });
+
+  it('gives a sent row no actions: no hi back, no dismiss, no unsend', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
+    (listSentHis as jest.Mock).mockResolvedValue([sentRow()]);
+    const { findByTestId, queryByTestId, queryByText, getAllByText } = await renderScreen();
+    await findByTestId('his-sent-row-sent-1');
+    expect(queryByTestId('his-row-hiback-sent-1')).toBeNull();
+    expect(queryByTestId('his-row-dismiss-sent-1')).toBeNull();
+    // The only hi back / dismiss buttons belong to the one received row.
+    expect(getAllByText('Hi back')).toHaveLength(1);
+    expect(getAllByText('Dismiss')).toHaveLength(1);
+    expect(queryByText(/unsend|undo|cancel|withdraw/i)).toBeNull();
+  });
+
+  it("with nothing either way keeps today's empty state and no sent section", async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([]);
+    (listSentHis as jest.Mock).mockResolvedValue([]);
+    const { findByTestId, queryByTestId } = await renderScreen();
+    await findByTestId('his-empty');
+    expect(queryByTestId('his-sent-section')).toBeNull();
+    expect(queryByTestId('his-received-empty')).toBeNull();
+  });
+
+  it('with only sent rows shows a short line for received instead of the empty state', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([]);
+    (listSentHis as jest.Mock).mockResolvedValue([sentRow()]);
+    const { findByTestId, queryByTestId } = await renderScreen();
+    await findByTestId('his-sent-section');
+    expect(await findByTestId('his-received-empty')).toBeTruthy();
+    expect(queryByTestId('his-empty')).toBeNull();
+  });
+
+  it('with only received rows omits the sent section entirely', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
+    (listSentHis as jest.Mock).mockResolvedValue([]);
+    const { findByTestId, queryByTestId } = await renderScreen();
+    await findByTestId('his-row-hi-1');
+    await waitFor(() => expect(listSentHis).toHaveBeenCalled());
+    expect(queryByTestId('his-sent-section')).toBeNull();
+    expect(queryByTestId('his-sent-label')).toBeNull();
+    expect(queryByTestId('his-received-label')).toBeNull();
+  });
+
+  it('a failing sent list does not break the received list', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
+    (listSentHis as jest.Mock).mockRejectedValue(new Error('network'));
+    const { findByTestId, queryByTestId } = await renderScreen();
+    await findByTestId('his-row-hi-1');
+    expect(queryByTestId('his-sent-section')).toBeNull();
+  });
+
+  it('refetches the sent list on focus too', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([]);
+    await renderScreen();
+    await waitFor(() => expect(listSentHis).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      capturedFocusCallback?.();
+    });
+    await waitFor(() => expect((listSentHis as jest.Mock).mock.calls.length).toBeGreaterThan(1));
   });
 });
 

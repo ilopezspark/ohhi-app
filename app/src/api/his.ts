@@ -1,5 +1,7 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
+import { currentUserId } from './session';
+import { queryClient } from '../query/client';
 import type { Database } from '../types/database';
 
 export type HiRow = Database['public']['Tables']['his']['Row'];
@@ -28,7 +30,15 @@ export async function sendHi(toUserId: string): Promise<void> {
 
   const { error } = await supabase.from('his').insert({ from_user_id: fromUserId, to_user_id: toUserId });
   if (error) throw mapSupabaseError(error);
+
+  // The Hi's tab's "sent" list now has one more row. The profile screen
+  // already refreshes the received list; the sent list is refreshed here so
+  // every caller of `sendHi` keeps it honest.
+  void queryClient.invalidateQueries({ queryKey: HIS_SENT_QUERY_KEY });
 }
+
+/** Query key of the Hi's tab's sent list (`listSentHis`). */
+export const HIS_SENT_QUERY_KEY = ['his_sent'] as const;
 
 export interface ReceivedHi {
   id: string;
@@ -123,4 +133,66 @@ export async function hiBack(hiId: string): Promise<string> {
   const { data, error } = await supabase.rpc('hi_back', { p_hi_id: hiId });
   if (error) throw mapSupabaseError(error);
   return data;
+}
+
+export interface SentHi {
+  id: string;
+  createdAt: string;
+  expiresAt: string | null;
+  toUserId: string;
+  /** Null when the recipient's row didn't resolve under the select policies (paused/off-campus/never set). */
+  firstName: string | null;
+  /** `ok`-moderated position-0 storage path, or null. */
+  photoPath: string | null;
+}
+
+type SentHiRow = {
+  id: string;
+  created_at: string;
+  expires_at: string | null;
+  to_user_id: string;
+  recipient:
+    | { first_name: string | null; user_photos: { storage_path: string; position: number }[] | null }
+    | { first_name: string | null; user_photos: { storage_path: string; position: number }[] | null }[]
+    | null;
+};
+
+const SENT_HI_SELECT =
+  'id, created_at, expires_at, to_user_id, recipient:profiles!his_to_user_id_fkey(first_name, user_photos(storage_path, position))';
+
+/**
+ * Sent hi's (Hi's tab, owner ruling: people see who sent them hi's and also
+ * who they sent hi's to): `from_user_id = me`, `state = 'sent'`, newest first.
+ * Only pending ones: once answered a hi is a conversation, and a dismissed or
+ * expired one just stops being returned — the sender is never told why
+ * (decision 24), so there is no "dismissed" state here to show. The `his`
+ * select policy already lets the sender read their own rows and drops blocked
+ * pairs; the owner filter is stated explicitly anyway. Joined to the
+ * recipient's first name and main photo the same way `listReceivedHis` joins
+ * the sender, degrading to `null` for a recipient whose row doesn't resolve.
+ */
+export async function listSentHis(): Promise<SentHi[]> {
+  const myId = await currentUserId();
+
+  const { data, error } = await supabase
+    .from('his')
+    .select(SENT_HI_SELECT)
+    .eq('from_user_id', myId)
+    .eq('state', 'sent')
+    .order('created_at', { ascending: false });
+  if (error) throw mapSupabaseError(error);
+
+  return ((data ?? []) as unknown as SentHiRow[]).map((row) => {
+    const recipient = Array.isArray(row.recipient) ? row.recipient[0] : row.recipient;
+    const photos = recipient?.user_photos ?? [];
+    const mainPhoto = photos.find((photo) => photo.position === 0) ?? null;
+    return {
+      id: row.id,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+      toUserId: row.to_user_id,
+      firstName: recipient?.first_name ?? null,
+      photoPath: mainPhoto?.storage_path ?? null,
+    };
+  });
 }

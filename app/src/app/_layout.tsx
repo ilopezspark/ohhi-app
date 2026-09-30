@@ -10,10 +10,11 @@ import {
   Outfit_700Bold,
   Outfit_800ExtraBold,
 } from '@expo-google-fonts/outfit';
-import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { ThemeProvider } from '../theme';
 import { touchActivity } from '../api/presence';
+import { queryClient } from '../query/client';
 import { wireQueryLifecycle } from '../query/lifecycle';
 import { AccessGate } from '../routing/AccessGate';
 
@@ -24,8 +25,6 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 // `query/lifecycle.ts`). Nothing is pushed when someone vanishes (decision
 // 90), so these refetches are how every screen finds out.
 wireQueryLifecycle();
-
-const queryClient = new QueryClient();
 
 export default function RootLayout() {
   const appState = useRef(AppState.currentState);
@@ -98,6 +97,9 @@ export default function RootLayout() {
             {/* The profile redesign is full-bleed: its own back button sits on
                 the photo, so the stack header is off. */}
             <Stack.Screen name="profile/[id]" />
+            {/* Your own profile as others see it: the same full-bleed screen,
+                pushed from Me and from the editor; back pops to either. */}
+            <Stack.Screen name="profile-preview" />
 
             {/* Album stories (`albums/StoryViewer.tsx`): fade in like a story
                 rather than sliding in like a page, and no iOS edge swipe back,

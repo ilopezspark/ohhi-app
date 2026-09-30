@@ -2,13 +2,22 @@ import { useCallback } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { dismissHi, hiBack, listReceivedHis, type ReceivedHi } from '../../api/his';
+import {
+  dismissHi,
+  hiBack,
+  HIS_SENT_QUERY_KEY,
+  listReceivedHis,
+  listSentHis,
+  type ReceivedHi,
+  type SentHi,
+} from '../../api/his';
 import { isUnavailableError } from '../../api/errors';
 import { markHiHandledOptimistically, refreshBadges } from '../../badges/badgeCounts';
 import { signedPhotoUrls } from '../../api/photos';
 import { tintForPhoto } from '../../photos/tint';
-import { Avatar, EmptyState, HisIcon, ScreenHeader, Text } from '../../ui';
+import { Avatar, EmptyState, HisIcon, ScreenHeader, SectionLabel, Text } from '../../ui';
 import { displayName } from '../../ui/displayName';
+import { relativeSentLabel } from '../../me/card/relativeTime';
 import { colors, hairline, radii, shadows, spacing } from '../../theme/tokens';
 
 const QUERY_KEY = ['his_received'];
@@ -21,6 +30,13 @@ const QUERY_KEY = ['his_received'];
  * deleted their account is simply not returned any more (decision 90).
  * Answering or dismissing a hi lowers the tab badge at once, then re-reads
  * the counts (`badges/badgeCounts.ts`).
+ *
+ * Below the received list sits a "sent" section (owner ruling: people see who
+ * sent them hi's and also who they sent hi's to): the hi's still waiting on
+ * an answer, tap to open the person's profile, no actions (there is no
+ * un-send). Once a hi is answered it is a chat; a dismissed or expired one
+ * simply drops off — never a "dismissed" state (decision 24). The tab badge
+ * still counts received only.
  *
  * `docs/design/system.md` has no dedicated mockup for this screen — styled
  * here to match the grid's own header rhythm (56px top inset, `headline`
@@ -39,13 +55,25 @@ export default function HisScreen() {
     isRefetching,
   } = useQuery({ queryKey: QUERY_KEY, queryFn: listReceivedHis });
 
+  // The sent list never blocks or breaks the screen: while it loads, or if it
+  // fails, it reads as empty.
+  const {
+    data: sentHis,
+    isPending: sentPending,
+    refetch: refetchSent,
+    isRefetching: isRefetchingSent,
+  } = useQuery({ queryKey: HIS_SENT_QUERY_KEY, queryFn: listSentHis });
+
   useFocusEffect(
     useCallback(() => {
       void refetch();
-    }, [refetch])
+      void refetchSent();
+    }, [refetch, refetchSent])
   );
 
-  const photoPaths = (his ?? []).map((h) => h.photoPath).filter((p): p is string => !!p);
+  const photoPaths = [...(his ?? []), ...(sentHis ?? [])]
+    .map((h) => h.photoPath)
+    .filter((p): p is string => !!p);
   const photoPathsKey = [...photoPaths].sort().join('|');
   const { data: photoUrls } = useQuery({
     queryKey: ['his_photo_urls', photoPathsKey],
@@ -110,6 +138,34 @@ export default function HisScreen() {
   }
 
   const data = his ?? [];
+  const sent = sentHis ?? [];
+  const hasSent = sent.length > 0;
+  // Today's empty state only when nothing at all is waiting either way.
+  const showEmptyState = !hasSent && !sentPending;
+
+  const renderSentRow = (item: SentHi) => {
+    const url = item.photoPath ? photoUrls?.[item.photoPath] : undefined;
+    const open = () => router.push(`/profile/${item.toUserId}` as never);
+    return (
+      <Pressable
+        key={item.id}
+        accessibilityRole="button"
+        testID={`his-sent-row-${item.id}`}
+        style={styles.row}
+        onPress={open}
+      >
+        <Avatar uri={url} tint={tintForPhoto(item.toUserId, 0)} size="md" />
+        <View style={styles.nameButton}>
+          <Text variant="rowLabel" numberOfLines={1}>
+            {displayName(item.firstName) || 'someone'}
+          </Text>
+          <Text variant="caption" color={colors.muted} testID={`his-sent-waiting-${item.id}`}>
+            {`waiting · ${relativeSentLabel(item.createdAt)}`}
+          </Text>
+        </View>
+      </Pressable>
+    );
+  };
 
   // The heading stays put at the shared heading padding (clear of the
   // status bar); the list scrolls under it.
@@ -120,20 +176,40 @@ export default function HisScreen() {
         testID="his-list"
         data={data}
         keyExtractor={(row) => row.id}
-        refreshing={isRefetching}
-        onRefresh={() => void refetch()}
+        refreshing={isRefetching || isRefetchingSent}
+        onRefresh={() => {
+          void refetch();
+          void refetchSent();
+        }}
         contentContainerStyle={styles.list}
+        ListHeaderComponent={
+          hasSent ? <SectionLabel testID="his-received-label" label="received" style={styles.sectionLabel} /> : null
+        }
         ListEmptyComponent={
-          <EmptyState
-            testID="his-empty"
-            title="no hi's yet"
-            message="they'll show up here."
-            icon={
-              <View style={styles.emptyIcon}>
-                <HisIcon size={36} color={colors.subtle} />
-              </View>
-            }
-          />
+          hasSent ? (
+            <Text variant="body" color={colors.muted} style={styles.receivedEmpty} testID="his-received-empty">
+              no hi's yet
+            </Text>
+          ) : showEmptyState ? (
+            <EmptyState
+              testID="his-empty"
+              title="no hi's yet"
+              message="they'll show up here."
+              icon={
+                <View style={styles.emptyIcon}>
+                  <HisIcon size={36} color={colors.subtle} />
+                </View>
+              }
+            />
+          ) : null
+        }
+        ListFooterComponent={
+          hasSent ? (
+            <View testID="his-sent-section">
+              <SectionLabel testID="his-sent-label" label="sent" style={[styles.sectionLabel, styles.sentLabel]} />
+              {sent.map(renderSentRow)}
+            </View>
+          ) : null
         }
         renderItem={({ item }) => {
           const url = item.photoPath ? photoUrls?.[item.photoPath] : undefined;
@@ -210,6 +286,9 @@ const styles = StyleSheet.create({
     borderBottomColor: hairline.color,
   },
   nameButton: { flex: 1 },
+  sectionLabel: { paddingHorizontal: spacing.lgXl, paddingBottom: spacing.smMd },
+  sentLabel: { paddingTop: spacing.xl },
+  receivedEmpty: { paddingHorizontal: spacing.lgXl, paddingVertical: spacing.lg },
   actions: { flexDirection: 'row', gap: spacing.smMd },
   hiBackButton: {
     paddingHorizontal: spacing.mdLg,
