@@ -4,6 +4,7 @@ import { PrivateCardView } from '../me/card/PrivateCardView';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
 import { AlbumIcon } from '../ui/icons';
 import { Text } from '../ui';
+import { LONG_PRESS_MS } from './MessageBubble';
 import type { ShareFeedItem } from './shareFeed';
 
 interface Props {
@@ -15,6 +16,8 @@ interface Props {
   /** Only for `kind: 'album'` — loaded by the thread screen, may still be loading. */
   album?: AlbumRow;
   onPress: () => void;
+  /** Press and hold: shows or hides the share's time (its tap opens it). */
+  onLongPress?: () => void;
 }
 
 /**
@@ -38,7 +41,7 @@ interface Props {
  * title/lock/`private` styling is guaranteed identical in both places
  * instead of a second, hand-copied rendering of the same three pieces.
  */
-export function ShareBubble({ item, mine, otherName, album, onPress }: Props) {
+export function ShareBubble({ item, mine, otherName, album, onPress, onLongPress }: Props) {
   const isAlbum = item.kind === 'album';
 
   const title = album?.name ?? 'an album';
@@ -93,6 +96,8 @@ export function ShareBubble({ item, mine, otherName, album, onPress }: Props) {
       accessibilityRole="button"
       accessibilityLabel={isAlbum ? `open ${title}` : mine ? 'your private card' : `more about ${otherName}`}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={LONG_PRESS_MS}
       testID={`share-bubble-press-${item.id}`}
     >
       {content}

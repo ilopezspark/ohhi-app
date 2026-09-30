@@ -456,6 +456,11 @@ const SCOPE_FILES: string[] = [
   path.join(SRC, 'chat', 'SwipeToReply.tsx'),
   path.join(SRC, 'chat', 'haptics.ts'),
   path.join(SRC, 'chat', 'clipboard.ts'),
+  // Send times, day gaps and typing (decision 103).
+  path.join(SRC, 'chat', 'time.ts'),
+  path.join(SRC, 'chat', 'useTyping.ts'),
+  path.join(SRC, 'chat', 'DaySeparator.tsx'),
+  path.join(SRC, 'chat', 'TypingBubble.tsx'),
   path.join(SRC, 'chat', 'useThreadQuotes.ts'),
   path.join(SRC, 'chat', 'useMediaReply.ts'),
   path.join(SRC, 'chat', 'ConversationRow.tsx'),

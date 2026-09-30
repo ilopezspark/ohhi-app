@@ -28,6 +28,7 @@ import type { GatedSection } from '../../profile/fields';
 import { GoneError, isUnavailableError, mapSupabaseError } from '../../api/errors';
 import { signedPhotoUrls } from '../../api/photos';
 import { Composer } from '../../chat/Composer';
+import { DaySeparator } from '../../chat/DaySeparator';
 import { MediaPreview, type MediaPreviewAsset, type ViewLimitChoice } from '../../chat/MediaPreview';
 import { MessageBubble, type ThreadMessage } from '../../chat/MessageBubble';
 import { PrivateCardSheet } from '../../chat/PrivateCardSheet';
@@ -35,6 +36,9 @@ import { RecentlySharedTray } from '../../chat/RecentlySharedTray';
 import { useRecipientExhaustedStore } from '../../chat/recipientExhausted';
 import { ShareBubble } from '../../chat/ShareBubble';
 import { ShareSheet } from '../../chat/ShareSheet';
+import { dayKey, formatDayLabel, formatMessageTime } from '../../chat/time';
+import { TypingBubble } from '../../chat/TypingBubble';
+import { useTyping } from '../../chat/useTyping';
 import { composerState } from '../../chat/rules';
 import { listShareFeed, type ShareFeedItem } from '../../chat/shareFeed';
 import { forgetConversation, forgetPerson, useGoneLatch, useLeaveWhenGone } from '../../query/gone';
@@ -115,6 +119,19 @@ import { displayName } from '../../ui/displayName';
  * Badges: opening the thread marks it read and drops its unread count and
  * the tab badge at once (`badges/badgeCounts.ts`); the counts are re-read
  * once the read lands, and after every send.
+ *
+ * Times, days and typing (owner ruling, 30 September 2026): the newest
+ * message (or share) always shows its time under it ("2:41 pm",
+ * `chat/time.ts`); any other shows its time when pressed, one at a time,
+ * pressed again to hide. A plain text message toggles on a tap; anything
+ * whose tap already does something (media, a limited pill, a share bubble)
+ * toggles on press and hold instead, which still opens the message menu
+ * where there is one. A quote keeps its tap (jump to the original); the
+ * reply's own text bubble toggles the time. When the loaded thread spans more
+ * than one day, each day's messages sit under a small centred label ("today",
+ * "yesterday", "monday", "sep 12"). While the other person types, three dots
+ * sit at the bottom on their side (`chat/useTyping.ts`); they go 4 s after
+ * the last event, or the moment their message lands. My own never show.
  */
 /** How many older pages a quote tap may load looking for the original (30 messages each). */
 const MAX_JUMP_PAGES = 10;
@@ -124,6 +141,12 @@ const HIGHLIGHT_MS = 1600;
 type FeedItem =
   | { kind: 'message'; key: string; createdAt: string; message: ThreadMessage }
   | { kind: 'share'; key: string; createdAt: string; share: ShareFeedItem };
+
+/** What the list renders: the feed, plus day separators and the typing dots. */
+type ThreadRow =
+  | FeedItem
+  | { kind: 'day'; key: string; label: string }
+  | { kind: 'typing'; key: string };
 
 /** What's picked/selected, waiting on the three-way selector before it becomes an upload. */
 interface PendingMedia {
@@ -159,7 +182,7 @@ export default function ChatThreadScreen() {
   const [menu, setMenu] = useState<{ message: ThreadMessage; anchor: MenuAnchor } | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [jump, setJump] = useState<{ id: string; createdAt: string | null; pagesLoaded: number; waitingFor: number } | null>(null);
-  const listRef = useRef<FlatList<FeedItem>>(null);
+  const listRef = useRef<FlatList<ThreadRow>>(null);
   const headerInsets = useHeaderInsets();
 
   // -----------------------------------------------------------------------
@@ -333,6 +356,53 @@ export default function ChatThreadScreen() {
   }, [messages, shareFeed]);
 
   // ---------------------------------------------------------------------
+  // Typing (migration 0026's private broadcast, `chat/useTyping.ts`).
+  // ---------------------------------------------------------------------
+  const { otherTyping, notifyTyping, hideTyping } = useTyping({
+    conversationId,
+    meId,
+    otherId,
+    enabled: !gone && !!conversation,
+  });
+  // Their newest message landing (a realtime echo or any refetch) ends the dots.
+  const newestFromThemId = newest && meId && newest.sender_id !== meId ? newest.id : null;
+  useEffect(() => {
+    if (newestFromThemId) hideTyping();
+  }, [newestFromThemId, hideTyping]);
+
+  // ---------------------------------------------------------------------
+  // The list's rows: day separators between days (only once the loaded
+  // thread spans more than one; each day's group is headed by its label),
+  // and the typing dots at index 0, the bottom of the inverted list.
+  // ---------------------------------------------------------------------
+  const rows = useMemo<ThreadRow[]>(() => {
+    const out: ThreadRow[] = [];
+    if (otherTyping) out.push({ kind: 'typing', key: 'typing' });
+    const days = feed.map((item) => dayKey(item.createdAt));
+    const multiDay = new Set(days).size > 1;
+    feed.forEach((item, index) => {
+      out.push(item);
+      // Newest first: the label sits above (after, in list order) the
+      // oldest item of its day.
+      if (multiDay && days[index + 1] !== days[index]) {
+        out.push({ kind: 'day', key: `d-${days[index]}`, label: formatDayLabel(item.createdAt) });
+      }
+    });
+    return out;
+  }, [feed, otherTyping]);
+
+  // Times: the newest settled item always shows one; one other at a time on press.
+  const [openTimeKey, setOpenTimeKey] = useState<string | null>(null);
+  const toggleTime = useCallback((key: string) => {
+    setOpenTimeKey((current) => (current === key ? null : key));
+  }, []);
+  const newestTimedKey = useMemo(
+    () =>
+      feed.find((item) => item.kind === 'share' || (!item.message.pending && !item.message.failed))?.key ?? null,
+    [feed]
+  );
+
+  // ---------------------------------------------------------------------
   // Per-thread realtime. Inserts are appended in place; a reconnect
   // invalidates instead, because the socket may have missed rows while it was
   // down. Only the first page is invalidated — refetching every loaded page
@@ -342,6 +412,8 @@ export default function ChatThreadScreen() {
   // ---------------------------------------------------------------------
   useConversationRealtime(conversationId, {
     onMessage: (event) => {
+      // Their message is here: the typing dots go now, not on the refetch.
+      if (event.eventType === 'INSERT' && event.sender_id !== meId) hideTyping();
       void queryClient.invalidateQueries({
         queryKey: ['messages', conversationId],
         refetchType: 'active',
@@ -976,7 +1048,7 @@ export default function ChatThreadScreen() {
   const pageCount = pages?.pages.length ?? 0;
   useEffect(() => {
     if (!jump) return;
-    const index = feed.findIndex((item) => item.kind === 'message' && item.message.id === jump.id);
+    const index = rows.findIndex((item) => item.kind === 'message' && item.message.id === jump.id);
     if (index >= 0) {
       setJump(null);
       setHighlightedId(jump.id);
@@ -996,7 +1068,7 @@ export default function ChatThreadScreen() {
     if (isFetchingNextPage || pageCount < jump.waitingFor) return;
     setJump({ ...jump, pagesLoaded: jump.pagesLoaded + 1, waitingFor: pageCount + 1 });
     void fetchNextPage();
-  }, [jump, feed, serverMessages, hasNextPage, isFetchingNextPage, pageCount, fetchNextPage]);
+  }, [jump, rows, serverMessages, hasNextPage, isFetchingNextPage, pageCount, fetchNextPage]);
 
   useEffect(() => {
     if (!highlightedId) return;
@@ -1109,7 +1181,7 @@ export default function ChatThreadScreen() {
         ref={listRef}
         testID="thread-list"
         inverted
-        data={feed}
+        data={rows}
         keyExtractor={(item) => item.key}
         style={styles.list}
         contentContainerStyle={styles.listContent}
@@ -1155,7 +1227,11 @@ export default function ChatThreadScreen() {
           </View>
         }
         renderItem={({ item }) =>
-          item.kind === 'message' ? (
+          item.kind === 'day' ? (
+            <DaySeparator label={item.label} testID={`thread-day-${item.key.slice(2)}`} />
+          ) : item.kind === 'typing' ? (
+            <TypingBubble testID="thread-typing" />
+          ) : item.kind === 'message' ? (
             <MessageBubble
               message={item.message}
               meId={meId ?? ''}
@@ -1175,6 +1251,8 @@ export default function ChatThreadScreen() {
               onReply={canReply ? startReply : undefined}
               onLongPress={openMessageMenu}
               highlighted={highlightedId === item.message.id}
+              showTime={item.key === newestTimedKey || item.key === openTimeKey}
+              onToggleTime={() => toggleTime(item.key)}
             />
           ) : (
             <View
@@ -1195,7 +1273,13 @@ export default function ChatThreadScreen() {
                   else if (item.share.ownerId === meId) router.push('/me/private-card' as never);
                   else setOpenCardOwnerId(item.share.ownerId);
                 }}
+                onLongPress={() => toggleTime(item.key)}
               />
+              {item.key === newestTimedKey || item.key === openTimeKey ? (
+                <Text variant="captionMuted" style={styles.shareTime} testID={`share-time-${item.share.id}`}>
+                  {formatMessageTime(item.createdAt)}
+                </Text>
+              ) : null}
             </View>
           )
         }
@@ -1209,6 +1293,8 @@ export default function ChatThreadScreen() {
           onOpenShare={openShareSheet}
           initialText={initialDraft}
           focusKey={focusKey}
+          // A locked composer never sends typing (it has no field either).
+          onTyping={composer.canSend ? notifyTyping : undefined}
           accessory={
             replyDraft ? (
               <ReplyPreviewBar
@@ -1338,6 +1424,7 @@ const styles = StyleSheet.create({
   shareBubbleWrapper: { paddingHorizontal: spacing.mdLg, paddingVertical: 3 },
   shareBubbleWrapperMine: { alignItems: 'flex-end' },
   shareBubbleWrapperTheirs: { alignItems: 'flex-start' },
+  shareTime: { paddingHorizontal: spacing.xs, paddingTop: 3 },
   // Undo the `inverted` list's transform so the empty state reads upright.
   // VirtualizedList flips both axes on Android (`scale: -1`) and only the
   // vertical one elsewhere (`scaleY: -1`); mirror that exactly.

@@ -29,6 +29,12 @@ interface Props {
    * first value, and 0, do nothing.
    */
   focusKey?: number;
+  /**
+   * Called on every change that leaves text in the field — the thread
+   * throttles it into `typing` broadcasts (`chat/useTyping.ts`). Never called
+   * while the composer is locked: there is no field to type in.
+   */
+  onTyping?: () => void;
 }
 
 /**
@@ -45,7 +51,7 @@ interface Props {
  * picker — `Chat-Share.html`'s "a photo" row inside that sheet is what
  * triggers the picker.
  */
-export function Composer({ state, sending, onSend, onOpenShare, initialText, accessory, focusKey = 0 }: Props) {
+export function Composer({ state, sending, onSend, onOpenShare, initialText, accessory, focusKey = 0, onTyping }: Props) {
   const [text, setText] = useState(initialText ?? '');
   const input = useRef<TextInput>(null);
 
@@ -102,7 +108,10 @@ export function Composer({ state, sending, onSend, onOpenShare, initialText, acc
             testID="composer-input"
             style={styles.input}
             value={text}
-            onChangeText={setText}
+            onChangeText={(next) => {
+              setText(next);
+              if (next.trim()) onTyping?.();
+            }}
             placeholder="message"
             placeholderTextColor={colors.subtle}
             multiline

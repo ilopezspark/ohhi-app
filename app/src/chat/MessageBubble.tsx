@@ -14,6 +14,7 @@ import { colors, radii, shadows, spacing } from '../theme/tokens';
 import { CameraIcon } from '../ui/icons';
 import { Text } from '../ui';
 import { PlayIcon } from './mediaIcons';
+import { formatMessageTime } from './time';
 import { aspectOf, fitMedia, sizeFromLoadEvent, type MediaSize } from './mediaLayout';
 import type { MenuAnchor } from './menuPlacement';
 import { SwipeToReply } from './SwipeToReply';
@@ -57,6 +58,15 @@ interface Props {
   onLongPress?: (message: ThreadMessage, anchor: MenuAnchor) => void;
   /** Briefly tinted after a quote tap scrolls here. */
   highlighted?: boolean;
+  /** Shows the send time under the message ("2:41 pm"): always for the newest, otherwise once pressed. */
+  showTime?: boolean;
+  /**
+   * Shows or hides this message's time. A plain text message toggles on a
+   * tap (its bubble has no tap of its own). A message with media keeps its
+   * tap for opening the media, so its time toggles on press and hold, which
+   * still opens the message menu too. Never while sending or failed.
+   */
+  onToggleTime?: (message: ThreadMessage) => void;
 }
 
 /** How long a press has to be held to open the menu. */
@@ -97,6 +107,8 @@ export function MessageBubble({
   onReply,
   onLongPress,
   highlighted,
+  showTime,
+  onToggleTime,
 }: Props) {
   const mine = message.sender_id === meId;
   const hasMedia = !!message.media_path;
@@ -141,18 +153,31 @@ export function MessageBubble({
       // The fallback timer opens it at the finger.
     }
   }, []);
-  const onHold = canHold ? hold : undefined;
+  // Time: a tap on a text-only message; a hold on one with media (its tap
+  // opens the media).
+  const canTime = !!onToggleTime && settled;
+  const tapTime = canTime && !hasMedia ? () => onToggleTime?.(latest.current.message) : undefined;
+  const holdTime = canTime && hasMedia;
+  const onHold =
+    canHold || holdTime
+      ? (event?: GestureResponderEvent) => {
+          if (holdTime) onToggleTime?.(latest.current.message);
+          if (canHold) hold(event);
+        }
+      : undefined;
 
   const onAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       if (event.nativeEvent.actionName === 'reply') onReply?.(message);
       else if (event.nativeEvent.actionName === 'longpress') hold();
+      else if (event.nativeEvent.actionName === 'time') onToggleTime?.(message);
     },
-    [onReply, message, hold]
+    [onReply, message, hold, onToggleTime]
   );
   const accessibilityActions = [
     ...(canReply ? [{ name: 'reply', label: 'reply' }] : []),
     ...(canHold ? [{ name: 'longpress', label: 'more' }] : []),
+    ...(canTime ? [{ name: 'time', label: showTime ? 'hide time' : 'show time' }] : []),
   ];
 
   const body = (
@@ -176,9 +201,10 @@ export function MessageBubble({
 
         {(hasMedia && limited) || message.body ? (
           <Pressable
+            onPress={tapTime}
             onLongPress={onHold}
             delayLongPress={LONG_PRESS_MS}
-            disabled={!onHold}
+            disabled={!onHold && !tapTime}
             accessible={false}
             style={styles.bubblePress}
             testID={`message-hold-${message.id}`}
@@ -207,6 +233,12 @@ export function MessageBubble({
           </Pressable>
         ) : null}
       </View>
+
+      {showTime && settled ? (
+        <Text variant="captionMuted" style={styles.time} testID={`message-time-${message.id}`}>
+          {formatMessageTime(message.created_at)}
+        </Text>
+      ) : null}
 
       {message.pending ? (
         <ActivityIndicator size="small" testID={`message-sending-${message.id}`} />
@@ -433,4 +465,5 @@ const styles = StyleSheet.create({
   },
   limitedLabel: { fontSize: 14 },
   failed: { paddingHorizontal: spacing.xs },
+  time: { paddingHorizontal: spacing.xs, paddingTop: 1 },
 });
