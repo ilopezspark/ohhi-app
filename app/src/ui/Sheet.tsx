@@ -75,12 +75,16 @@ export interface SheetModalProps extends SheetProps {
  * (`statusBarTranslucent` / `navigationBarTranslucent`) so the dim reaches
  * both edges on Android.
  *
- * For sheets without a text field. One with a text field (the profile's
- * one-message sheet) stays an in-tree `Sheet` at the screen root: an
- * edge-to-edge Android dialog window is not resized for the keyboard, and
- * the keyboard events `KeyboardAvoidingView` relies on come from the
- * activity's root view, not the dialog's, so inside a `Modal` the field
- * could end up under the keyboard.
+ * Keyboard: the panel's `KeyboardSpacer` works in here too. An Android
+ * dialog window is not resized for the keyboard and its insets do not reach
+ * the activity's root view, but react-native-keyboard-controller watches
+ * every RN `Modal` as it is shown (its `ModalAttachedWatcher`, on while the
+ * root `KeyboardProvider` is mounted), forwards the dialog's keyboard
+ * animation to the same hooks, and sets the dialog to `adjustNothing`; iOS
+ * keyboard notifications are app-wide. No second `KeyboardProvider` is
+ * needed (or wanted: one per app). The sheets with a text field (the
+ * profile's one-message sheet, `suggest a tag`) are still in-tree `Sheet`s
+ * at their screen's root, which needs no dialog at all.
  */
 export function SheetModal({ visible = true, onDismiss, ...sheet }: SheetModalProps) {
   return (

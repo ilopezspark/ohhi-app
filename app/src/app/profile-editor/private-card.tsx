@@ -24,6 +24,8 @@ import { HEADER_TOP_GAP } from '../../ui/screenInsets';
 const EMPTY_CARD: CardPutPayload = { into: [], safer_sex: [], kinks: [], hard_nos: [] };
 const CURRENT_YEAR = new Date().getFullYear();
 const TESTED_YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => String((CURRENT_YEAR - i) % 100).padStart(2, '0'));
+/** Keyboard gap under the typed hard-no field: its counter, an error line, the add / cancel chips and the card's padding. */
+const HARD_NO_FIELD_GAP = 112;
 
 function hardNoErrorCopy(rejection: HardNoRejection | undefined): string {
   switch (rejection) {
@@ -175,7 +177,13 @@ export default function EditPrivateCardScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <KeyboardScrollView contentContainerStyle={styles.container} testID="private-card-editor-screen">
+      <KeyboardScrollView
+        contentContainerStyle={styles.container}
+        // A typed hard no has its counter, an error line and the add / cancel
+        // chips under the field: keep all of them above the keyboard.
+        bottomOffset={HARD_NO_FIELD_GAP}
+        testID="private-card-editor-screen"
+      >
         <View style={styles.headerRow} testID="private-card-editor-header">
           <Text testID="private-card-editor-cancel" variant="rowLabel" color={colors.muted} onPress={handleCancel}>
             cancel

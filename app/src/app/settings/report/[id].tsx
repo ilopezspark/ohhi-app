@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { me } from '../../../api/me';
 import { REPORT_CATEGORIES, REPORT_NOTE_MAX_LENGTH, submitReport, type ReportCategory } from '../../../api/reports';
 import { mapSupabaseError } from '../../../api/errors';
 import { ConfirmButton } from '../../../settings/ConfirmButton';
-import { Button, Input, ScreenHeader, Text } from '../../../ui';
+import { Button, Input, KeyboardScrollView, ScreenHeader, Text } from '../../../ui';
 import { colors, radii, shadows, spacing } from '../../../theme/tokens';
 
 /**
@@ -104,16 +103,11 @@ export default function ReportScreen() {
 
   return (
     // The note field is near the bottom: the scroll view keeps it above the
-    // keyboard (react-native-keyboard-controller; edge-to-edge Android no
-    // longer resizes the window for the keyboard).
+    // keyboard (`ui/KeyboardScrollView`, on react-native-keyboard-controller;
+    // edge-to-edge Android no longer resizes the window for the keyboard).
     <View style={styles.safe}>
       <ScreenHeader onBack={() => router.back()} backTestID="report-back" />
-      <KeyboardAwareScrollView
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
-        bottomOffset={spacing.xxl}
-        testID="report-screen"
-      >
+      <KeyboardScrollView contentContainerStyle={styles.container} testID="report-screen">
         <Text variant="titleLg">Report this profile</Text>
 
         <View style={styles.categoryList} testID="report-category-list">
@@ -174,7 +168,7 @@ export default function ReportScreen() {
         <Text variant="helper" style={styles.footerHint}>
           reports go to a person, not a bot. every account here is tied to a real ID, so this matters.
         </Text>
-      </KeyboardAwareScrollView>
+      </KeyboardScrollView>
     </View>
   );
 }

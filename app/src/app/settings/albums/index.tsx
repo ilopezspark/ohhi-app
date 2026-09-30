@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
@@ -12,7 +12,7 @@ import {
 import { listSharesForSubject } from '../../../api/shares';
 import { mapSupabaseError } from '../../../api/errors';
 import { tintForPhoto } from '../../../photos/tint';
-import { ScreenHeader, Input, Text } from '../../../ui';
+import { ScreenHeader, Input, KeyboardScrollView, Text } from '../../../ui';
 import { PencilIcon, PlusIcon } from '../../../ui/icons';
 import { AlbumCover } from '../../../settings/components/AlbumCover';
 import { getAlbumOwner } from '../../../api/albumOwner';
@@ -104,7 +104,8 @@ export default function AlbumsListScreen() {
   return (
     <View style={styles.safe} testID="albums-screen">
       <ScreenHeader title="albums" titleSize={28} onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      {/* The new album's name field stays above the keyboard (`ui/KeyboardScrollView`). */}
+      <KeyboardScrollView contentContainerStyle={styles.scroll}>
         <Text variant="helper">
           albums are private. share one person at a time from a chat, take it back whenever. nobody sees them on
           the grid.
@@ -206,7 +207,7 @@ export default function AlbumsListScreen() {
             anyone can report an album — every account is tied to a real ID.
           </Text>
         </View>
-      </ScrollView>
+      </KeyboardScrollView>
     </View>
   );
 }

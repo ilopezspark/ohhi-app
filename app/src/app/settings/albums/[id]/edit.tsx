@@ -23,6 +23,7 @@ import { useAlbumOwner } from '../../../../albums/useAlbumOwner';
 import { REMOVE_PHOTO_CONFIRM, REMOVE_PHOTO_LABEL } from '../../../../albums/albumCopy';
 import { ConfirmButton } from '../../../../settings/ConfirmButton';
 import { ScreenHeader, Sheet, Text } from '../../../../ui';
+import { KeyboardSpacer } from '../../../../ui/KeyboardSpacer';
 import { displayName } from '../../../../ui/displayName';
 import { colors, fontFamilies, radii, spacing } from '../../../../theme/tokens';
 
@@ -386,6 +387,9 @@ export default function AlbumEditScreen() {
           </Text>
         }
       />
+      {/* While the name field has the keyboard, the list ends on the keyboard
+          instead of under it, so the rest of the page can still be scrolled to. */}
+      <KeyboardSpacer bottomInset={0} testID="album-edit-keyboard" />
 
       {confirmRemove ? (
         <Sheet testID="album-remove-confirm" onDismiss={() => setConfirmRemove(null)}>

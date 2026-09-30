@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { colors, layout, spacing } from '../../theme/tokens';
+import { KeyboardScrollView } from '../../ui/KeyboardScrollView';
 import { useHeaderInsets } from '../../ui/useHeaderInsets';
 import { OnboardingHeader } from './OnboardingHeader';
 
@@ -20,36 +21,34 @@ export interface OnboardingScreenProps {
  * The `padding: 56px 16px 0 16px` frame every `Onb-*.html` screen shares,
  * plus the back/progress row and a bottom-pinned action area
  * (`margin-top: auto; padding-bottom: 28px` in the screens' own markup).
- * `KeyboardAvoidingView` + a scrollable body is this kit's answer to "the
- * screens are a fixed 390x844 frame" not translating literally to a phone
- * whose keyboard covers a third of a shorter device — every field stays
- * reachable and the footer stays visible above the keyboard on iOS
- * (`behavior: 'padding'`; Android's default resize behaviour needs no
- * extra handling here).
+ * A keyboard-aware scrollable body (`ui/KeyboardScrollView`) is this kit's
+ * answer to "the screens are a fixed 390x844 frame" not translating
+ * literally to a phone whose keyboard covers a third of a shorter device:
+ * the focused field is scrolled above the keyboard, every field stays
+ * reachable, and the footer rides on the keyboard, on both platforms
+ * (edge-to-edge Android no longer resizes the window for the keyboard).
  */
 export function OnboardingScreen({ step, onBack, backTestID, children, footer, testID }: OnboardingScreenProps) {
   // The Me screen's heading padding (owner ruling): below the status bar,
   // the shared 12 gap, rather than a fixed 56 that ignored the real inset.
   const insets = useHeaderInsets();
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      testID={testID}
-    >
+    <View style={styles.flex} testID={testID}>
       <View style={[styles.frame, { paddingTop: insets.top, paddingHorizontal: insets.gutter }]}>
         <OnboardingHeader step={step} onBack={onBack} backTestID={backTestID} />
-        <ScrollView
+        <KeyboardScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          footer={footer}
+          footerStyle={styles.footer}
+          footerTestID={testID ? `${testID}-footer` : 'onboarding-footer'}
+          testID={testID ? `${testID}-scroll` : 'onboarding-scroll'}
         >
           {children}
-        </ScrollView>
-        {footer ? <View style={styles.footer}>{footer}</View> : null}
+        </KeyboardScrollView>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

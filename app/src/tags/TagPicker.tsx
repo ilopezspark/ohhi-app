@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AccessibilityInfo,
-  KeyboardAvoidingView,
   Pressable,
   ScrollView,
   SectionList,
@@ -13,6 +12,7 @@ import {
 } from 'react-native';
 import { MAX_TAGS, MIN_TAGS, type Tag } from '../api/tags';
 import { Button, ChevronDownIcon, ChevronUpIcon, SearchIcon, Text, XIcon, useHeaderInsets } from '../ui';
+import { KeyboardSpacer } from '../ui/KeyboardSpacer';
 import { colors, radii, spacing } from '../theme/tokens';
 import {
   counterAnnouncement,
@@ -91,9 +91,10 @@ export interface TagPickerProps {
  * `SectionList` with one item per open category, and chips memoised on
  * their own props with a stable toggle callback, so a tap re-renders only
  * the chip that changed (and, at the cap, the ones that became disabled).
- * The whole body sits in a `KeyboardAvoidingView` (`padding` on both
- * platforms: Android is edge-to-edge, so its window no longer resizes), so
- * the search keyboard never covers the list or the CTA.
+ * Keyboard: a `KeyboardSpacer` under the CTA grows with the keyboard, frame
+ * by frame (react-native-keyboard-controller; edge-to-edge Android no longer
+ * resizes the window), so the CTA rides on the keyboard and the list above
+ * it shrinks: the search keyboard never covers the list's end or the CTA.
  */
 export function TagPicker({
   catalog,
@@ -189,175 +190,175 @@ export function TagPicker({
 
   return (
     <View style={styles.safe} testID={testID}>
-      <KeyboardAvoidingView style={styles.flex} behavior="padding">
-        <View style={styles.column}>
-          {/* The Me screen's heading padding (shared `useHeaderInsets`), for the default row and for onboarding's own. */}
-          <View style={[styles.headerStrip, { paddingTop: insets.top, paddingHorizontal: insets.gutter }]}>
-          {header ?? (
-            <View style={styles.header}>
-              <Pressable
-                testID={`${testID}-close`}
-                accessibilityRole="button"
-                accessibilityLabel={closeLabel}
-                onPress={onClose}
-                hitSlop={8}
-                style={styles.closeButton}
-              >
-                <Text variant="labelLg" color={colors.muted}>
-                  {closeLabel}
-                </Text>
-              </Pressable>
-              <Text variant="title" accessibilityRole="header" numberOfLines={1} style={styles.headerTitle}>
-                {title}
+      <View style={styles.column}>
+        {/* The Me screen's heading padding (shared `useHeaderInsets`), for the default row and for onboarding's own. */}
+        <View style={[styles.headerStrip, { paddingTop: insets.top, paddingHorizontal: insets.gutter }]}>
+        {header ?? (
+          <View style={styles.header}>
+            <Pressable
+              testID={`${testID}-close`}
+              accessibilityRole="button"
+              accessibilityLabel={closeLabel}
+              onPress={onClose}
+              hitSlop={8}
+              style={styles.closeButton}
+            >
+              <Text variant="labelLg" color={colors.muted}>
+                {closeLabel}
               </Text>
-              <View style={styles.closeButton} />
-            </View>
+            </Pressable>
+            <Text variant="title" accessibilityRole="header" numberOfLines={1} style={styles.headerTitle}>
+              {title}
+            </Text>
+            <View style={styles.closeButton} />
+          </View>
+        )}
+        </View>
+
+        {/* The sticky tray: outside the list, so it never scrolls away. */}
+        <View style={styles.tray} testID={`${testID}-tray`}>
+          {header ? (
+            <Text variant="headline" accessibilityRole="header" style={styles.headline}>
+              {title}
+            </Text>
+          ) : null}
+          <View style={styles.trayTop}>
+            <Text variant="helper" color={colors.inkSoft} style={styles.flex}>
+              {intro ?? 'your picks, in order'}
+            </Text>
+            <Text
+              variant="labelLg"
+              color={atMax ? colors.ink : colors.inkSoft}
+              testID={`${testID}-counter`}
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={counterAnnouncement(selected.length, max)}
+            >
+              {counterText(selected.length, max)}
+            </Text>
+          </View>
+          {selected.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.trayRow}
+            >
+              {selected.map((id) => (
+                <TrayChip key={id} id={id} label={labels.get(id) ?? fallbackLabel} onRemove={onToggle} testID={testID} />
+              ))}
+            </ScrollView>
+          ) : (
+            <Text variant="micro" color={colors.inkSoft} testID={`${testID}-tray-empty`}>
+              nothing picked yet. tap a few below.
+            </Text>
           )}
-          </View>
-
-          {/* The sticky tray: outside the list, so it never scrolls away. */}
-          <View style={styles.tray} testID={`${testID}-tray`}>
-            {header ? (
-              <Text variant="headline" accessibilityRole="header" style={styles.headline}>
-                {title}
-              </Text>
-            ) : null}
-            <View style={styles.trayTop}>
-              <Text variant="helper" color={colors.inkSoft} style={styles.flex}>
-                {intro ?? 'your picks, in order'}
-              </Text>
-              <Text
-                variant="labelLg"
-                color={atMax ? colors.ink : colors.inkSoft}
-                testID={`${testID}-counter`}
-                accessibilityLiveRegion="polite"
-                accessibilityLabel={counterAnnouncement(selected.length, max)}
-              >
-                {counterText(selected.length, max)}
-              </Text>
-            </View>
-            {selected.length > 0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={styles.trayRow}
-              >
-                {selected.map((id) => (
-                  <TrayChip key={id} id={id} label={labels.get(id) ?? fallbackLabel} onRemove={onToggle} testID={testID} />
-                ))}
-              </ScrollView>
-            ) : (
-              <Text variant="micro" color={colors.inkSoft} testID={`${testID}-tray-empty`}>
-                nothing picked yet. tap a few below.
-              </Text>
-            )}
-            {atMax ? (
-              <Text variant="micro" color={colors.inkSoft} testID={`${testID}-max-note`}>
-                {`that's ${max}. remove one to pick another.`}
-              </Text>
-            ) : selected.length < Math.max(min, MIN_TAGS) && minNote ? (
-              <Text variant="micro" color={colors.inkSoft} testID={`${testID}-min-note`}>
-                {minNote}
-              </Text>
-            ) : null}
-            <View style={styles.search}>
-              <SearchIcon size={18} color={colors.inkSoft} />
-              <TextInput
-                testID={`${testID}-search`}
-                value={query}
-                onChangeText={setQuery}
-                placeholder="search interests"
-                placeholderTextColor={colors.subtle}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="search"
-                accessibilityLabel="search interests"
-                style={styles.searchInput}
-              />
-              {query.length > 0 ? (
-                <Pressable
-                  testID={`${testID}-search-clear`}
-                  accessibilityRole="button"
-                  accessibilityLabel="clear search"
-                  onPress={() => setQuery('')}
-                  hitSlop={8}
-                >
-                  <XIcon size={16} color={colors.inkSoft} />
-                </Pressable>
-              ) : null}
-            </View>
-          </View>
-
-          <SectionList<CategoryGroup, PickerSection>
-            testID={`${testID}-list`}
-            style={styles.flex}
-            sections={sections}
-            keyExtractor={(item) => item.slug}
-            renderItem={renderItem}
-            renderSectionHeader={renderSectionHeader}
-            stickySectionHeadersEnabled={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            // Headers count as rows: enough for the three open sections on the first frame.
-            initialNumToRender={10}
-            maxToRenderPerBatch={3}
-            windowSize={7}
-            contentContainerStyle={styles.listContent}
-            ListHeaderComponent={listHeader ? <View style={styles.listHeader}>{listHeader}</View> : null}
-            ListEmptyComponent={
-              empty ? (
-                <View style={styles.empty} testID={`${testID}-empty`}>
-                  <Text variant="bodyMedium" color={colors.inkSoft}>
-                    no interest by that name yet.
-                  </Text>
-                  <Button
-                    testID={`${testID}-empty-suggest`}
-                    label="suggest a tag"
-                    variant="ghost"
-                    fullWidth={false}
-                    onPress={() => setSuggestOpen(true)}
-                  />
-                </View>
-              ) : null
-            }
-            ListFooterComponent={
-              empty ? null : (
-                <View style={styles.footer}>
-                  <Text variant="micro" color={colors.inkSoft}>
-                    not seeing yours?
-                  </Text>
-                  <Pressable
-                    testID={`${testID}-suggest`}
-                    accessibilityRole="button"
-                    onPress={() => setSuggestOpen(true)}
-                    hitSlop={8}
-                  >
-                    <Text variant="labelLg" color={colors.signalDeep}>
-                      suggest a tag
-                    </Text>
-                  </Pressable>
-                </View>
-              )
-            }
-          />
-
-          <View style={[styles.cta, { paddingBottom: Math.max(spacing.mdLg, insets.bottom + spacing.smMd) }]}>
-            {error ? (
-              <Text variant="helper" color={colors.danger} testID={`${testID}-error`}>
-                {error}
-              </Text>
-            ) : null}
-            <Button
-              testID={`${testID}-submit`}
-              label={ctaText(verb, selected.length, max)}
-              onPress={onSubmit}
-              loading={submitting}
-              disabled={belowMin || submitting}
+          {atMax ? (
+            <Text variant="micro" color={colors.inkSoft} testID={`${testID}-max-note`}>
+              {`that's ${max}. remove one to pick another.`}
+            </Text>
+          ) : selected.length < Math.max(min, MIN_TAGS) && minNote ? (
+            <Text variant="micro" color={colors.inkSoft} testID={`${testID}-min-note`}>
+              {minNote}
+            </Text>
+          ) : null}
+          <View style={styles.search}>
+            <SearchIcon size={18} color={colors.inkSoft} />
+            <TextInput
+              testID={`${testID}-search`}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="search interests"
+              placeholderTextColor={colors.subtle}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              accessibilityLabel="search interests"
+              style={styles.searchInput}
             />
+            {query.length > 0 ? (
+              <Pressable
+                testID={`${testID}-search-clear`}
+                accessibilityRole="button"
+                accessibilityLabel="clear search"
+                onPress={() => setQuery('')}
+                hitSlop={8}
+              >
+                <XIcon size={16} color={colors.inkSoft} />
+              </Pressable>
+            ) : null}
           </View>
         </View>
-      </KeyboardAvoidingView>
+
+        <SectionList<CategoryGroup, PickerSection>
+          testID={`${testID}-list`}
+          style={styles.flex}
+          sections={sections}
+          keyExtractor={(item) => item.slug}
+          renderItem={renderItem}
+          renderSectionHeader={renderSectionHeader}
+          stickySectionHeadersEnabled={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          // Headers count as rows: enough for the three open sections on the first frame.
+          initialNumToRender={10}
+          maxToRenderPerBatch={3}
+          windowSize={7}
+          contentContainerStyle={styles.listContent}
+          ListHeaderComponent={listHeader ? <View style={styles.listHeader}>{listHeader}</View> : null}
+          ListEmptyComponent={
+            empty ? (
+              <View style={styles.empty} testID={`${testID}-empty`}>
+                <Text variant="bodyMedium" color={colors.inkSoft}>
+                  no interest by that name yet.
+                </Text>
+                <Button
+                  testID={`${testID}-empty-suggest`}
+                  label="suggest a tag"
+                  variant="ghost"
+                  fullWidth={false}
+                  onPress={() => setSuggestOpen(true)}
+                />
+              </View>
+            ) : null
+          }
+          ListFooterComponent={
+            empty ? null : (
+              <View style={styles.footer}>
+                <Text variant="micro" color={colors.inkSoft}>
+                  not seeing yours?
+                </Text>
+                <Pressable
+                  testID={`${testID}-suggest`}
+                  accessibilityRole="button"
+                  onPress={() => setSuggestOpen(true)}
+                  hitSlop={8}
+                >
+                  <Text variant="labelLg" color={colors.signalDeep}>
+                    suggest a tag
+                  </Text>
+                </Pressable>
+              </View>
+            )
+          }
+        />
+
+        <View style={[styles.cta, { paddingBottom: Math.max(spacing.mdLg, insets.bottom + spacing.smMd) }]}>
+          {error ? (
+            <Text variant="helper" color={colors.danger} testID={`${testID}-error`}>
+              {error}
+            </Text>
+          ) : null}
+          <Button
+            testID={`${testID}-submit`}
+            label={ctaText(verb, selected.length, max)}
+            onPress={onSubmit}
+            loading={submitting}
+            disabled={belowMin || submitting}
+          />
+        </View>
+        {/* Lifts the CTA onto the keyboard; the CTA's own inset room goes under it. */}
+        <KeyboardSpacer bottomInset={insets.bottom} testID={`${testID}-keyboard`} />
+      </View>
 
       {suggestOpen ? (
         <SuggestTagSheet

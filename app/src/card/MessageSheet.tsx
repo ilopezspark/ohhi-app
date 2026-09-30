@@ -32,9 +32,9 @@ export interface MessageSheetProps {
  * message (trigger step 3) — not a locally-invented number, so this sheet
  * can never predict a cap the server would then refuse.
  *
- * An in-tree `Sheet`, not a `SheetModal`: it has a text field, and inside an
- * edge-to-edge Android `Modal` the keyboard would cover it (see
- * `ui/Sheet.tsx`). The profile screen mounts it as its root's last child,
+ * An in-tree `Sheet`, not a `SheetModal`: it rides the keyboard with no
+ * dialog window involved (see `ui/Sheet.tsx`). The profile screen mounts it
+ * as its root's last child,
  * so its dim still covers the whole screen, status bar to bottom edge.
  */
 export function MessageSheet({

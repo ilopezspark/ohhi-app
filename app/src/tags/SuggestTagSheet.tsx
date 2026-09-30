@@ -23,9 +23,9 @@ export interface SuggestTagSheetProps {
  * filter, five already waiting) are shown in the server's own words as the
  * app maps them, and the typed text stays so it can be edited.
  *
- * An in-tree `Sheet`, not a `SheetModal`: it holds a text field, and a
- * `Modal` on edge-to-edge Android does not ride up with the keyboard (see
- * `ui/Sheet.tsx`). The picker mounts it as the last child of its root.
+ * An in-tree `Sheet`, not a `SheetModal`: it holds a text field and rides
+ * the keyboard with no dialog window involved (see `ui/Sheet.tsx`). The
+ * picker mounts it as the last child of its root.
  */
 export function SuggestTagSheet({ initialLabel = '', categories, onDismiss, testID = 'suggest-tag' }: SuggestTagSheetProps) {
   const [label, setLabel] = useState(initialLabel.slice(0, SUGGESTION_MAX_LENGTH));
