@@ -132,18 +132,60 @@ describe('HisScreen', () => {
   });
 });
 
-describe("HisScreen — sent hi's", () => {
-  it('shows received and sent sections, each with its rows', async () => {
+describe("HisScreen — received and sent tabs", () => {
+  async function openSent(view: Awaited<ReturnType<typeof render>>) {
+    await fireEvent.press(await view.findByTestId('his-tab-sent'));
+  }
+
+  it('shows received by default, with its rows and no sent rows', async () => {
     (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
     (listSentHis as jest.Mock).mockResolvedValue([sentRow()]);
-    const { findByTestId, getByText, getByTestId } = await renderScreen();
-    await findByTestId('his-sent-row-sent-1');
-    expect(getByTestId('his-row-hi-1')).toBeTruthy();
-    expect(getByTestId('his-received-label')).toBeTruthy();
-    expect(getByTestId('his-sent-label')).toBeTruthy();
+    const { findByTestId, getByText, getByTestId, queryByTestId } = await renderScreen();
+    await findByTestId('his-row-hi-1');
     expect(getByText('received')).toBeTruthy();
     expect(getByText('sent')).toBeTruthy();
-    expect(getByText('cy')).toBeTruthy();
+    expect(getByTestId('his-tab-received').props.accessibilityState).toMatchObject({ selected: true });
+    expect(getByTestId('his-tab-sent').props.accessibilityState).toMatchObject({ selected: false });
+    expect(queryByTestId('his-sent-row-sent-1')).toBeNull();
+  });
+
+  it('switching to sent shows the sent rows and hides the received ones', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
+    (listSentHis as jest.Mock).mockResolvedValue([sentRow()]);
+    const view = await renderScreen();
+    await view.findByTestId('his-row-hi-1');
+    await openSent(view);
+    await view.findByTestId('his-sent-row-sent-1');
+    expect(view.getByText('cy')).toBeTruthy();
+    expect(view.queryByTestId('his-row-hi-1')).toBeNull();
+    expect(view.getByTestId('his-tab-sent').props.accessibilityState).toMatchObject({ selected: true });
+
+    // And back again.
+    await fireEvent.press(view.getByTestId('his-tab-received'));
+    await view.findByTestId('his-row-hi-1');
+    expect(view.queryByTestId('his-sent-row-sent-1')).toBeNull();
+  });
+
+  it('puts no count in either tab label', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow(), hiRow({ id: 'hi-2' })]);
+    (listSentHis as jest.Mock).mockResolvedValue([sentRow()]);
+    const { findByTestId, getByTestId } = await renderScreen();
+    await findByTestId('his-row-hi-1');
+    expect(getByTestId('his-tab-received')).toHaveTextContent(/^received$/);
+    expect(getByTestId('his-tab-sent')).toHaveTextContent(/^sent$/);
+  });
+
+  it('starts on received again on each mount', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
+    (listSentHis as jest.Mock).mockResolvedValue([sentRow()]);
+    const first = await renderScreen();
+    await first.findByTestId('his-row-hi-1');
+    await openSent(first);
+    await first.findByTestId('his-sent-row-sent-1');
+    await first.unmount();
+    const second = await renderScreen();
+    await second.findByTestId('his-row-hi-1');
+    expect(second.queryByTestId('his-sent-row-sent-1')).toBeNull();
   });
 
   it('says it is waiting, with how long ago it was sent, and never a dismissed state', async () => {
@@ -151,68 +193,63 @@ describe("HisScreen — sent hi's", () => {
     (listSentHis as jest.Mock).mockResolvedValue([
       sentRow({ createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString() }),
     ]);
-    const { findByTestId, queryByText } = await renderScreen();
-    const waiting = await findByTestId('his-sent-waiting-sent-1');
+    const view = await renderScreen();
+    await openSent(view);
+    const waiting = await view.findByTestId('his-sent-waiting-sent-1');
     expect(waiting.props.children).toBe('waiting · sent 3 days ago');
-    expect(queryByText(/dismissed|declined|expired|ignored/i)).toBeNull();
+    expect(view.queryByText(/dismissed|declined|expired|ignored/i)).toBeNull();
   });
 
   it("tapping a sent row opens that person's profile", async () => {
     (listReceivedHis as jest.Mock).mockResolvedValue([]);
     (listSentHis as jest.Mock).mockResolvedValue([sentRow()]);
-    const { findByTestId } = await renderScreen();
-    await fireEvent.press(await findByTestId('his-sent-row-sent-1'));
+    const view = await renderScreen();
+    await openSent(view);
+    await fireEvent.press(await view.findByTestId('his-sent-row-sent-1'));
     expect(router.push).toHaveBeenCalledWith('/profile/recipient-1');
   });
 
   it('gives a sent row no actions: no hi back, no dismiss, no unsend', async () => {
     (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
     (listSentHis as jest.Mock).mockResolvedValue([sentRow()]);
-    const { findByTestId, queryByTestId, queryByText, getAllByText } = await renderScreen();
-    await findByTestId('his-sent-row-sent-1');
-    expect(queryByTestId('his-row-hiback-sent-1')).toBeNull();
-    expect(queryByTestId('his-row-dismiss-sent-1')).toBeNull();
-    // The only hi back / dismiss buttons belong to the one received row.
-    expect(getAllByText('Hi back')).toHaveLength(1);
-    expect(getAllByText('Dismiss')).toHaveLength(1);
-    expect(queryByText(/unsend|undo|cancel|withdraw/i)).toBeNull();
+    const view = await renderScreen();
+    await openSent(view);
+    await view.findByTestId('his-sent-row-sent-1');
+    expect(view.queryByTestId('his-row-hiback-sent-1')).toBeNull();
+    expect(view.queryByTestId('his-row-dismiss-sent-1')).toBeNull();
+    expect(view.queryByText('Hi back')).toBeNull();
+    expect(view.queryByText('Dismiss')).toBeNull();
+    expect(view.queryByText(/unsend|undo|cancel|withdraw/i)).toBeNull();
   });
 
-  it("with nothing either way keeps today's empty state and no sent section", async () => {
-    (listReceivedHis as jest.Mock).mockResolvedValue([]);
-    (listSentHis as jest.Mock).mockResolvedValue([]);
-    const { findByTestId, queryByTestId } = await renderScreen();
-    await findByTestId('his-empty');
-    expect(queryByTestId('his-sent-section')).toBeNull();
-    expect(queryByTestId('his-received-empty')).toBeNull();
-  });
-
-  it('with only sent rows shows a short line for received instead of the empty state', async () => {
+  it("received tab with nothing shows its own empty state, even when hi's were sent", async () => {
     (listReceivedHis as jest.Mock).mockResolvedValue([]);
     (listSentHis as jest.Mock).mockResolvedValue([sentRow()]);
-    const { findByTestId, queryByTestId } = await renderScreen();
-    await findByTestId('his-sent-section');
-    expect(await findByTestId('his-received-empty')).toBeTruthy();
-    expect(queryByTestId('his-empty')).toBeNull();
+    const { findByTestId, queryByTestId, getByText } = await renderScreen();
+    await findByTestId('his-empty');
+    expect(getByText("no hi's yet")).toBeTruthy();
+    expect(queryByTestId('his-sent-empty')).toBeNull();
   });
 
-  it('with only received rows omits the sent section entirely', async () => {
+  it("sent tab with nothing shows its own empty state, even when hi's were received", async () => {
     (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
     (listSentHis as jest.Mock).mockResolvedValue([]);
-    const { findByTestId, queryByTestId } = await renderScreen();
-    await findByTestId('his-row-hi-1');
+    const view = await renderScreen();
+    await view.findByTestId('his-row-hi-1');
     await waitFor(() => expect(listSentHis).toHaveBeenCalled());
-    expect(queryByTestId('his-sent-section')).toBeNull();
-    expect(queryByTestId('his-sent-label')).toBeNull();
-    expect(queryByTestId('his-received-label')).toBeNull();
+    await openSent(view);
+    await view.findByTestId('his-sent-empty');
+    expect(view.getByText("you haven't sent any hi's")).toBeTruthy();
+    expect(view.queryByTestId('his-empty')).toBeNull();
   });
 
-  it('a failing sent list does not break the received list', async () => {
+  it('a failing sent list does not break the received list, and reads as empty on the sent tab', async () => {
     (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
     (listSentHis as jest.Mock).mockRejectedValue(new Error('network'));
-    const { findByTestId, queryByTestId } = await renderScreen();
-    await findByTestId('his-row-hi-1');
-    expect(queryByTestId('his-sent-section')).toBeNull();
+    const view = await renderScreen();
+    await view.findByTestId('his-row-hi-1');
+    await openSent(view);
+    await view.findByTestId('his-sent-empty');
   });
 
   it('refetches the sent list on focus too', async () => {

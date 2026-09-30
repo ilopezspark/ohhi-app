@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -15,12 +15,14 @@ import { isUnavailableError } from '../../api/errors';
 import { markHiHandledOptimistically, refreshBadges } from '../../badges/badgeCounts';
 import { signedPhotoUrls } from '../../api/photos';
 import { tintForPhoto } from '../../photos/tint';
-import { Avatar, EmptyState, HisIcon, ScreenHeader, SectionLabel, Text } from '../../ui';
+import { Avatar, EmptyState, HisIcon, ScreenHeader, SegmentedTabs, Text } from '../../ui';
 import { displayName } from '../../ui/displayName';
 import { relativeSentLabel } from '../../me/card/relativeTime';
 import { colors, hairline, radii, shadows, spacing } from '../../theme/tokens';
 
 const QUERY_KEY = ['his_received'];
+
+type HisTab = 'received' | 'sent';
 
 /**
  * The Hi's tab (decision 15, `docs/app-social-plan.md` §2): a minimal list of
@@ -31,12 +33,13 @@ const QUERY_KEY = ['his_received'];
  * Answering or dismissing a hi lowers the tab badge at once, then re-reads
  * the counts (`badges/badgeCounts.ts`).
  *
- * Below the received list sits a "sent" section (owner ruling: people see who
+ * Two tabs sit under the heading — "received" (selected by default, local
+ * state so it resets on each mount) and "sent" (owner ruling: people see who
  * sent them hi's and also who they sent hi's to): the hi's still waiting on
  * an answer, tap to open the person's profile, no actions (there is no
  * un-send). Once a hi is answered it is a chat; a dismissed or expired one
- * simply drops off — never a "dismissed" state (decision 24). The tab badge
- * still counts received only.
+ * simply drops off — never a "dismissed" state (decision 24). Each tab has
+ * its own empty state. The tab badge still counts received only.
  *
  * `docs/design/system.md` has no dedicated mockup for this screen — styled
  * here to match the grid's own header rhythm (56px top inset, `headline`
@@ -46,6 +49,8 @@ const QUERY_KEY = ['his_received'];
  */
 export default function HisScreen() {
   const queryClient = useQueryClient();
+  // Local state, so it resets to received each time the screen mounts.
+  const [tab, setTab] = useState<HisTab>('received');
 
   const {
     data: his,
@@ -139,16 +144,12 @@ export default function HisScreen() {
 
   const data = his ?? [];
   const sent = sentHis ?? [];
-  const hasSent = sent.length > 0;
-  // Today's empty state only when nothing at all is waiting either way.
-  const showEmptyState = !hasSent && !sentPending;
 
   const renderSentRow = (item: SentHi) => {
     const url = item.photoPath ? photoUrls?.[item.photoPath] : undefined;
     const open = () => router.push(`/profile/${item.toUserId}` as never);
     return (
       <Pressable
-        key={item.id}
         accessibilityRole="button"
         testID={`his-sent-row-${item.id}`}
         style={styles.row}
@@ -167,98 +168,113 @@ export default function HisScreen() {
     );
   };
 
-  // The heading stays put at the shared heading padding (clear of the
-  // status bar); the list scrolls under it.
+  const renderReceivedRow = (item: ReceivedHi) => {
+    const url = item.photoPath ? photoUrls?.[item.photoPath] : undefined;
+    return (
+      <View style={styles.row} testID={`his-row-${item.id}`}>
+        <Pressable
+          testID={`his-row-photo-${item.id}`}
+          onPress={() => router.push(`/profile/${item.fromUserId}` as never)}
+        >
+          <Avatar uri={url} tint={tintForPhoto(item.fromUserId, 0)} size="md" />
+        </Pressable>
+
+        <Pressable
+          style={styles.nameButton}
+          testID={`his-row-name-${item.id}`}
+          onPress={() => router.push(`/profile/${item.fromUserId}` as never)}
+        >
+          <Text variant="rowLabel" numberOfLines={1}>
+            {displayName(item.firstName) || 'someone'}
+          </Text>
+        </Pressable>
+
+        <View style={styles.actions}>
+          <Pressable
+            testID={`his-row-hiback-${item.id}`}
+            accessibilityRole="button"
+            disabled={hiBackMutation.isPending}
+            style={[styles.hiBackButton, hiBackMutation.isPending && styles.disabled]}
+            onPress={() => hiBackMutation.mutate(item.id)}
+          >
+            <Text variant="caption" color={colors.onDark}>
+              Hi back
+            </Text>
+          </Pressable>
+          <Pressable
+            testID={`his-row-dismiss-${item.id}`}
+            accessibilityRole="button"
+            style={[styles.dismissButton, shadows.sm]}
+            onPress={() => dismissMutation.mutate(item.id)}
+          >
+            <Text variant="caption" color={colors.muted}>
+              Dismiss
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
+  const emptyIcon = (
+    <View style={styles.emptyIcon}>
+      <HisIcon size={36} color={colors.subtle} />
+    </View>
+  );
+
+  const listProps = {
+    refreshing: isRefetching || isRefetchingSent,
+    onRefresh: () => {
+      void refetch();
+      void refetchSent();
+    },
+    contentContainerStyle: styles.list,
+  };
+
+  // The heading and tab row stay put at the shared heading padding (clear of
+  // the status bar); the selected tab's list scrolls under them.
   return (
     <View style={styles.screen}>
       <ScreenHeader title="hi's" titleSize={32} testID="his-header" />
-      <FlatList
-        testID="his-list"
-        data={data}
-        keyExtractor={(row) => row.id}
-        refreshing={isRefetching || isRefetchingSent}
-        onRefresh={() => {
-          void refetch();
-          void refetchSent();
-        }}
-        contentContainerStyle={styles.list}
-        ListHeaderComponent={
-          hasSent ? <SectionLabel testID="his-received-label" label="received" style={styles.sectionLabel} /> : null
-        }
-        ListEmptyComponent={
-          hasSent ? (
-            <Text variant="body" color={colors.muted} style={styles.receivedEmpty} testID="his-received-empty">
-              no hi's yet
-            </Text>
-          ) : showEmptyState ? (
-            <EmptyState
-              testID="his-empty"
-              title="no hi's yet"
-              message="they'll show up here."
-              icon={
-                <View style={styles.emptyIcon}>
-                  <HisIcon size={36} color={colors.subtle} />
-                </View>
-              }
-            />
-          ) : null
-        }
-        ListFooterComponent={
-          hasSent ? (
-            <View testID="his-sent-section">
-              <SectionLabel testID="his-sent-label" label="sent" style={[styles.sectionLabel, styles.sentLabel]} />
-              {sent.map(renderSentRow)}
-            </View>
-          ) : null
-        }
-        renderItem={({ item }) => {
-          const url = item.photoPath ? photoUrls?.[item.photoPath] : undefined;
-          return (
-            <View style={styles.row} testID={`his-row-${item.id}`}>
-              <Pressable
-                testID={`his-row-photo-${item.id}`}
-                onPress={() => router.push(`/profile/${item.fromUserId}` as never)}
-              >
-                <Avatar uri={url} tint={tintForPhoto(item.fromUserId, 0)} size="md" />
-              </Pressable>
-
-              <Pressable
-                style={styles.nameButton}
-                testID={`his-row-name-${item.id}`}
-                onPress={() => router.push(`/profile/${item.fromUserId}` as never)}
-              >
-                <Text variant="rowLabel" numberOfLines={1}>
-                  {displayName(item.firstName) || 'someone'}
-                </Text>
-              </Pressable>
-
-              <View style={styles.actions}>
-                <Pressable
-                  testID={`his-row-hiback-${item.id}`}
-                  accessibilityRole="button"
-                  disabled={hiBackMutation.isPending}
-                  style={[styles.hiBackButton, hiBackMutation.isPending && styles.disabled]}
-                  onPress={() => hiBackMutation.mutate(item.id)}
-                >
-                  <Text variant="caption" color={colors.onDark}>
-                    Hi back
-                  </Text>
-                </Pressable>
-                <Pressable
-                  testID={`his-row-dismiss-${item.id}`}
-                  accessibilityRole="button"
-                  style={[styles.dismissButton, shadows.sm]}
-                  onPress={() => dismissMutation.mutate(item.id)}
-                >
-                  <Text variant="caption" color={colors.muted}>
-                    Dismiss
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          );
-        }}
+      <SegmentedTabs
+        testID="his-tabs"
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { key: 'received', label: 'received', testID: 'his-tab-received' },
+          { key: 'sent', label: 'sent', testID: 'his-tab-sent' },
+        ]}
       />
+      {tab === 'received' ? (
+        <FlatList
+          testID="his-list"
+          data={data}
+          keyExtractor={(row) => row.id}
+          {...listProps}
+          ListEmptyComponent={
+            <EmptyState testID="his-empty" title="no hi's yet" message="they'll show up here." icon={emptyIcon} />
+          }
+          renderItem={({ item }) => renderReceivedRow(item)}
+        />
+      ) : (
+        <FlatList
+          testID="his-sent-list"
+          data={sent}
+          keyExtractor={(row) => row.id}
+          {...listProps}
+          ListEmptyComponent={
+            sentPending ? null : (
+              <EmptyState
+                testID="his-sent-empty"
+                title="you haven't sent any hi's"
+                message="the ones you send will show up here."
+                icon={emptyIcon}
+              />
+            )
+          }
+          renderItem={({ item }) => renderSentRow(item)}
+        />
+      )}
     </View>
   );
 }
@@ -286,9 +302,6 @@ const styles = StyleSheet.create({
     borderBottomColor: hairline.color,
   },
   nameButton: { flex: 1 },
-  sectionLabel: { paddingHorizontal: spacing.lgXl, paddingBottom: spacing.smMd },
-  sentLabel: { paddingTop: spacing.xl },
-  receivedEmpty: { paddingHorizontal: spacing.lgXl, paddingVertical: spacing.lg },
   actions: { flexDirection: 'row', gap: spacing.smMd },
   hiBackButton: {
     paddingHorizontal: spacing.mdLg,

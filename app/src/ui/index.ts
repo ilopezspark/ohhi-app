@@ -29,3 +29,4 @@ export * from './PillButton';
 export * from './VerificationPill';
 export * from './displayName';
 export * from './DigitBox';
+export * from './SegmentedTabs';
