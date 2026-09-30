@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { me } from '../../../api/me';
 import { REPORT_CATEGORIES, REPORT_NOTE_MAX_LENGTH, submitReport, type ReportCategory } from '../../../api/reports';
 import { mapSupabaseError } from '../../../api/errors';
 import { ConfirmButton } from '../../../settings/ConfirmButton';
-import { Button, Input, Text } from '../../../ui';
+import { Button, Input, ScreenHeader, Text } from '../../../ui';
 import { colors, radii, shadows, spacing } from '../../../theme/tokens';
 
 /**
@@ -73,26 +73,28 @@ export default function ReportScreen() {
   // Decision 47: hidden, not a failed submit, for a non-active caller.
   if (meQuery.data?.status !== 'active') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.safe}>
+        <ScreenHeader onBack={() => router.back()} backTestID="report-back" />
         <View style={styles.center} testID="report-hidden">
           <Text variant="body" color={colors.muted} style={styles.centerText}>
             Reporting isn&apos;t available right now.
           </Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (submitted) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.safe}>
+        <ScreenHeader onBack={() => router.back()} backTestID="report-back" />
         <View style={styles.center} testID="report-thanks">
           <Text variant="titleLg" style={styles.centerText}>
             Thanks — we&apos;ll review this.
           </Text>
           <Button testID="report-done" label="Done" onPress={() => router.back()} fullWidth={false} />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -101,8 +103,17 @@ export default function ReportScreen() {
   const canSubmit = !!category && !noteTooLong && !mutation.isPending;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.container} testID="report-screen">
+    // The note field is near the bottom: the scroll view keeps it above the
+    // keyboard (react-native-keyboard-controller; edge-to-edge Android no
+    // longer resizes the window for the keyboard).
+    <View style={styles.safe}>
+      <ScreenHeader onBack={() => router.back()} backTestID="report-back" />
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+        bottomOffset={spacing.xxl}
+        testID="report-screen"
+      >
         <Text variant="titleLg">Report this profile</Text>
 
         <View style={styles.categoryList} testID="report-category-list">
@@ -163,14 +174,14 @@ export default function ReportScreen() {
         <Text variant="helper" style={styles.footerHint}>
           reports go to a person, not a bot. every account here is tied to a real ID, so this matters.
         </Text>
-      </View>
-    </SafeAreaView>
+      </KeyboardAwareScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  container: { flex: 1, padding: spacing.xlXxl, gap: spacing.lg },
+  container: { flexGrow: 1, padding: spacing.xlXxl, gap: spacing.lg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, gap: spacing.lg },
   centerText: { textAlign: 'center' },
   categoryList: { gap: spacing.smMd },

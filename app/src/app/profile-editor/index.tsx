@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { usePreventRemove, type NavigationAction } from 'expo-router/react-navigation';
 import { EditSections } from '../../me/editor/EditSections';
 import { PreviewCard } from '../../me/editor/PreviewCard';
 import { useProfileEditorDraftContext } from '../../me/editor/ProfileEditorDraftContext';
-import { Text } from '../../ui';
+import { Text, useHeaderInsets } from '../../ui';
 import { displayName } from '../../ui/displayName';
 import { colors, spacing } from '../../theme/tokens';
+import { HEADER_TOP_GAP } from '../../ui/screenInsets';
 
 type EditorTab = 'edit' | 'preview';
 
@@ -34,6 +34,8 @@ export default function ProfileEditorScreen() {
   const [tab, setTab] = useState<EditorTab>(initialTabParam === 'preview' ? 'preview' : 'edit');
 
   const draftState = useProfileEditorDraftContext();
+  // The Me screen's heading padding (owner ruling), shared with every screen.
+  const insets = useHeaderInsets();
   const navigation = useNavigation();
   // A deliberate exit (a successful `done`, a clean `cancel`, a confirmed
   // discard). Held in state, not acted on inline, so the dismiss guard below
@@ -82,17 +84,17 @@ export default function ProfileEditorScreen() {
 
   if (draftState.loading) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']} testID="profile-editor-loading">
+      <View style={[styles.safe, { paddingTop: insets.statusBar }]} testID="profile-editor-loading">
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.ink} />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (!draftState.ready) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']} testID="profile-editor-load-failed">
+      <View style={[styles.safe, { paddingTop: insets.statusBar }]} testID="profile-editor-load-failed">
         <View style={styles.header}>
           <Pressable testID="profile-editor-cancel" accessibilityRole="button" onPress={leave} hitSlop={8}>
             <Text variant="labelLg" color={colors.muted}>
@@ -115,12 +117,12 @@ export default function ProfileEditorScreen() {
             </Text>
           </Pressable>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']} testID="profile-editor-screen">
+    <View style={[styles.safe, { paddingTop: insets.statusBar }]} testID="profile-editor-screen">
       <View style={styles.header}>
         <Pressable testID="profile-editor-cancel" accessibilityRole="button" onPress={requestClose} hitSlop={8}>
           <Text variant="labelLg" color={colors.muted}>
@@ -173,7 +175,7 @@ export default function ProfileEditorScreen() {
           <PreviewCard />
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -213,7 +215,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lgXl,
-    paddingVertical: spacing.lgXl,
+    // Under the status bar: the shared 12 gap (`ui/screenInsets.ts`), then the row.
+    paddingTop: HEADER_TOP_GAP,
+    paddingBottom: spacing.lgXl,
   },
   headerName: { flex: 1, textAlign: 'center' },
   tabRow: { flexDirection: 'row', paddingHorizontal: spacing.lgXl, borderBottomWidth: 1, borderBottomColor: colors.line },

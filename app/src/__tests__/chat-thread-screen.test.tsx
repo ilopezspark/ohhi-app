@@ -71,6 +71,9 @@ import { getSharedPrivateCard } from '../api/identity';
 import { listShareFeed } from '../chat/shareFeed';
 import { checkVideo, generateVideoPoster } from '../chat/video';
 import ChatThreadScreen from '../app/chat/[id]';
+import { StyleSheet } from 'react-native';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
+import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { GoneError, RefusedError, mapSupabaseError } from '../api/errors';
 
 const conversation = (overrides: Record<string, unknown> = {}) => ({
@@ -908,5 +911,73 @@ describe('private card share bubbles', () => {
     await fireEvent.press(await screen.findByTestId('share-bubble-press-share-card'));
     expect(router.push).toHaveBeenCalledWith('/me/private-card');
     expect(getSharedPrivateCard).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Layout: the heading clears the status bar, the composer rides the keyboard.
+// ---------------------------------------------------------------------------
+
+function renderWithInsets(top: number, bottom: number) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  return render(
+    <SafeAreaInsetsContext.Provider value={{ top, bottom, left: 0, right: 0 }}>
+      <QueryClientProvider client={client}>
+        <ChatThreadScreen />
+      </QueryClientProvider>
+    </SafeAreaInsetsContext.Provider>
+  );
+}
+
+describe('thread — layout', () => {
+  it('puts the back, photo and more buttons below the status bar, at the shared heading padding', async () => {
+    const screen = await renderWithInsets(40, 24);
+    await screen.findByTestId('thread-header-profile');
+    const strip = StyleSheet.flatten(screen.getByTestId('screen-header').props.style);
+    expect(strip.paddingTop).toBe(40 + 12);
+    expect(strip.paddingHorizontal).toBe(16);
+    expect(screen.getByTestId('thread-back')).toBeTruthy();
+    expect(screen.getByTestId('thread-overflow')).toBeTruthy();
+  });
+
+  it('opens the more menu under the heading, not at a fixed offset', async () => {
+    const screen = await renderWithInsets(40, 24);
+    await fireEvent.press(await screen.findByTestId('thread-overflow'));
+    const menu = StyleSheet.flatten(screen.getByTestId('thread-menu').props.style);
+    expect(menu.top).toBe(40 + 12 + 44 + 4);
+  });
+
+  it('keeps the bottom inset under the composer while the keyboard is down', async () => {
+    const screen = await renderWithInsets(40, 24);
+    await screen.findByTestId('composer');
+    expect(StyleSheet.flatten(screen.getByTestId('thread-composer-area').props.style).paddingBottom).toBe(24);
+    expect(StyleSheet.flatten(screen.getByTestId('thread-keyboard-spacer').props.style).height).toBe(0);
+  });
+
+  it('lifts the composer onto an open keyboard without adding the inset twice', async () => {
+    const mock = useReanimatedKeyboardAnimation as jest.Mock;
+    const previous = mock();
+    mock.mockReturnValue({ height: { value: -320 }, progress: { value: 1 } });
+    try {
+      const screen = await renderWithInsets(40, 24);
+      await screen.findByTestId('composer');
+      const area = StyleSheet.flatten(screen.getByTestId('thread-composer-area').props.style).paddingBottom;
+      const spacer = StyleSheet.flatten(screen.getByTestId('thread-keyboard-spacer').props.style).height;
+      // Everything below the composer is exactly the keyboard.
+      expect(area + spacer).toBe(320);
+      // The spacer comes after the composer and the list is flexible, so the list is what shrinks.
+      expect(StyleSheet.flatten(screen.getByTestId('thread-list').props.style).flex).toBe(1);
+    } finally {
+      mock.mockReturnValue(previous);
+    }
+  });
+
+  it('keeps the reply bar with the composer, above the spacer', async () => {
+    const screen = await renderWithInsets(40, 24);
+    await screen.findByTestId('composer');
+    const area = screen.getByTestId('thread-composer-area');
+    // The composer (and its reply accessory) render inside the inset-padded area.
+    expect(screen.getByTestId('composer-input')).toBeTruthy();
+    expect(area).toContainElement(screen.getByTestId('composer-input'));
   });
 });

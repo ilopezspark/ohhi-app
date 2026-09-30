@@ -1,4 +1,4 @@
-import { InvalidInputError } from '../api/errors';
+import { InvalidInputError, WORD_FILTER_LINE } from '../api/errors';
 
 /**
  * Migration 0015's profile fields (`docs/design/profile-redesign/brief.md`,
@@ -126,8 +126,21 @@ export function joinedMonthLabel(joinedMonth: string | null | undefined, now: Da
   return year === now.getFullYear() ? month : `${month} ${year}`;
 }
 
+/** Whether a failed save is the word filter's refusal (already mapped by `api/errors.ts`), so the caller can show it on the field. */
+export function isWordFilterError(error: unknown): boolean {
+  return error instanceof InvalidInputError && error.message === WORD_FILTER_COPY;
+}
+
 /** The generic line for a failed save, lowercase like the rest of the editor. */
 export const FIELD_ERROR_FALLBACK = "that didn't work.";
+
+/**
+ * The server's word filter refuses a free-text save with exactly `22023`
+ * `that text can't be used` and never says which word. The app shows this
+ * line on the field, keeps what was typed so it can be edited, and never
+ * echoes a term either.
+ */
+export const WORD_FILTER_COPY = WORD_FILTER_LINE;
 
 /**
  * The write RPCs' `22023` messages (brief, "Writes") -> the app's copy.
@@ -145,10 +158,43 @@ const FIELD_ERROR_COPY: Record<string, string> = {
   'unknown prompt': "one of those prompts isn't available anymore. pick another one.",
   'each answer must be 1-140 characters': `each answer needs 1 to ${PROMPT_ANSWER_MAX_LENGTH} characters.`,
   'a prompt can be answered once': 'each prompt can only be answered once.',
+  // Migration 0018 (docs/design/tags-about/contract.md).
+  "that text can't be used": WORD_FILTER_COPY,
+  'at most 10 tags': 'ten interests at most.',
+  'a tag can be picked once': 'each interest can only be picked once.',
+  'unknown tag': "one of those interests isn't offered anymore. pick another one.",
+  "a suggestion can't be blank": 'type a suggestion first.',
+  'a suggestion must be 40 characters or fewer': 'keep it to 40 characters.',
+  'letters and numbers only': 'letters and numbers only.',
+  'unknown category': "that category isn't offered. pick another one.",
+  'too many suggestions waiting': 'you already have a few suggestions waiting. try again once they have been looked at.',
+  'unknown program': "that program isn't offered anymore. pick another one.",
+  'a minor needs a major': 'pick a major before a minor.',
+  'the minor must differ from the major': 'your minor has to be different from your major.',
+  'a graduating term needs a year': 'pick a year to go with the term.',
+  "not sure yet can't have a term or year": "not sure yet can't have a term or year.",
+  'unknown work type': "that kind of work isn't offered. pick another one.",
+  'job title must be 48 characters or fewer': 'keep it to 48 characters.',
+  'at most 3 work hours': 'three at most.',
+  "part time and full time can't both be picked": "part time and full time can't both be picked.",
+  'work hours need a job': 'hours only go with a job.',
 };
 
+/** `pick at least N tags` (N is 1-3) and `graduating year must be between A and B` carry numbers, so they are matched, not looked up. */
+function patternedFieldError(serverMessage: string): string | null {
+  const pickAtLeast = /^pick at least (\d+) tags?$/.exec(serverMessage);
+  if (pickAtLeast) {
+    const n = Number(pickAtLeast[1]);
+    return n === 1 ? 'keep at least 1 interest.' : `keep at least ${n} interests.`;
+  }
+  const yearRange = /^graduating year must be between (\d{4}) and (\d{4})$/.exec(serverMessage);
+  if (yearRange) return `pick a year from ${yearRange[1]} to ${yearRange[2]}.`;
+  return null;
+}
+
 export function friendlyFieldError(serverMessage: string | null | undefined): string {
-  return (serverMessage && FIELD_ERROR_COPY[serverMessage]) || FIELD_ERROR_FALLBACK;
+  if (!serverMessage) return FIELD_ERROR_FALLBACK;
+  return FIELD_ERROR_COPY[serverMessage] ?? patternedFieldError(serverMessage) ?? FIELD_ERROR_FALLBACK;
 }
 
 /** What an editor shows for a failed field write: the mapped reason for bad input, else the generic line. */

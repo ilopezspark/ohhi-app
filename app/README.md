@@ -1354,6 +1354,9 @@ choose from library, take a photo, or remove (remove only offered when the slot 
 `setUserTags(selected)` to save — identical shape to `(onboarding)/tags.tsx`, just with its own
 Save button rather than a Continue/Skip footer.
 
+Superseded by migration 0018: tags are edited in the full-screen picker and saved through
+`set_my_tags` (see "Tags and about (migration 0018)" below).
+
 ### Status & grad year
 
 Two `Input`s (status line, ≤140 chars via `validateStatusLine`; grad year, numeric via
@@ -1908,6 +1911,9 @@ cross-cutting pieces the Me redesign left open.
 | `/profile-editor/photos` | `profile-editor/photos.tsx` | add, replace, remove, long-press drag / make first |
 | `/profile-editor/status` | `profile-editor/status.tsx` | writes into the editor draft |
 | `/profile-editor/about` | `profile-editor/about.tsx` | pronouns, i'm, `show on my profile` |
+| `/profile-editor/school-and-work` | `profile-editor/school-and-work.tsx` | the about section: major, minor, graduating, work (migration 0018) |
+| `/profile-editor/tags` | `profile-editor/tags.tsx` | the full-screen interest picker, writes into the draft |
+| `/interests` | `interests.tsx` | modal; the same picker, saves straight away (from the tags notice) |
 | `/profile-editor/private-card` | `profile-editor/private-card.tsx` | the four groups, hard nos last |
 | `/quick-status` | `quick-status.tsx` | modal from Me's status row; saves straight away |
 | `/settings/albums`, `/settings/albums/[id]` | unchanged | albums keep their routes |
@@ -2241,3 +2247,108 @@ loading older pages, re-asking on `UPDATE`, the optimistic read), `chat-reply-bu
 `badges-tabs.test.tsx`, `signout-badge.test.ts`, and additions to the chat list, chat api,
 realtime, media viewer, album story and Hi's tests. The new files are voice-linted.
 <!-- END: Replies and badges (migration 0017) -->
+
+<!-- BEGIN: Tags and about (migration 0018) -->
+## Tags and about (migration 0018)
+
+Decision 94. Contract: `docs/design/tags-about/contract.md`; owner rulings:
+`docs/design/tags-about/reconcile.md` (wins over `brief.md`). Tags are interests only (411 global
+tags in 18 categories, up to 10 in picked order); the major, minor, graduating term/year and work
+live in a structured `about` section; a word filter refuses some free text.
+
+### What 0018 broke, and the fix
+
+| Broken against the live migration | Now |
+| --- | --- |
+| Onboarding tag step: continue and skip both failed (direct `user_tags` writes are revoked, 42501); `complete_onboarding()` refuses fewer than 3 | the full-screen picker, min 3, max 10, no skip, saved through `set_my_tags` |
+| Editor tag save failed (42501); client cap of 3; a non-scrolling sheet of 407 chips | `/profile-editor/tags`, the same picker, saved through `set_my_tags` on the editor's `done` |
+| The major vanished (read from tags: hero pin line, basics card, Me identity line, what you two share) | read from `about.major.label` (`profile_card_for().about`, `my_about()`) |
+| Onboarding grad year allowed ±10 years; the server now refuses outside this year .. +8 | `onboarding/validation.ts` mirrors this year .. +8 |
+| Stale `types/database.ts` (`tag_category` enum gone) | updated by hand to the contract |
+
+Nothing writes `user_tags` directly any more (`tags-api.test.ts` and `api-owner-filter.test.ts`
+check it structurally).
+
+### API
+
+- `api/tags.ts`: `listTagCatalog()` (`tag_catalog()`: already campus-filtered and sorted),
+  `getUserTags()` (owner-filtered read, unchanged), `setMyTags(ids)` (`set_my_tags`, picked order,
+  stops more than 10 client-side), `suggestTag(label, category)` (the review queue, never the
+  profile), `MIN_TAGS`/`MAX_TAGS` (3/10) and `minTagsToSave(held)` = `min(3, held)` after
+  onboarding, mirroring the server so someone the migration left with 0-2 can keep, swap or add.
+- `api/about.ts`: `getMyAbout()`, `setMyAbout(patch)` (only changed keys; `profile/about.ts#aboutPatch`),
+  `listPrograms()` (active, `sort_order` then label).
+- `api/notices.ts`: `listUnseenNotices()` (owner-filtered, oldest first, unknown kinds skipped),
+  `dismissNotice(id)`.
+- `22023` messages are worded in `profile/fields.ts#friendlyFieldError` (lowercase, never echoing
+  input). The word filter's `that text can't be used` maps to `that text can't be used.` in
+  `api/errors.ts` for every caller (status line through `updateProfile`, place line, usual places,
+  prompts, job title, suggestions).
+- Query keys: `queryKeys.tagCatalog`, `queryKeys.me.aboutSection`, `.programs`, `.notices`
+  (`me.majorLabel` and `me/root/queries.ts#getMajorLabel` are gone).
+
+### The picker (`src/tags/`)
+
+`TagPicker.tsx` is the one component behind onboarding (`continue · N of 10`), the editor
+(`done · N of 10`) and `/interests`: a sticky tray of removable chips in picked order with a live
+counter (announced), a search across all categories (case-insensitive, inside labels) with an
+empty state offering `suggest a tag`, category sections with counts (first three open, the rest
+collapsed; all matches open while searching), the CTA disabled below the minimum, chips disabled
+at 10 with a quiet note, and `suggest a tag` at the bottom (`SuggestTagSheet.tsx`, an in-tree
+`Sheet` since it holds a text field). A virtualised `SectionList` (one item per open category)
+with memoised chips and a ref-stable toggle keeps a tap to one chip re-render; the body sits in a
+`KeyboardAvoidingView` so the search keyboard never covers the list or the CTA; the column is
+capped at 560 on wide screens. Chips are `togglebutton`s with selected state; section headers are
+headers wrapping a button with expanded state. Pure logic: `pickerModel.ts`.
+
+### About
+
+- `profile/about.ts`: the shape, tolerant parsing, the card rows (major with minor sub-line;
+  `graduating spring 2028` / `graduating 2028` / `not sure yet`; `food service · barista…` with
+  hours as a sub-line; `rather not say` never shown as a value), the editor summary, the patch
+  builder and the hours rules. Work options come from the generated enum lists in
+  `types/database.ts`, program and tag labels from the server: the owner's data, never typed
+  into linted copy.
+- Public profile (`profile/view/sections.tsx`): the `about` card sits above `the basics`; the
+  basics now holds only pronouns and orientation (when public) and hides when empty; nothing
+  shows twice. The hero keeps `{place or tier} · {major} '{yy}`; with `not sure yet` the year is
+  null, so it is left out.
+- What you two share: `you're both in {major}` (compared by program id, from both about
+  sections) then `you're both into {tag}`. Shared `work_type` is not built (not confirmed); the
+  slot is noted in `model.ts#sharedLines`.
+- Editor: the edit tab's `about you` section (right after `here for`, above interests) has two
+  rows named for what they hold: `school and work` (`/profile-editor/school-and-work`, with a
+  summary line) and `pronouns and orientation` (`/profile-editor/about`, unchanged route, so
+  `/settings/identity` still redirects there). The about editor is part of the draft: `save`
+  writes into it, the editor's `done` sends a patch through `set_my_about`. Preview renders the
+  draft about card through the shared `ProfileView`. No completion weight, no nag.
+- Onboarding: the major that used to be picked as a tag is offered in the same place, an
+  optional row above the categories on the tag step, from the campus program list.
+
+### Word filter, notice, completion, layout
+
+- Refusals are shown on the field, with the text kept: the editor keeps a per-field
+  `fieldErrors` (under each row on the edit tab and in each pushed editor, cleared once that field
+  is edited); quick status, onboarding status and the suggest sheet show it inline too.
+- `notices/TagsChangedNotice.tsx`, mounted over the tabs (active users only): one dismissible
+  sheet for an unseen `tags_changed` notice, listing what did not carry over and where the major
+  went, with `pick interests` (opens `/interests`, which saves straight away) and `not now`; both
+  call `dismiss_notice`. A failed read or dismiss never blocks anything.
+- Completion (`profile/completion.ts`): same weights; `tags` counts as done at 3 or more
+  (`tagCount` replaces `hasTags`).
+- Row cards in the editor (and the private card's `shared with` list) use the same 16 inset as
+  Me and settings, so rows with and without a leading icon share one left edge.
+- Headings: the profile editor, its sub-editors, the picker and the onboarding frame use the
+  shared `ui/useHeaderInsets` / `ui/screenInsets` values (the Me screen's heading padding).
+
+### Tests
+
+`tags-api.test.ts` (catalog, `set_my_tags`, suggestions, error copy, no direct `user_tags` write
+anywhere), `tags-picker-model.test.ts`, `tags-picker.test.tsx` (sections, search, tray, counter,
+CTA, cap, minimum, suggest sheet), `profile-about.test.ts`, `about-notices-api.test.ts` (about,
+programs, notices, the word filter everywhere), `tags-about-screens.test.tsx` (onboarding step,
+school and work editor, the editor's tags route, the notice), and updates to the draft, preview,
+profile view/model, card screen, Me data, completion, validation, owner-filter and voice-rules
+suites. The new files are voice-linted; the catalog, program and work labels are exempt by
+construction (they are never literals in linted files).
+<!-- END: Tags and about (migration 0018) -->

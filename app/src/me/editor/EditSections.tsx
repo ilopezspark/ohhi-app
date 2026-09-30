@@ -1,11 +1,11 @@
-import { useState } from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { Button, Chip, ChipGroup, RowCard, SectionLabel, SheetModal, SettingsRow, Text } from '../../ui';
+import { Chip, ChipGroup, RowCard, SectionLabel, SettingsRow, Text } from '../../ui';
 import { ChevronRightIcon, PencilIcon, PlusIcon } from '../../ui/icons';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
-import { ChipPicker } from '../../settings/ChipPicker';
-import { sectionWeight, type ProfileCompletionInput } from '../../profile/completion';
+import { MAX_TAGS } from '../../api/tags';
+import { aboutSummary } from '../../profile/about';
+import { sectionWeight, TAGS_COMPLETE_AT, type ProfileCompletionInput } from '../../profile/completion';
 import { PLACE_LINE_HOURS, PROMPTS_MAX } from '../../profile/fields';
 import { GOAL_LABELS, OFFERED_GOAL_OPTIONS } from '../../profile/goalLabels';
 import { colors, radii, spacing } from '../../theme/tokens';
@@ -13,7 +13,7 @@ import { usePrivateCardSummary, useAboutSummary } from '../card/summary';
 import { useProfileEditorDraftContext } from './ProfileEditorDraftContext';
 import { useMyPhotos } from './useMyPhotos';
 import type { UserGoal } from './useProfileEditorDraft';
-import type { UseProfileEditorDraftResult } from './useProfileEditorDraft';
+import type { DraftField, UseProfileEditorDraftResult } from './useProfileEditorDraft';
 
 /** Brief's literal 3-up photo-tile radius (18) — no exact existing token (`radii.tile` is 20, `radii.lg` is 22). */
 const PHOTO_TILE_RADIUS = 18;
@@ -23,8 +23,24 @@ function completionInputFrom(draftState: UseProfileEditorDraftResult): ProfileCo
     photoCount: draftState.photoCount,
     hasStatus: draftState.draft.statusLine.trim().length > 0,
     hasHereFor: draftState.draft.goals.length > 0,
-    hasTags: draftState.draft.tagIds.length > 0,
+    tagCount: draftState.draft.tagIds.length,
   };
+}
+
+/**
+ * A field's last refusal (e.g. the word filter's `that text can't be used.`),
+ * shown right under that field's row. The draft keeps the text, so the
+ * person opens the row and edits it; the line clears once they do.
+ */
+function FieldError({ field }: { field: DraftField }) {
+  const { fieldErrors } = useProfileEditorDraftContext();
+  const message = fieldErrors[field];
+  if (!message) return null;
+  return (
+    <Text variant="helper" color={colors.danger} testID={`editor-field-error-${field}`}>
+      {message}
+    </Text>
+  );
 }
 
 function PhotosSection() {
@@ -140,6 +156,7 @@ function StatusSection() {
           <ChevronRightIcon size={18} color={colors.inkFaint} />
         </Pressable>
       </RowCard>
+      <FieldError field="statusLine" />
     </View>
   );
 }
@@ -157,6 +174,7 @@ function FieldRow({
   text,
   placeholder,
   route,
+  field,
 }: {
   testID: string;
   label: string;
@@ -164,6 +182,7 @@ function FieldRow({
   text: string | null;
   placeholder: string;
   route: string;
+  field: DraftField;
 }) {
   return (
     <View style={styles.section}>
@@ -182,6 +201,7 @@ function FieldRow({
           <ChevronRightIcon size={18} color={colors.inkFaint} />
         </Pressable>
       </RowCard>
+      <FieldError field={field} />
     </View>
   );
 }
@@ -197,6 +217,7 @@ function PlaceSection() {
       text={place.length > 0 ? place : null}
       placeholder="add where you are right now"
       route="/profile-editor/place"
+      field="placeLine"
     />
   );
 }
@@ -212,6 +233,7 @@ function PromptsSection() {
       text={count > 0 ? draft.prompts.map((prompt) => prompt.question).join(' · ') : null}
       placeholder="answer a prompt or two"
       route="/profile-editor/prompts"
+      field="prompts"
     />
   );
 }
@@ -227,6 +249,7 @@ function AroundCampusSection() {
       text={count > 0 ? draft.usualPlaces.join(', ') : null}
       placeholder="add where you usually end up"
       route="/profile-editor/usual-places"
+      field="usualPlaces"
     />
   );
 }
@@ -265,69 +288,96 @@ function HereForSection() {
   );
 }
 
+/**
+ * Interests (migration 0018): the picked tags as chips, in picked order,
+ * plus `change`, which opens the full-screen picker
+ * (`/profile-editor/tags`), a pushed screen with its own scrolling,
+ * category-sectioned list (the old in-sheet picker could not scroll). With
+ * none picked there is a clear line and the same action.
+ */
 function TagsSection() {
   const draftState = useProfileEditorDraftContext();
   const weight = sectionWeight('tags', completionInputFrom(draftState));
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const count = draftState.draft.tagIds.length;
+  const labels = new Map(draftState.catalog.map((tag) => [tag.id, tag.label]));
 
-  function tagLabel(id: string): string {
-    return draftState.campusTags.find((t) => t.id === id)?.label ?? id;
+  function openPicker() {
+    router.push('/profile-editor/tags' as never);
   }
 
   return (
     <View style={styles.section}>
       <SectionLabel
         testID="editor-section-tags"
-        label="tags"
+        label="interests"
         signalDot={weight > 0}
         weight={weight > 0 ? weight : undefined}
-        note={`${draftState.draft.tagIds.length} of 3`}
+        note={`${count} of ${MAX_TAGS}`}
       />
       <RowCard>
-        <View style={styles.chipRow} testID="editor-tags-selected">
-          {draftState.draft.tagIds.map((id) => (
-            <Chip key={id} label={tagLabel(id)} selected tone="tint" />
-          ))}
-          <Chip testID="editor-tags-change" label="change" tone="action" onPress={() => setPickerOpen(true)} />
+        <View style={styles.tagsBody}>
+          {count === 0 ? (
+            <Text variant="bodyMedium" color={colors.inkSoft} testID="editor-tags-empty">
+              pick at least three interests. they show on your profile in the order you pick them.
+            </Text>
+          ) : count < TAGS_COMPLETE_AT ? (
+            <Text variant="micro" color={colors.inkSoft} testID="editor-tags-few">
+              three or more helps people find something to say hi about.
+            </Text>
+          ) : null}
+          <View style={styles.chipRow} testID="editor-tags-selected">
+            {draftState.draft.tagIds.map((id) => (
+              <Chip key={id} label={labels.get(id) ?? 'retired tag'} selected tone="tint" />
+            ))}
+            <Chip
+              testID="editor-tags-change"
+              label={count === 0 ? 'pick interests' : 'change'}
+              tone="action"
+              onPress={openPicker}
+            />
+          </View>
         </View>
       </RowCard>
-
-      {/* A `SheetModal`, not an in-tree `Sheet`: this section sits inside
-          the editor's ScrollView, so an in-tree sheet's dim would only cover
-          the tags section itself. */}
-      {pickerOpen ? (
-        <SheetModal testID="editor-tags-sheet" onDismiss={() => setPickerOpen(false)}>
-          <Text variant="titleLg">tags</Text>
-          <ChipPicker
-            testID="editor-tags-picker"
-            options={draftState.campusTags.map((t) => t.id)}
-            selected={draftState.draft.tagIds}
-            maxItems={3}
-            labelFor={tagLabel}
-            onChange={draftState.setTagIds}
-          />
-          <Button testID="editor-tags-sheet-done" label="done" onPress={() => setPickerOpen(false)} />
-        </SheetModal>
-      ) : null}
+      <FieldError field="tagIds" />
     </View>
   );
 }
 
+/**
+ * `about you` (migration 0018, and the owner's note that there was no
+ * place to add a major, graduating year or work): two rows, each named for
+ * what it holds. `school and work` opens the about editor and shows a
+ * summary of what is set; `pronouns and orientation` is the existing
+ * opt-in screen (`/profile-editor/about`). It sits high on the tab, right
+ * after `here for`, and the about card it feeds sits above `the basics` on
+ * the profile. No completion weight and no signal dot: optional, never
+ * nagged.
+ */
 function AboutSection() {
+  const draftState = useProfileEditorDraftContext();
   const { isPublic } = useAboutSummary();
+  const summary = aboutSummary(draftState.draft.about);
 
   return (
     <View style={styles.section}>
       <SectionLabel testID="editor-section-about" label="about you" />
-      <RowCard>
+      <RowCard style={styles.cardInset}>
+        <SettingsRow
+          testID="editor-school-work-row"
+          title="school and work"
+          subtitle={summary ?? 'add your major, graduating term and work'}
+          accessory={{ kind: 'chevron' }}
+          onPress={() => router.push('/profile-editor/school-and-work' as never)}
+        />
         <SettingsRow
           testID="editor-about-row"
-          title="about you"
+          title="pronouns and orientation"
           subtitle={isPublic ? 'shown on your profile' : 'hidden'}
           accessory={{ kind: 'chevron' }}
           onPress={() => router.push('/profile-editor/about' as never)}
         />
       </RowCard>
+      <FieldError field="about" />
     </View>
   );
 }
@@ -341,7 +391,7 @@ function PrivateCardSection() {
           completion weight and nobody should be nudged into filling it in
           (brief, "Completion math"). */}
       <SectionLabel testID="editor-section-private-card" label="private card" note="never on the grid" />
-      <RowCard>
+      <RowCard style={styles.cardInset}>
         <SettingsRow
           testID="editor-private-card-row"
           icon="lock"
@@ -359,12 +409,14 @@ function PrivateCardSection() {
  * `ProfileEditor`'s Edit tab body (`docs/design/me-redesign/brief.md`,
  * "ProfileEditor — Edit tab"): the six sections, in the artboard's order,
  * plus the profile redesign's three (where you are, next to status because
- * it is also "right now"; prompts and around campus after tags).
+ * it is also "right now"; prompts and around campus after interests), and
+ * migration 0018's `about you` right after `here for`, above interests, so
+ * school and work is not buried at the bottom.
  * Reads/writes the shared draft (`ProfileEditorDraftContext`) for status,
- * "here for", tags and the three new fields; photos apply immediately (not draft — see
- * `profile-editor/photos.tsx`); about-you/private-card are pure navigation
- * rows into the other agent's own screens, their subtitles sourced from
- * `me/card/summary.ts`'s two hooks.
+ * "here for", interests, the about section and the 0015 fields; photos
+ * apply immediately (not draft — see `profile-editor/photos.tsx`);
+ * pronouns/private card are navigation rows into their own screens, their
+ * subtitles sourced from `me/card/summary.ts`'s two hooks.
  */
 export function EditSections() {
   return (
@@ -373,10 +425,10 @@ export function EditSections() {
       <StatusSection />
       <PlaceSection />
       <HereForSection />
+      <AboutSection />
       <TagsSection />
       <PromptsSection />
       <AroundCampusSection />
-      <AboutSection />
       <PrivateCardSection />
     </View>
   );
@@ -440,5 +492,9 @@ const styles = StyleSheet.create({
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.mdLg, padding: spacing.lgXl },
   statusText: { flex: 1 },
   chipGroupPadding: { padding: spacing.lgXl },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.smMd, padding: spacing.lgXl },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.smMd },
+  tagsBody: { padding: spacing.lgXl, gap: spacing.mdLg },
+  // The same 16 inset as every other row card (Me, settings), so rows with
+  // and without a leading icon line up on one left edge.
+  cardInset: { paddingHorizontal: spacing.lgXl },
 });

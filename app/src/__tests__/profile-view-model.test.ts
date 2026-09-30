@@ -5,63 +5,51 @@ import {
   majorAndYear,
   metaParts,
   pinLine,
-  sharedTagLines,
+  sharedLines,
   sparseNotice,
-  splitMajor,
   tierWordFor,
 } from '../profile/view/model';
 
+// Migration 0018: every tag is an interest; the major is the about section's.
 const CATALOG = [
-  { id: 't-nursing', label: 'nursing', category: 'major' },
-  { id: 't-business', label: 'business', category: 'major' },
-  { id: 't-gym', label: 'gym', category: 'interest' },
-  { id: 't-coffee', label: 'coffee', category: 'interest' },
-  { id: 't-crime', label: 'true crime', category: 'interest' },
+  { id: 't-gym', label: 'gym' },
+  { id: 't-coffee', label: 'coffee' },
+  { id: 't-crime', label: 'true crime' },
 ];
 
+const NURSING = { id: 'p-nursing', label: 'nursing' };
+
 describe('profile view model', () => {
-  describe('splitMajor', () => {
-    it('pulls the first major-category label out of the tags, keeping the rest in order', () => {
-      expect(splitMajor(['gym', 'nursing', 'coffee'], CATALOG)).toEqual({ majorLabel: 'nursing', otherTags: ['gym', 'coffee'] });
-    });
-
-    it('only takes one major; a second stays a chip', () => {
-      expect(splitMajor(['nursing', 'business'], CATALOG)).toEqual({ majorLabel: 'nursing', otherTags: ['business'] });
-    });
-
-    it('matches labels case-insensitively', () => {
-      expect(splitMajor(['Nursing'], CATALOG).majorLabel).toBe('Nursing');
-    });
-
-    it('with no catalog, nothing is a major and every tag stays a chip', () => {
-      expect(splitMajor(['nursing', 'gym'], [])).toEqual({ majorLabel: null, otherTags: ['nursing', 'gym'] });
-    });
-  });
-
-  describe('sharedTagLines', () => {
-    it('returns one line per tag both people have, in their order', () => {
-      expect(sharedTagLines(['coffee', 'gym'], ['gym', 'true crime', 'coffee'])).toEqual([
+  describe('sharedLines', () => {
+    it('returns one line per interest both people have, in their order', () => {
+      expect(sharedLines({ myLabels: ['coffee', 'gym'], theirLabels: ['gym', 'true crime', 'coffee'] })).toEqual([
         "you're both into gym",
         "you're both into coffee",
       ]);
     });
 
     it('is empty when nothing is shared, which hides the card', () => {
-      expect(sharedTagLines(['gym'], ['coffee'])).toEqual([]);
-      expect(sharedTagLines([], ['coffee'])).toEqual([]);
+      expect(sharedLines({ myLabels: ['gym'], theirLabels: ['coffee'] })).toEqual([]);
+      expect(sharedLines({ myLabels: [], theirLabels: ['coffee'] })).toEqual([]);
     });
 
     it('ignores case and duplicates', () => {
-      expect(sharedTagLines(['GYM'], ['gym', 'Gym'])).toEqual(["you're both into gym"]);
+      expect(sharedLines({ myLabels: ['GYM'], theirLabels: ['gym', 'Gym'] })).toEqual(["you're both into gym"]);
     });
 
-    it('needs no article for any label, and reads the major as a field of study', () => {
-      expect(sharedTagLines(['library', 'night classes', 'nursing'], ['library', 'night classes', 'nursing'], 'nursing')).toEqual([
-        "you're both into library",
-        "you're both into night classes",
-        "you're both in nursing",
-      ]);
-      expect(sharedTagLines(['gym'], ['gym']).join(' ')).not.toMatch(/tagged|the gym/);
+    it('puts the shared major first, from about (by program id), read as a field of study', () => {
+      expect(
+        sharedLines({ myLabels: ['gym'], theirLabels: ['gym'], myMajor: NURSING, theirMajor: { id: 'p-nursing', label: 'nursing' } })
+      ).toEqual(["you're both in nursing", "you're both into gym"]);
+    });
+
+    it('no shared major line when the majors differ or either is unset', () => {
+      expect(sharedLines({ myLabels: [], theirLabels: [], myMajor: NURSING, theirMajor: { id: 'p-cs', label: 'cs' } })).toEqual([]);
+      expect(sharedLines({ myLabels: [], theirLabels: [], myMajor: null, theirMajor: NURSING })).toEqual([]);
+    });
+
+    it('never words a tag with an article', () => {
+      expect(sharedLines({ myLabels: ['gym'], theirLabels: ['gym'] }).join(' ')).not.toMatch(/tagged|the gym/);
     });
   });
 
@@ -129,9 +117,11 @@ describe('profile view model', () => {
         photos: ['p0', 'p1'],
         tag_labels: ['nursing', 'gym', 'coffee'],
         goals: ['friends', 'study'],
+        about: { major: NURSING, minor: null, graduating_term: 'spring', graduating_year: 2027, graduating_unsure: false, work_type: null, job_title: null, work_hours: [] },
       },
       catalog: CATALOG,
-      myTagIds: ['t-gym', 't-nursing', 'unknown'],
+      myTagIds: ['t-gym', 'unknown'],
+      myAbout: { major: NURSING, minor: null, graduatingTerm: null, graduatingYear: null, graduatingUnsure: false, workType: null, jobTitle: null, workHours: [] },
       identity: { pronouns: 'she/her', orientation: [] },
       campusShort: 'CLC',
       photoUrls: { p0: 'https://example.test/0.jpg' },
@@ -141,8 +131,10 @@ describe('profile view model', () => {
       userId: 'u-maya',
       firstName: 'maya',
       statusLine: null,
+      // The major comes from about; every tag label is an interest chip,
+      // even one that happens to read like a program.
       majorLabel: 'nursing',
-      tagLabels: ['gym', 'coffee'],
+      tagLabels: ['nursing', 'gym', 'coffee'],
       sharedLines: ["you're both in nursing", "you're both into gym"],
       pronouns: 'she/her',
       orientation: [],
@@ -178,6 +170,9 @@ describe('profile view model', () => {
     expect(data.goals).toEqual([]);
     expect(data.photoPaths).toEqual([]);
     expect(data.sharedLines).toEqual([]);
+    // no about on the row: no major, no about card
+    expect(data.majorLabel).toBeNull();
+    expect(data.about).toBeNull();
     // migration 0015 fields absent from the row: all empty, nothing invented
     expect(data.placeLine).toBeNull();
     expect(data.prompts).toEqual([]);

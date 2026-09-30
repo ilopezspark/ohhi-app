@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listBlockedUsers, unblockUser } from '../../api/blocks';
 import { mapSupabaseError } from '../../api/errors';
-import { Header, RowCard, SettingsRow, Text } from '../../ui';
+import { ScreenHeader, RowCard, SettingsRow, Text } from '../../ui';
 import { displayName } from '../../ui/displayName';
 import { colors, spacing } from '../../theme/tokens';
 import { queryKeys } from '../../me/queryKeys';
@@ -36,10 +35,9 @@ export default function BlockedScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <View style={styles.safe}>
+      <ScreenHeader title="blocked" titleSize={26} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={styles.scroll} testID="blocked-screen">
-        <Header title="blocked" titleSize={26} onBack={() => router.back()} />
-
         {isLoading ? (
           <View style={styles.center} testID="blocked-loading">
             <ActivityIndicator size="large" color={colors.ink} />
@@ -68,13 +66,13 @@ export default function BlockedScreen() {
           </Text>
         ) : null}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.mdLg, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
   center: { paddingVertical: spacing.huge, alignItems: 'center' },
   cardPadding: { paddingHorizontal: spacing.lgXl },
 });

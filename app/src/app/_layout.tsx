@@ -11,6 +11,7 @@ import {
   Outfit_800ExtraBold,
 } from '@expo-google-fonts/outfit';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { ThemeProvider } from '../theme';
 import { touchActivity } from '../api/presence';
 import { wireQueryLifecycle } from '../query/lifecycle';
@@ -80,36 +81,43 @@ export default function RootLayout() {
     return null;
   }
 
+  // `KeyboardProvider` (react-native-keyboard-controller, in Expo Go): the
+  // keyboard's height, frame by frame, for bars that sit on the keyboard
+  // (`ui/KeyboardSpacer.tsx`). It sees the app is edge-to-edge and leaves the
+  // window's insets alone.
   return (
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(auth)" />
-          <Stack.Screen name="(onboarding)" />
-          <Stack.Screen name="(tabs)" />
-          {/* The profile redesign is full-bleed: its own back button sits on
-              the photo, so the stack header is off. */}
-          <Stack.Screen name="profile/[id]" />
+    <KeyboardProvider>
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(onboarding)" />
+            <Stack.Screen name="(tabs)" />
+            {/* The profile redesign is full-bleed: its own back button sits on
+                the photo, so the stack header is off. */}
+            <Stack.Screen name="profile/[id]" />
 
-          {/* Album stories (`albums/StoryViewer.tsx`): fade in like a story
-              rather than sliding in like a page, and no iOS edge swipe back,
-              which would fight the story's own drag to the previous photo
-              (close is the x, a downward drag, or hardware back). */}
-          <Stack.Screen name="chat/[id]/album/[albumId]" options={{ animation: 'fade', gestureEnabled: false }} />
-          <Stack.Screen name="settings/albums/[id]" options={{ animation: 'fade', gestureEnabled: false }} />
+            {/* Album stories (`albums/StoryViewer.tsx`): fade in like a story
+                rather than sliding in like a page, and no iOS edge swipe back,
+                which would fight the story's own drag to the previous photo
+                (close is the x, a downward drag, or hardware back). */}
+            <Stack.Screen name="chat/[id]/album/[albumId]" options={{ animation: 'fade', gestureEnabled: false }} />
+            <Stack.Screen name="settings/albums/[id]" options={{ animation: 'fade', gestureEnabled: false }} />
 
-          {/* Me redesign (docs/design/me-redesign/brief.md, ruling 11): the
-              profile editor is presented modally over the tabs; QuickStatus is
-              its own standalone modal from Me's status row. Both need
-              `presentation: 'modal'` set here — it can't be set from inside
-              the nested route itself. */}
-          <Stack.Screen name="profile-editor" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="quick-status" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="restricted" />
-          <Stack.Screen name="+not-found" />
-        </Stack>
-      </QueryClientProvider>
-    </ThemeProvider>
+            {/* Me redesign (docs/design/me-redesign/brief.md, ruling 11): the
+                profile editor is presented modally over the tabs; QuickStatus is
+                its own standalone modal from Me's status row. Both need
+                `presentation: 'modal'` set here — it can't be set from inside
+                the nested route itself. */}
+            <Stack.Screen name="profile-editor" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="quick-status" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="interests" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="restricted" />
+            <Stack.Screen name="+not-found" />
+          </Stack>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </KeyboardProvider>
   );
 }

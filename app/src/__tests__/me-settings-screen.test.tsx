@@ -171,3 +171,12 @@ describe('SettingsScreen', () => {
     expect(getByText(/purges the old account for good and starts you fresh/)).toBeTruthy();
   });
 });
+
+describe('settings — heading', () => {
+  it('has a back arrow that goes back (it was a bare circle)', async () => {
+    mockData();
+    const { getByLabelText } = await renderScreen();
+    await fireEvent.press(getByLabelText('Back'));
+    expect(router.back).toHaveBeenCalled();
+  });
+});

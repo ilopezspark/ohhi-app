@@ -1,5 +1,4 @@
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getMyCard } from '../../api/identityWrite';
@@ -13,7 +12,7 @@ import { listPrivateCardSharedWith, type SharedWithPerson } from '../../me/card/
 import { relativeSentLabel } from '../../me/card/relativeTime';
 import { useRefetchOnFocus } from '../../query/gone';
 import { tintForPhoto } from '../../photos/tint';
-import { Avatar, Button, Chip, EmptyState, Header, RowCard, SectionLabel, Text } from '../../ui';
+import { Avatar, Button, Chip, EmptyState, ScreenHeader, RowCard, SectionLabel, Text } from '../../ui';
 import { LockIcon } from '../../ui/icons';
 import { displayName } from '../../ui/displayName';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
@@ -74,24 +73,23 @@ export default function PrivateCardScreen() {
   const revokeError = revokeMutation.isError ? mapSupabaseError(revokeMutation.error).message : null;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <View style={styles.safe}>
+      <ScreenHeader
+        title="private card"
+        titleSize={26}
+        onBack={() => router.back()}
+        right={
+          <Text
+            testID="private-card-edit-link"
+            variant="rowLabel"
+            color={colors.signal}
+            onPress={() => router.push('/profile-editor/private-card' as never)}
+          >
+            edit
+          </Text>
+        }
+      />
       <ScrollView contentContainerStyle={styles.container} testID="private-card-screen">
-        <Header
-          title="private card"
-          titleSize={26}
-          onBack={() => router.back()}
-          right={
-            <Text
-              testID="private-card-edit-link"
-              variant="rowLabel"
-              color={colors.signal}
-              onPress={() => router.push('/profile-editor/private-card' as never)}
-            >
-              edit
-            </Text>
-          }
-        />
-
         <View style={styles.explainer} testID="private-card-explainer">
           <LockIcon size={20} color={colors.ink} />
           <Text variant="bodyMedium" color={colors.ink} style={styles.explainerText}>
@@ -125,7 +123,7 @@ export default function PrivateCardScreen() {
 
         <SectionLabel label="shared with" style={styles.sectionSpacing} />
         {sharedWith.length > 0 ? (
-          <RowCard testID="private-card-shared-with">
+          <RowCard testID="private-card-shared-with" style={styles.cardInset}>
             {sharedWith.map((person) => (
               <View key={person.shareId} style={styles.sharedRow} testID={`private-card-shared-${person.shareId}`}>
                 <Avatar tint={tintForPhoto(person.userId, 0)} size="md" />
@@ -156,14 +154,14 @@ export default function PrivateCardScreen() {
           </Text>
         ) : null}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  container: { paddingHorizontal: spacing.lgXl, paddingBottom: spacing.huge, gap: spacing.mdLg },
+  container: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.mdLg, paddingBottom: spacing.huge, gap: spacing.mdLg },
   explainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -181,6 +179,8 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   empty: { flex: 0, paddingVertical: spacing.xxl },
+  // The 16 inset every other row card uses, so the avatars do not sit on the card's edge.
+  cardInset: { paddingHorizontal: spacing.lgXl },
   sharedRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.mdLg, paddingVertical: spacing.mdLg },
   sharedText: { flex: 1, gap: 2 },
 });

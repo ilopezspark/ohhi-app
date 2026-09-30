@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { chatsTabLabel, formatBadge, hisTabLabel, refreshBadges } from '../../badges/badgeCounts';
 import { useBadgeCounts } from '../../badges/useBadgeCounts';
 import { tabBarBadgeStyle, tabBarScreenOptions, TabBarIcon } from '../../ui/TabBar';
+import { TagsChangedNotice } from '../../notices/TagsChangedNotice';
 
 /**
  * All four tabs (`docs/app-social-plan.md`, architecture plan §2's screen
@@ -32,7 +33,10 @@ export default function TabsLayout() {
   const unreadChats = counts?.unreadChats ?? 0;
   const hisWaiting = counts?.hisWaiting ?? 0;
 
+  // The one-time tags notice (migration 0018) sits over the tabs, so it
+  // only ever shows to an active user and never blocks anything.
   return (
+    <>
     <Tabs screenOptions={tabBarScreenOptions} screenListeners={{ focus: () => refreshBadges(queryClient) }}>
       <Tabs.Screen
         name="grid"
@@ -70,5 +74,7 @@ export default function TabsLayout() {
         options={{ title: 'me', tabBarIcon: ({ color }) => <TabBarIcon name="me" color={color as string} /> }}
       />
     </Tabs>
+    <TagsChangedNotice />
+    </>
   );
 }

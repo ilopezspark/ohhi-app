@@ -19,6 +19,7 @@ import {
 import { Button, Chip, Input, KeyboardScrollView, Sheet, Text } from '../../ui';
 import { LockIcon } from '../../ui/icons';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
+import { HEADER_TOP_GAP } from '../../ui/screenInsets';
 
 const EMPTY_CARD: CardPutPayload = { into: [], safer_sex: [], kinks: [], hard_nos: [] };
 const CURRENT_YEAR = new Date().getFullYear();
@@ -341,7 +342,8 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   container: { paddingHorizontal: spacing.lgXl, paddingBottom: spacing.huge, gap: spacing.lgXl },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.mdLg },
+  // The Me screen's heading padding (owner ruling): the shared 12 below the status bar.
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.mdLg, paddingTop: HEADER_TOP_GAP },
   headerTitle: { flex: 1, textAlign: 'center', fontSize: 18 },
   explainer: {
     flexDirection: 'row',

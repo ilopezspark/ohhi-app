@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { Badge, Button, Text } from '../../ui';
+import { Badge, Button, Text, useHeaderInsets } from '../../ui';
 import { colors, spacing } from '../../theme/tokens';
 
 /**
@@ -30,8 +30,11 @@ export default function WelcomeScreen() {
     router.push('/(auth)/email' as never);
   }
 
+  // The design's 64 top, but never closer to the status bar than the shared
+  // heading padding (a tall status bar or a punch-hole camera).
+  const { top } = useHeaderInsets();
   return (
-    <View style={styles.container} testID="welcome-screen">
+    <View style={[styles.container, { paddingTop: Math.max(WELCOME_TOP, top) }]} testID="welcome-screen">
       <Text variant="wordmark" style={styles.wordmark}>
         ohhi
       </Text>
@@ -75,11 +78,12 @@ export default function WelcomeScreen() {
   );
 }
 
+const WELCOME_TOP = 64;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.paper,
-    paddingTop: 64,
     paddingHorizontal: spacing.xxl,
     paddingBottom: spacing.huge,
   },

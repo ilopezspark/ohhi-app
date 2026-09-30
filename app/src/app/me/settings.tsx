@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import Constants from 'expo-constants';
 import { deleteMyAccount } from '../../api/account';
 import { mapSupabaseError } from '../../api/errors';
 import { signOutAndReset } from '../../settings/signOut';
-import { Header, PillButton, RowCard, SectionLabel, SettingsRow, Text, VerificationPill } from '../../ui';
+import { ScreenHeader, PillButton, RowCard, SectionLabel, SettingsRow, Text, VerificationPill } from '../../ui';
 import { ChevronRightIcon } from '../../ui/icons';
 import { colors, radii, spacing } from '../../theme/tokens';
 import { useSettingsData } from '../../me/settings/useSettingsData';
@@ -74,10 +73,9 @@ export default function SettingsScreen() {
   const campusShort = meData?.campus_slug ? meData.campus_slug.toUpperCase() : '';
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']} testID="settings-screen">
+    <View style={styles.safe} testID="settings-screen">
+      <ScreenHeader title="settings" titleSize={28} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Header title="settings" titleSize={28} onBack={() => router.back()} />
-
         <View style={styles.section}>
           <SectionLabel label="account" />
           <RowCard style={styles.cardPadding}>
@@ -266,13 +264,13 @@ export default function SettingsScreen() {
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.mdLg, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
   section: { gap: spacing.smMd },
   cardPadding: { paddingHorizontal: spacing.lgXl },
   footerActions: { gap: spacing.mdLg, alignItems: 'center', marginTop: spacing.smMd },

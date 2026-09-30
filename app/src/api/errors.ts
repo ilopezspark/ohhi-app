@@ -61,6 +61,18 @@ const REFUSAL_MESSAGE = 'not allowed';
 const GONE_MESSAGES = new Set(['conversation not found', 'hi not found']);
 
 /**
+ * Migration 0018's word filter: every free-text save it covers (status line,
+ * place line, usual places, prompt answers, job title, tag suggestions) is
+ * refused with exactly this `22023` message, which never echoes the text.
+ * Mapped here, for every caller, to the app's own line (the same text as
+ * `profile/fields.ts#WORD_FILTER_COPY`, kept literal here so this module
+ * stays free of UI imports).
+ */
+const INVALID_INPUT_CODE = '22023';
+const WORD_FILTER_MESSAGE = "that text can't be used";
+export const WORD_FILTER_LINE = "that text can't be used.";
+
+/**
  * Maps a raw Supabase/Postgres error to one of the client-side error types
  * above. `src/api/*.ts` calls this on every RPC/table error so no screen ever
  * branches on `error.message` to infer *why* a call failed — that
@@ -91,6 +103,10 @@ export function mapSupabaseError(
 
   if (message !== undefined && GONE_MESSAGES.has(message)) {
     return new GoneError();
+  }
+
+  if (code === INVALID_INPUT_CODE && message === WORD_FILTER_MESSAGE) {
+    return new InvalidInputError(WORD_FILTER_LINE);
   }
 
   return new UnknownError(error);

@@ -12,6 +12,11 @@ export * from './Sheet';
 export * from './Banner';
 export * from './TabBar';
 export * from './Header';
+// Shared heading padding (owner ruling, 29 September 2026): every screen's
+// heading matches the Me screen's.
+export * from './ScreenHeader';
+export * from './useHeaderInsets';
+export * from './screenInsets';
 export * from './EmptyState';
 export * from './Toggle';
 export * from './icons';

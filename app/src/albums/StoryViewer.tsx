@@ -6,7 +6,6 @@ import {
   BackHandler,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
   PanResponder,
   Platform,
   Pressable,
@@ -18,9 +17,9 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import * as ScreenCapture from 'expo-screen-capture';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
-import { Sheet, Text } from '../ui';
+import { Sheet, Text, useHeaderInsets } from '../ui';
+import { KeyboardSpacer } from '../ui/KeyboardSpacer';
 import { colors, radii, spacing } from '../theme/tokens';
-import { useInsets } from './useInsets';
 import { useStoryTimer } from './useStoryTimer';
 import { useSystemPauses } from './useSystemPauses';
 import { StoryHeader, type StoryOwner } from './StoryHeader';
@@ -166,7 +165,9 @@ export function StoryViewer({
   testID = 'album-viewer',
 }: StoryViewerProps) {
   const p = testID;
-  const insets = useInsets();
+  // The shared heading padding (`ui/useHeaderInsets`), so the story's top
+  // controls line up with every other screen's heading.
+  const insets = useHeaderInsets();
   const count = photos.length;
   const system = useSystemPauses();
 
@@ -615,11 +616,11 @@ export function StoryViewer({
 
           {chromeVisible ? (
             <>
-              <View style={[styles.topScrim, { height: insets.top + TOP_SCRIM }]} pointerEvents="none">
+              <View style={[styles.topScrim, { height: insets.statusBar + TOP_SCRIM }]} pointerEvents="none">
                 <Scrim id={`${p}-top-scrim`} direction="down" />
               </View>
               <View
-                style={[styles.chrome, { paddingTop: insets.top + spacing.smMd }]}
+                style={[styles.chrome, { paddingTop: insets.top, paddingHorizontal: insets.gutter }]}
                 pointerEvents="box-none"
                 testID={`${p}-chrome`}
               >
@@ -639,7 +640,11 @@ export function StoryViewer({
             </>
           ) : null}
 
-          <KeyboardAvoidingView behavior="padding" style={styles.bottom} pointerEvents="box-none">
+          {/* Rides the keyboard (`KeyboardSpacer`): React Native's
+              KeyboardAvoidingView only moved once the keyboard had finished
+              opening on edge-to-edge Android, and kept the bottom inset on
+              top of it. */}
+          <View style={styles.bottom} pointerEvents="box-none">
             <View
               style={[styles.bottomInner, { paddingBottom: insets.bottom + spacing.smMd }, !chromeVisible && styles.hidden]}
               pointerEvents={chromeVisible ? 'box-none' : 'none'}
@@ -666,7 +671,8 @@ export function StoryViewer({
                 />
               ) : null}
             </View>
-          </KeyboardAvoidingView>
+            <KeyboardSpacer bottomInset={insets.bottom} testID={`${p}-keyboard-spacer`} />
+          </View>
         </View>
       </Animated.View>
 
@@ -783,7 +789,6 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: spacing.mdLg,
   },
   bottom: { ...StyleSheet.absoluteFill, justifyContent: 'flex-end' },
   bottomInner: { paddingHorizontal: spacing.mdLg, paddingTop: spacing.xxl, gap: spacing.smMd },

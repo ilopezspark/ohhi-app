@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { me } from '../../../../api/me';
@@ -23,7 +22,7 @@ import { StoryViewer, type StoryPhoto } from '../../../../albums/StoryViewer';
 import { useAlbumOwner } from '../../../../albums/useAlbumOwner';
 import { REMOVE_PHOTO_CONFIRM, REMOVE_PHOTO_LABEL } from '../../../../albums/albumCopy';
 import { ConfirmButton } from '../../../../settings/ConfirmButton';
-import { Header, Sheet, Text } from '../../../../ui';
+import { ScreenHeader, Sheet, Text } from '../../../../ui';
 import { displayName } from '../../../../ui/displayName';
 import { colors, fontFamilies, radii, spacing } from '../../../../theme/tokens';
 
@@ -242,11 +241,16 @@ export default function AlbumEditScreen() {
   }
 
   if (!album) {
+    // A way back, even here: this screen is pushed, and a dead end with no
+    // back arrow only has the hardware back.
     return (
-      <View style={styles.center} testID="album-unavailable">
-        <Text variant="body" color={colors.muted} style={styles.unavailable}>
-          {loadError ?? 'this album isn’t available.'}
-        </Text>
+      <View style={styles.safe}>
+        <ScreenHeader onBack={back} backTestID="album-unavailable-back" />
+        <View style={styles.center} testID="album-unavailable">
+          <Text variant="body" color={colors.muted} style={styles.unavailable}>
+            {loadError ?? 'this album isn’t available.'}
+          </Text>
+        </View>
       </View>
     );
   }
@@ -256,7 +260,8 @@ export default function AlbumEditScreen() {
   const shareableCandidates = candidates.filter((c) => !sharedUserIds.has(c.userId));
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <View style={styles.safe}>
+      <ScreenHeader title="edit album" titleSize={24} onBack={back} testID="album-edit-header" />
       <FlatList
         testID="album-detail-screen"
         style={styles.container}
@@ -266,7 +271,6 @@ export default function AlbumEditScreen() {
         columnWrapperStyle={photos.length > 0 ? styles.photoRow : undefined}
         ListHeaderComponent={
           <View style={styles.header}>
-            <Header title="edit album" titleSize={24} onBack={back} testID="album-edit-header" />
             <View style={styles.renameRow}>
               <TextInput
                 testID="album-name-input"
@@ -452,7 +456,7 @@ export default function AlbumEditScreen() {
           />
         ) : null}
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -461,7 +465,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.paper },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, backgroundColor: colors.paper },
   unavailable: { textAlign: 'center' },
-  header: { padding: spacing.lgXl, gap: spacing.md },
+  header: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.md, paddingBottom: spacing.lgXl, gap: spacing.md },
   renameRow: { flexDirection: 'row' },
   nameInput: {
     flex: 1,

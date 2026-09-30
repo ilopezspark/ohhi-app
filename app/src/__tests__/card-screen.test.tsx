@@ -18,11 +18,14 @@ jest.mock('../api/conversations', () => ({ startConversation: jest.fn() }));
 jest.mock('../api/messages', () => ({ sendMessage: jest.fn() }));
 jest.mock('../api/photos', () => ({ signedPhotoUrls: jest.fn() }));
 jest.mock('../api/me', () => ({ me: jest.fn() }));
-jest.mock('../api/tags', () => ({ getUserTags: jest.fn(), listTagsForCampus: jest.fn() }));
+jest.mock('../api/tags', () => ({ getUserTags: jest.fn(), listTagCatalog: jest.fn() }));
+jest.mock('../api/about', () => ({ getMyAbout: jest.fn() }));
 
 import { router, useLocalSearchParams } from 'expo-router';
 import { me } from '../api/me';
-import { getUserTags, listTagsForCampus } from '../api/tags';
+import { getUserTags, listTagCatalog as listTagsForCampus } from '../api/tags';
+import { getMyAbout } from '../api/about';
+import { EMPTY_ABOUT } from '../profile/about';
 import { getProfileCard } from '../api/profileCard';
 import { getIdentity } from '../api/identity';
 import { sendHi } from '../api/his';
@@ -67,11 +70,11 @@ beforeEach(() => {
   (getIdentity as jest.Mock).mockResolvedValue(null);
   (me as jest.Mock).mockResolvedValue({ id: 'me-1', campus_id: 'campus-1', campus_slug: 'clc' });
   (listTagsForCampus as jest.Mock).mockResolvedValue([
-    { id: 't-coffee', label: 'coffee', category: 'interest', campus_id: null },
-    { id: 't-gym', label: 'gym', category: 'interest', campus_id: null },
-    { id: 't-nursing', label: 'nursing', category: 'major', campus_id: null },
+    { id: 't-coffee', label: 'coffee', category: 'food_drink', categoryLabel: 'food & drink', categoryOrder: 8, sortOrder: 4 },
+    { id: 't-gym', label: 'gym', category: 'fitness', categoryLabel: 'fitness', categoryOrder: 2, sortOrder: 1 },
   ]);
   (getUserTags as jest.Mock).mockResolvedValue([]);
+  (getMyAbout as jest.Mock).mockResolvedValue(EMPTY_ABOUT);
 });
 
 describe('ProfileScreen', () => {
@@ -366,22 +369,32 @@ describe('ProfileScreen', () => {
 });
 
 describe('ProfileScreen — profile redesign, phase 1', () => {
-  it('finds the major from the campus tag catalog: it goes in the pin line, not the chips or into', async () => {
-    (getProfileCard as jest.Mock).mockResolvedValue(card({ tag_labels: ['nursing', 'coffee'] }));
+  it('takes the major from the card\'s about section (migration 0018): pin line and about card, never a chip', async () => {
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ tag_labels: ['coffee'], about: { major: { id: 'p-nursing', label: 'nursing' }, minor: null, graduating_term: null, graduating_year: 2028, graduating_unsure: false, work_type: null, job_title: null, work_hours: [] } }));
     const screen = await renderScreen();
     await waitFor(() => expect(screen.getByTestId('profile-meta')).toHaveTextContent("on campus · nursing '28"));
     expect(screen.getByTestId('profile-tags')).not.toHaveTextContent(/nursing/);
-    expect(screen.getByTestId('profile-into')).not.toHaveTextContent(/nursing/);
-    expect(screen.getByTestId('profile-basics-major')).toHaveTextContent(/nursing/);
+    expect(screen.getByTestId('profile-about-major')).toHaveTextContent(/nursing/);
+    expect(screen.getByTestId('profile-about-graduating')).toHaveTextContent('graduating 2028');
   });
 
-  it('keeps every tag a chip when the catalog read fails (never blocks the screen)', async () => {
+  it('every tag label is an interest chip; the catalog read failing never blocks the screen', async () => {
     (listTagsForCampus as jest.Mock).mockRejectedValue(new Error('offline'));
     (getProfileCard as jest.Mock).mockResolvedValue(card({ tag_labels: ['nursing', 'coffee'] }));
     const screen = await renderScreen();
     await screen.findByTestId('profile-screen');
     expect(screen.getByTestId('profile-tags')).toHaveTextContent(/nursing/);
+    expect(screen.queryByTestId('profile-about')).toBeNull();
     await screen.findByTestId('profile-cta-hi');
+  });
+
+  it('what you two share: the shared major comes from both about sections', async () => {
+    (getMyAbout as jest.Mock).mockResolvedValue({ ...EMPTY_ABOUT, major: { id: 'p-nursing', label: 'nursing' } });
+    (getUserTags as jest.Mock).mockResolvedValue([{ tag_id: 't-coffee', position: 0 }]);
+    (getProfileCard as jest.Mock).mockResolvedValue(card({ tag_labels: ['coffee'], about: { major: { id: 'p-nursing', label: 'nursing' }, minor: null, graduating_term: null, graduating_year: 2028, graduating_unsure: false, work_type: null, job_title: null, work_hours: [] } }));
+    const screen = await renderScreen();
+    await waitFor(() => expect(screen.getByTestId('profile-shared')).toHaveTextContent(/you're both in nursing/));
+    expect(screen.getByTestId('profile-shared')).toHaveTextContent(/you're both into coffee/);
   });
 
   it('what you two share: computed from my tags against theirs, hidden when nothing matches', async () => {
@@ -427,7 +440,7 @@ describe('ProfileScreen — profile redesign, phase 1', () => {
 
   it('a sparse profile shows the notice and the goals fallback', async () => {
     (getProfileCard as jest.Mock).mockResolvedValue(
-      card({ first_name: 'luis', status_line: null, tag_labels: ['nursing'], goals: [], photos: ['p0'] })
+      card({ first_name: 'luis', status_line: null, tag_labels: [], goals: [], photos: ['p0'] })
     );
     const screen = await renderScreen();
     expect(await screen.findByTestId('profile-sparse-notice')).toHaveTextContent("luis hasn't filled much in yet. not a red flag.");

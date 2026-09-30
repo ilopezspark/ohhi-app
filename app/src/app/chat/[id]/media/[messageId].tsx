@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ScreenCapture from 'expo-screen-capture';
@@ -13,7 +14,8 @@ import { useMediaReply } from '../../../../chat/useMediaReply';
 import { StoryReplyBar } from '../../../../albums/StoryReplyBar';
 import { colors, layout, radii, shadows, spacing } from '../../../../theme/tokens';
 import { BackIcon } from '../../../../ui/icons';
-import { Text } from '../../../../ui';
+import { Text, useHeaderInsets } from '../../../../ui';
+import { KeyboardSpacer } from '../../../../ui/KeyboardSpacer';
 
 const SCREEN_CAPTURE_KEY = 'chat-media-viewer';
 
@@ -57,6 +59,7 @@ export default function ChatMediaViewerScreen() {
   const messageId = Array.isArray(params.messageId) ? params.messageId[0] : params.messageId ?? '';
   const queryClient = useQueryClient();
   const markExhausted = useRecipientExhaustedStore((state) => state.markExhausted);
+  const insets = useHeaderInsets();
 
   // Android-only in effect (FLAG_SECURE); a no-op on iOS. Active for exactly
   // the lifetime of this screen. Not `usePreventScreenCapture`: on web that
@@ -159,18 +162,24 @@ export default function ChatMediaViewerScreen() {
     [limited]
   );
 
+  // Full-bleed and dark: the back button sits at the shared heading padding
+  // (below the status bar, light icons), and the reply bar rides the
+  // keyboard (`KeyboardSpacer`; a KeyboardAvoidingView never moved it on
+  // edge-to-edge Android).
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      testID="chat-media-viewer"
-    >
+    <View style={styles.container} testID="chat-media-viewer">
+      <StatusBar style="light" />
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Back"
         testID="chat-media-viewer-back"
         onPress={() => router.back()}
-        style={({ pressed }) => [styles.back, shadows.sm, pressed && styles.pressed]}
+        style={({ pressed }) => [
+          styles.back,
+          { top: insets.top, left: insets.gutter },
+          shadows.sm,
+          pressed && styles.pressed,
+        ]}
       >
         <BackIcon size={18} color={colors.onDark} />
       </Pressable>
@@ -197,24 +206,27 @@ export default function ChatMediaViewerScreen() {
         )}
       </View>
 
-      {screenshotCopy ? (
-        <Text variant="helper" color={colors.subtle} style={styles.footer} testID="chat-media-viewer-footer">
-          {screenshotCopy}
-        </Text>
-      ) : null}
+      <View style={{ paddingBottom: insets.bottom }}>
+        {screenshotCopy ? (
+          <Text variant="helper" color={colors.subtle} style={styles.footer} testID="chat-media-viewer-footer">
+            {screenshotCopy}
+          </Text>
+        ) : null}
 
-      {reply ? (
-        <View style={styles.reply}>
-          <StoryReplyBar
-            testID="chat-media-viewer-reply"
-            onSend={reply.onSend}
-            maxLength={reply.maxLength}
-            ownerName={replyToName}
-            onFocusChange={() => {}}
-          />
-        </View>
-      ) : null}
-    </KeyboardAvoidingView>
+        {reply ? (
+          <View style={styles.reply}>
+            <StoryReplyBar
+              testID="chat-media-viewer-reply"
+              onSend={reply.onSend}
+              maxLength={reply.maxLength}
+              ownerName={replyToName}
+              onFocusChange={() => {}}
+            />
+          </View>
+        ) : null}
+      </View>
+      <KeyboardSpacer bottomInset={insets.bottom} testID="chat-media-viewer-keyboard-spacer" />
+    </View>
   );
 }
 
@@ -239,8 +251,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.ink },
   back: {
     position: 'absolute',
-    top: layout.topInset - spacing.xl,
-    left: layout.gutter,
     zIndex: 10,
     width: 44,
     height: 44,
@@ -254,5 +264,5 @@ const styles = StyleSheet.create({
   media: { width: '100%', height: '100%' },
   failedText: { textAlign: 'center', paddingHorizontal: spacing.xxl },
   footer: { textAlign: 'center', paddingHorizontal: spacing.xxl, paddingBottom: spacing.xxl },
-  reply: { paddingHorizontal: layout.gutter, paddingBottom: spacing.xxl },
+  reply: { paddingHorizontal: layout.gutter, paddingBottom: spacing.mdLg },
 });

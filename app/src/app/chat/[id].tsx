@@ -1,13 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -70,9 +62,10 @@ import {
   videoSourceFromAsset,
 } from '../../chat/videoPrep';
 import { tintForPhoto } from '../../photos/tint';
-import { colors, layout, radii, shadows, spacing } from '../../theme/tokens';
-import { BackIcon, MoreIcon } from '../../ui/icons';
-import { Avatar, Button, Sheet, Text } from '../../ui';
+import { colors, radii, shadows, spacing } from '../../theme/tokens';
+import { MoreIcon } from '../../ui/icons';
+import { Avatar, Button, ScreenHeader, Sheet, Text, useHeaderInsets } from '../../ui';
+import { KeyboardSpacer } from '../../ui/KeyboardSpacer';
 import { displayName } from '../../ui/displayName';
 
 /**
@@ -156,6 +149,7 @@ export default function ChatThreadScreen() {
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [jump, setJump] = useState<{ id: string; createdAt: string | null; pagesLoaded: number; waitingFor: number } | null>(null);
   const listRef = useRef<FlatList<FeedItem>>(null);
+  const headerInsets = useHeaderInsets();
 
   // -----------------------------------------------------------------------
   // Chat media: pick -> preview (three-way selector) -> send.
@@ -1032,50 +1026,50 @@ export default function ChatThreadScreen() {
   const otherName = displayName(conversation.other.firstName) || 'someone';
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          testID="thread-back"
-          onPress={() => router.back()}
-          style={({ pressed }) => [styles.iconButton, shadows.sm, pressed && styles.pressed]}
-        >
-          <BackIcon size={18} color={colors.ink} />
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          testID="thread-header-profile"
-          style={styles.headerTitle}
-          onPress={openProfile}
-        >
-          <Avatar
-            uri={otherPhotoPath ? headerPhotoUrls?.[otherPhotoPath] : undefined}
-            tint={tintForPhoto(otherId ?? conversation.id, 0)}
-            size="sm"
-          />
-          <Text variant="title" style={{ fontSize: 16 }} numberOfLines={1}>
-            {otherName}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="More"
-          testID="thread-overflow"
-          style={({ pressed }) => [styles.iconButton, shadows.sm, pressed && styles.pressed]}
-          onPress={() => setMenuOpen((open) => !open)}
-        >
-          <MoreIcon size={18} color={colors.ink} />
-        </Pressable>
-      </View>
+    // No KeyboardAvoidingView: on edge-to-edge Android it never moved the
+    // composer (`behavior` was undefined there). The heading paints the
+    // status bar area and sits at the shared heading padding; the
+    // `KeyboardSpacer` at the bottom lifts the composer onto the keyboard.
+    <View style={styles.container} testID="thread-screen">
+      <ScreenHeader
+        onBack={() => router.back()}
+        backTestID="thread-back"
+        containerStyle={styles.header}
+        center={
+          <Pressable
+            accessibilityRole="button"
+            testID="thread-header-profile"
+            style={styles.headerTitle}
+            onPress={openProfile}
+          >
+            <Avatar
+              uri={otherPhotoPath ? headerPhotoUrls?.[otherPhotoPath] : undefined}
+              tint={tintForPhoto(otherId ?? conversation.id, 0)}
+              size="sm"
+            />
+            <Text variant="title" style={{ fontSize: 16 }} numberOfLines={1}>
+              {otherName}
+            </Text>
+          </Pressable>
+        }
+        right={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="More"
+            testID="thread-overflow"
+            style={({ pressed }) => [styles.iconButton, shadows.sm, pressed && styles.pressed]}
+            onPress={() => setMenuOpen((open) => !open)}
+          >
+            <MoreIcon size={18} color={colors.ink} />
+          </Pressable>
+        }
+      />
 
       {menuOpen ? (
-        <View style={[styles.menu, shadows.md]} testID="thread-menu">
+        <View
+          style={[styles.menu, shadows.md, { top: headerInsets.top + ICON_BUTTON + spacing.xs, right: headerInsets.gutter }]}
+          testID="thread-menu"
+        >
           <Pressable accessibilityRole="button" testID="thread-menu-block" onPress={openBlock} style={styles.menuRow}>
             <Text variant="rowLabel">Block</Text>
           </Pressable>
@@ -1166,23 +1160,30 @@ export default function ChatThreadScreen() {
         }
       />
 
-      <Composer
-        state={composer}
-        sending={sending}
-        onSend={onSend}
-        onOpenShare={openShareSheet}
-        initialText={initialDraft}
-        focusKey={focusKey}
-        accessory={
-          replyDraft ? (
-            <ReplyPreviewBar
-              draft={replyDraft}
-              thumbUrl={replyDraft.thumbPath ? mediaUrls?.[replyDraft.thumbPath] : undefined}
-              onCancel={() => setReplyDraft(null)}
-            />
-          ) : null
-        }
-      />
+      <View style={{ paddingBottom: headerInsets.bottom }} testID="thread-composer-area">
+        <Composer
+          state={composer}
+          sending={sending}
+          onSend={onSend}
+          onOpenShare={openShareSheet}
+          initialText={initialDraft}
+          focusKey={focusKey}
+          accessory={
+            replyDraft ? (
+              <ReplyPreviewBar
+                draft={replyDraft}
+                thumbUrl={replyDraft.thumbPath ? mediaUrls?.[replyDraft.thumbPath] : undefined}
+                onCancel={() => setReplyDraft(null)}
+              />
+            ) : null
+          }
+        />
+      </View>
+      {/* Grows with the keyboard: the composer (and the reply bar above it)
+          sits on the keyboard, the list above shrinks. It adds only what the
+          keyboard needs beyond the inset kept just above, so the two never
+          stack. */}
+      <KeyboardSpacer bottomInset={headerInsets.bottom} testID="thread-keyboard-spacer" />
 
       <MessageMenu
         anchor={menu?.anchor ?? null}
@@ -1260,24 +1261,20 @@ export default function ChatThreadScreen() {
         onDismiss={closeMediaFlow}
         onSend={(viewLimit) => void sendPickedMedia(viewLimit)}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
+
+/** The heading's round buttons (`ui/Header`'s back button size). */
+const ICON_BUTTON = 44;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.paper },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, backgroundColor: colors.paper },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.mdLg,
-    paddingHorizontal: layout.gutter,
-    paddingTop: spacing.xxl,
-    paddingBottom: spacing.smMd,
-  },
+  header: { paddingBottom: spacing.smMd },
   iconButton: {
-    width: 44,
-    height: 44,
+    width: ICON_BUTTON,
+    height: ICON_BUTTON,
     borderRadius: radii.circle,
     backgroundColor: colors.surface,
     alignItems: 'center',
@@ -1287,8 +1284,6 @@ const styles = StyleSheet.create({
   headerTitle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.mdLg },
   menu: {
     position: 'absolute',
-    top: 68,
-    right: layout.gutter,
     zIndex: 10,
     backgroundColor: colors.surface,
     borderRadius: radii.lg,

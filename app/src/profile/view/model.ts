@@ -6,6 +6,7 @@ import {
   type JoinedRecency,
   type ProfilePrompt,
 } from '../fields';
+import { parseAbout, type AboutSection } from '../about';
 
 export type { JoinedRecency, ProfilePrompt };
 
@@ -29,12 +30,14 @@ export interface ProfileViewData {
   verified: boolean;
   /** Stored goal values (or already-mapped labels; `hereForChipLabel` passes those through). */
   goals: string[];
-  /** The first of their tags whose catalog category is `major`, if any. Shown in the meta line and the basics card, never as a chip. */
+  /** `about.major.label` (migration 0018: the major is the about section's, never a tag). Shown in the hero's pin line and the about card. */
   majorLabel: string | null;
-  /** Their other tags, in their own order — the hero chips and the `into` card. */
+  /** Their interests, in the order they picked them — the hero chips and the `into` card. Every tag is an interest. */
   tagLabels: string[];
-  /** `you're both into …` lines, one per shared tag. Empty hides the card. */
+  /** `you're both in …` (shared major) then `you're both into …` (shared interests). Empty hides the card. */
   sharedLines: string[];
+  /** The structured about section (migration 0018). Null or empty rows hide the about card. */
+  about: AboutSection | null;
   /** Only present when the person opted in (`user_identity.is_public`); the identity function 404s otherwise. */
   pronouns: string | null;
   orientation: string[];
@@ -56,11 +59,6 @@ export interface ProfileViewData {
   joinedRecency: JoinedRecency | null;
 }
 
-export interface CatalogTag {
-  label: string;
-  category: string;
-}
-
 /** `on campus` / `nearby` / nothing — the grid's own tier words (`grid/tierLabel.ts`). */
 export function tierWordFor(tier: ProfileViewData['tier']): string {
   if (tier === 'on_campus') return 'on campus';
@@ -73,47 +71,39 @@ function norm(label: string): string {
 }
 
 /**
- * `profile_card_for` returns tag *labels* with no category, so the major is
- * found by looking each label up in the campus tag catalog (the same join
- * `me/root/queries.ts#getMajorLabel` does for the caller's own tags). The
- * first label that exists in the catalog as a `major` is the major; every
- * other label stays a chip. With no catalog (not loaded, or failed) nothing is
- * a major and every label stays a chip — the layout degrades, never breaks.
- */
-export function splitMajor(tagLabels: string[], catalog: CatalogTag[]): { majorLabel: string | null; otherTags: string[] } {
-  const majors = new Set(catalog.filter((tag) => tag.category === 'major').map((tag) => norm(tag.label)));
-  let majorLabel: string | null = null;
-  const otherTags: string[] = [];
-  for (const label of tagLabels) {
-    if (majorLabel === null && majors.has(norm(label))) {
-      majorLabel = label;
-    } else {
-      otherTags.push(label);
-    }
-  }
-  return { majorLabel, otherTags };
-}
-
-/**
- * `what you two share`: shared tags only, computed on the client from the
- * viewer's own tags against theirs (never from a gated field). Case-
- * insensitive, one line per shared tag, in their order.
+ * `what you two share`, computed on the client from the viewer's own data
+ * against theirs (never from a gated field): the shared major first (`you're
+ * both in nursing`, compared by program id, from the about section), then one
+ * line per shared interest in their order (`you're both into coffee`,
+ * case-insensitive).
  *
- * Wording: a tag label is a bare noun ("gym", "library", "true crime"), so a
- * verb that wants an article ("you both tagged the gym") reads wrong for
- * some labels. `you're both into …` takes any of them as is; the major reads
- * as a field of study instead (`you're both in nursing`).
+ * Wording: a tag label is a bare noun ("gym", "true crime"), so `you're both
+ * into …` takes any of them as is; the major reads as a field of study.
+ *
+ * Shared `work_type` ("others who work in food service") is not built: the
+ * owner has not confirmed it (`docs/design/tags-about/reconcile.md`). It
+ * would slot in after the major line.
  */
-export function sharedTagLines(myLabels: string[], theirLabels: string[], majorLabel: string | null = null): string[] {
-  const mine = new Set(myLabels.map(norm));
-  const major = majorLabel ? norm(majorLabel) : null;
-  const seen = new Set<string>();
+export function sharedLines({
+  myLabels,
+  theirLabels,
+  myMajor = null,
+  theirMajor = null,
+}: {
+  myLabels: string[];
+  theirLabels: string[];
+  myMajor?: { id: string; label: string } | null;
+  theirMajor?: { id: string; label: string } | null;
+}): string[] {
   const lines: string[] = [];
+  if (myMajor && theirMajor && myMajor.id === theirMajor.id) lines.push(`you're both in ${theirMajor.label}`);
+  const mine = new Set(myLabels.map(norm));
+  const seen = new Set<string>();
   for (const label of theirLabels) {
     const key = norm(label);
     if (!mine.has(key) || seen.has(key)) continue;
     seen.add(key);
-    lines.push(key === major ? `you're both in ${label}` : `you're both into ${label}`);
+    lines.push(`you're both into ${label}`);
   }
   return lines;
 }
@@ -143,7 +133,7 @@ export function pinLine(data: Parameters<typeof metaParts>[0]): string {
   return [lead, rest].filter(Boolean).join(' · ');
 }
 
-/** `05-profile-sparse.png`: no status, no tags beyond the major, no prompts, and one photo (or none). */
+/** `05-profile-sparse.png`: no status, no interests, no prompts, and one photo (or none). */
 export function isSparse(
   data: Pick<ProfileViewData, 'statusLine' | 'tagLabels' | 'photoPaths'> & { prompts?: ProfilePrompt[] }
 ): boolean {
@@ -195,22 +185,34 @@ export interface BuildProfileViewInput {
     gate_open?: boolean | null;
     joined_month?: string | null;
     joined_recency?: string | null;
+    // Migration 0018.
+    about?: unknown;
   };
-  /** The campus tag catalog (global + campus), for the major lookup and my own tag labels. */
-  catalog: { id: string; label: string; category: string }[];
+  /** The tag catalog (`tag_catalog()`), to turn the viewer's own tag ids into labels. */
+  catalog: { id: string; label: string }[];
   /** The viewer's own tag ids (`user_tags`). */
   myTagIds: string[];
+  /** The viewer's own about section (`my_about()`), for the shared major. */
+  myAbout?: AboutSection | null;
   identity: { pronouns: string | null; orientation: string[] } | null;
   campusShort: string | null;
   photoUrls: Record<string, string>;
 }
 
-/** Joins the card row with the catalog, the viewer's tags and the identity read into `ProfileViewData`. */
-export function buildProfileViewData({ card, catalog, myTagIds, identity, campusShort, photoUrls }: BuildProfileViewInput): ProfileViewData {
-  const { majorLabel, otherTags } = splitMajor(card.tag_labels ?? [], catalog);
+/** Joins the card row with the catalog, the viewer's own tags and about, and the identity read into `ProfileViewData`. */
+export function buildProfileViewData({
+  card,
+  catalog,
+  myTagIds,
+  myAbout = null,
+  identity,
+  campusShort,
+  photoUrls,
+}: BuildProfileViewInput): ProfileViewData {
+  const about = card.about === undefined || card.about === null ? null : parseAbout(card.about);
   const byId = new Map(catalog.map((tag) => [tag.id, tag.label]));
   const myLabels = myTagIds.map((id) => byId.get(id)).filter((label): label is string => !!label);
-  const theirLabels = [...(majorLabel ? [majorLabel] : []), ...otherTags];
+  const theirLabels = card.tag_labels ?? [];
   const usualPlaces = (card.usual_places ?? []).filter((place) => place.trim().length > 0);
 
   return {
@@ -225,9 +227,10 @@ export function buildProfileViewData({ card, catalog, myTagIds, identity, campus
     // `verification_status = 'verified'` gate (`is_grid_visible`).
     verified: true,
     goals: card.goals ?? [],
-    majorLabel,
-    tagLabels: otherTags,
-    sharedLines: sharedTagLines(myLabels, theirLabels, majorLabel),
+    majorLabel: about?.major?.label ?? null,
+    tagLabels: theirLabels,
+    sharedLines: sharedLines({ myLabels, theirLabels, myMajor: myAbout?.major ?? null, theirMajor: about?.major ?? null }),
+    about,
     pronouns: identity?.pronouns ?? null,
     orientation: identity?.orientation ?? [],
     campusShort,

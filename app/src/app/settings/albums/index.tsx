@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
@@ -13,7 +12,7 @@ import {
 import { listSharesForSubject } from '../../../api/shares';
 import { mapSupabaseError } from '../../../api/errors';
 import { tintForPhoto } from '../../../photos/tint';
-import { Header, Input, Text } from '../../../ui';
+import { ScreenHeader, Input, Text } from '../../../ui';
 import { PencilIcon, PlusIcon } from '../../../ui/icons';
 import { AlbumCover } from '../../../settings/components/AlbumCover';
 import { getAlbumOwner } from '../../../api/albumOwner';
@@ -103,9 +102,9 @@ export default function AlbumsListScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']} testID="albums-screen">
+    <View style={styles.safe} testID="albums-screen">
+      <ScreenHeader title="albums" titleSize={28} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Header title="albums" titleSize={28} onBack={() => router.back()} />
         <Text variant="helper">
           albums are private. share one person at a time from a chat, take it back whenever. nobody sees them on
           the grid.
@@ -208,7 +207,7 @@ export default function AlbumsListScreen() {
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -246,7 +245,7 @@ function SharedAlbumRow({ item }: { item: SharedAlbum }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
   createRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.mdLg },
   createAction: { paddingHorizontal: spacing.mdLg },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg },

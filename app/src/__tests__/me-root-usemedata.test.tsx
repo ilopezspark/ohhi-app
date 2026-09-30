@@ -17,10 +17,10 @@ jest.mock('../api/profile', () => ({
 }));
 jest.mock('../api/goals', () => ({ getUserGoals: jest.fn() }));
 jest.mock('../api/tags', () => ({ getUserTags: jest.fn() }));
+jest.mock('../api/about', () => ({ getMyAbout: jest.fn() }));
 jest.mock('../photos/tint', () => ({ tintForPhoto: jest.fn(() => '#abcdef') }));
 jest.mock('../me/root/queries', () => ({
   getAlbumsSummary: jest.fn(),
-  getMajorLabel: jest.fn(),
   getPrivateCardShareCount: jest.fn(),
 }));
 
@@ -29,7 +29,9 @@ import { listMyPhotos, signedPhotoUrls } from '../api/photos';
 import { getFirstName, getGradYear, getStatusLine } from '../api/profile';
 import { getUserGoals } from '../api/goals';
 import { getUserTags } from '../api/tags';
-import { getAlbumsSummary, getMajorLabel, getPrivateCardShareCount } from '../me/root/queries';
+import { getAlbumsSummary, getPrivateCardShareCount } from '../me/root/queries';
+import { getMyAbout } from '../api/about';
+import { EMPTY_ABOUT } from '../profile/about';
 import { useMeData } from '../me/root/useMeData';
 import { profileCompletion } from '../profile/completion';
 
@@ -67,9 +69,14 @@ describe('useMeData', () => {
     ]);
     (signedPhotoUrls as jest.Mock).mockResolvedValue({ 'u1/0.jpg': 'https://example.com/0.jpg' });
     (getUserGoals as jest.Mock).mockResolvedValue(['friends']);
-    (getUserTags as jest.Mock).mockResolvedValue([{ tag_id: 't1', position: 0 }]);
+    (getUserTags as jest.Mock).mockResolvedValue([
+      { tag_id: 't1', position: 0 },
+      { tag_id: 't2', position: 1 },
+      { tag_id: 't3', position: 2 },
+    ]);
     (getAlbumsSummary as jest.Mock).mockResolvedValue({ albumCount: 2, sharedAlbumCount: 1 });
-    (getMajorLabel as jest.Mock).mockResolvedValue('cs');
+    // Migration 0018: the major is the about section's, not a tag.
+    (getMyAbout as jest.Mock).mockResolvedValue({ ...EMPTY_ABOUT, major: { id: 'p-cs', label: 'cs' }, graduatingYear: 2027 });
     (getPrivateCardShareCount as jest.Mock).mockResolvedValue(3);
   });
 
@@ -78,7 +85,7 @@ describe('useMeData', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     await waitFor(() => expect(result.current.completionPercent).toBeGreaterThan(0));
 
-    const expected = profileCompletion({ photoCount: 2, hasStatus: true, hasHereFor: true, hasTags: true });
+    const expected = profileCompletion({ photoCount: 2, hasStatus: true, hasHereFor: true, tagCount: 3 });
     expect(result.current.completionPercent).toBe(expected.percent);
     expect(result.current.nextBestCopy).toBe(expected.nextBest?.copy ?? null);
   });
@@ -94,6 +101,20 @@ describe('useMeData', () => {
     expect(result.current.nextBestCopy).toBeNull();
   });
 
+  it('two interests leave the tags item undone', async () => {
+    (getUserTags as jest.Mock).mockResolvedValue([
+      { tag_id: 't1', position: 0 },
+      { tag_id: 't2', position: 1 },
+    ]);
+    (listMyPhotos as jest.Mock).mockResolvedValue([
+      { position: 0, storage_path: 'u1/0.jpg', moderation_state: 'ok' },
+      { position: 1, storage_path: 'u1/1.jpg', moderation_state: 'ok' },
+      { position: 2, storage_path: 'u1/2.jpg', moderation_state: 'ok' },
+    ]);
+    const { result } = await renderHook(() => useMeData(), { wrapper });
+    await waitFor(() => expect(result.current.completionPercent).toBe(90));
+  });
+
   it('reports verified true only when verification_status is verified', async () => {
     const { result } = await renderHook(() => useMeData(), { wrapper });
     await waitFor(() => expect(result.current.verified).toBe(true));
@@ -106,7 +127,7 @@ describe('useMeData', () => {
     expect(result.current.verified).toBe(false);
   });
 
-  it("builds the identity line from campus short name, major tag and grad year (\"CLC · cs '27\")", async () => {
+  it("builds the identity line from campus short name, the about major and grad year (\"CLC · cs '27\")", async () => {
     const { result } = await renderHook(() => useMeData(), { wrapper });
     await waitFor(() => expect(result.current.identityText).toBe("CLC · cs '27"));
   });

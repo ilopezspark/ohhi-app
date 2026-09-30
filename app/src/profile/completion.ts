@@ -20,8 +20,8 @@ export interface ProfileCompletionInput {
   hasStatus: boolean;
   /** At least one `user_goals` row exists (any stored value, including the retired `group` — completion isn't the place ruling 7's "never offered" applies). */
   hasHereFor: boolean;
-  /** At least one `user_tags` row exists. */
-  hasTags: boolean;
+  /** How many interest tags are picked. The item counts as done at `TAGS_COMPLETE_AT` (3), the minimum to publish (migration 0018). */
+  tagCount: number;
 }
 
 export interface CompletionItem {
@@ -45,6 +45,9 @@ export interface ProfileCompletionResult {
   nextBest: NextBest | null;
 }
 
+/** Tags count toward completion from 3 on, the minimum to publish (migration 0018, decision 94). */
+export const TAGS_COMPLETE_AT = 3;
+
 /** The brief's completion table, in highest-weight-first order (also the tie-break order: `photo2` before `photo3`, then `status`/`hereFor`/`tags` in that fixed order). */
 const WEIGHTS: Record<CompletionKey, number> = {
   photo1: 30,
@@ -64,7 +67,7 @@ const NEXT_BEST_COPY: Record<CompletionKey, string> = {
   photo3: 'a third photo rounds you out — most profiles stop at two.',
   status: 'a status line is usually the reason someone says hi.',
   hereFor: "say what you're here for so people know why to say hi.",
-  tags: 'a tag or two helps people place you faster.',
+  tags: 'pick three or more interests so people have something to say hi about.',
 };
 
 function itemDone(key: CompletionKey, input: ProfileCompletionInput): boolean {
@@ -80,7 +83,7 @@ function itemDone(key: CompletionKey, input: ProfileCompletionInput): boolean {
     case 'hereFor':
       return input.hasHereFor;
     case 'tags':
-      return input.hasTags;
+      return input.tagCount >= TAGS_COMPLETE_AT;
   }
 }
 

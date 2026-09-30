@@ -1,7 +1,6 @@
-import { ScrollView, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { Header, Text } from '../../ui';
+import { ScreenHeader, Text } from '../../ui';
 import { colors, spacing } from '../../theme/tokens';
 
 /**
@@ -12,9 +11,9 @@ import { colors, spacing } from '../../theme/tokens';
  */
 export default function ReportHelpScreen() {
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <View style={styles.safe}>
+      <ScreenHeader title="report someone" titleSize={24} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={styles.scroll} testID="report-help-screen">
-        <Header title="report someone" titleSize={24} onBack={() => router.back()} />
         <Text variant="body" color={colors.muted}>
           there is no list to pick someone from here. open their profile or your chat with them,
           then use the overflow menu and choose report.
@@ -24,11 +23,11 @@ export default function ReportHelpScreen() {
           report first.
         </Text>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.mdLg, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
 });

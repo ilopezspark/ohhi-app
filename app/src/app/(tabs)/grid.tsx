@@ -30,7 +30,7 @@ import {
 } from '../../presence';
 import { getRealtimeManager, type HereNowEvent } from '../../realtime';
 import { useRefetchOnFocus } from '../../query/gone';
-import { BellIcon, EmptyState, SearchIcon, Text } from '../../ui';
+import { BellIcon, EmptyState, ScreenHeader, SearchIcon, Text } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 
 /**
@@ -271,10 +271,17 @@ export default function GridScreen() {
   const visibleCount = data[0]?.visible_count ?? data.length;
   const hereNowCount = data[0]?.here_now_count ?? data.filter((row) => row.here_now).length;
 
-  const header = (
-    <View>
-      <View style={styles.topRow}>
-        <Text variant="wordmark">ohhi</Text>
+  // The wordmark and bell stay put at the shared heading padding (clear of
+  // the status bar); the pills, counts and banners scroll with the grid.
+  const topRow = (
+    <ScreenHeader
+      testID="grid-header"
+      center={
+        <Text variant="wordmark" style={styles.wordmark}>
+          ohhi
+        </Text>
+      }
+      right={
         <Pressable
           testID="grid-bell"
           accessibilityRole="button"
@@ -283,7 +290,12 @@ export default function GridScreen() {
         >
           <BellIcon size={20} color={colors.ink} />
         </Pressable>
-      </View>
+      }
+    />
+  );
+
+  const header = (
+    <View style={styles.listHeader}>
 
       {/* No campus-switching feature exists — "change" is decorative, matching the
           brief ("wire `change` to nothing or the campus label only"). */}
@@ -416,6 +428,7 @@ export default function GridScreen() {
 
   return (
     <View style={styles.screen}>
+      {topRow}
       <FlatList
         testID="grid-list"
         data={data}
@@ -459,14 +472,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.paper },
   list: { paddingHorizontal: spacing.smMd, paddingBottom: spacing.xxl },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: spacing.xxl,
-    paddingHorizontal: spacing.smMd,
-    marginBottom: spacing.lg,
-  },
+  wordmark: { flex: 1 },
+  listHeader: { paddingTop: spacing.lg },
   iconButton: {
     width: 40,
     height: 40,

@@ -1,7 +1,6 @@
-import { ScrollView, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Header, Text } from '../../../ui';
+import { ScreenHeader, Text } from '../../../ui';
 import { colors, spacing } from '../../../theme/tokens';
 import { infoLinkFor } from '../../../me/links';
 
@@ -17,18 +16,18 @@ export default function InfoScreen() {
   const link = infoLinkFor(slug);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <View style={styles.safe}>
+      <ScreenHeader title={link?.title ?? 'coming soon'} titleSize={22} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={styles.scroll} testID="info-screen">
-        <Header title={link?.title ?? 'coming soon'} titleSize={22} onBack={() => router.back()} />
         <Text variant="body" color={colors.muted} testID="info-body">
           this page is not written yet. check back soon — for now, reach out if you have a question.
         </Text>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.mdLg, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
 });

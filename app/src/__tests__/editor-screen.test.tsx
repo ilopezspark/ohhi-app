@@ -30,6 +30,7 @@ import ProfileEditorScreen from '../app/profile-editor/index';
 import EditStatusScreen from '../app/profile-editor/status';
 import QuickStatusScreen from '../app/quick-status';
 import { queryKeys } from '../me/queryKeys';
+import { EMPTY_ABOUT } from '../profile/about';
 
 function draftState(overrides: Record<string, unknown> = {}) {
   return {
@@ -42,8 +43,10 @@ function draftState(overrides: Record<string, unknown> = {}) {
     campusShort: 'CLC',
     verified: true,
     photoCount: 1,
-    campusTags: [],
-    draft: { statusLine: 'at the library', goals: ['friends'], tagIds: [] },
+    catalog: [],
+    fieldErrors: {},
+    minTags: 0,
+    draft: { statusLine: 'at the library', goals: ['friends'], tagIds: [], placeLine: '', usualPlaces: [], prompts: [], about: EMPTY_ABOUT },
     setStatusLine: jest.fn(),
     setGoals: jest.fn(),
     setTagIds: jest.fn(),
@@ -160,7 +163,7 @@ describe('ProfileEditorScreen', () => {
 
 describe('EditStatusScreen (profile editor)', () => {
   it('writes the trimmed value into the draft (not the server) and pops back', async () => {
-    const state = mockDraft({ draft: { statusLine: 'old', goals: [], tagIds: [] } });
+    const state = mockDraft({ draft: { statusLine: 'old', goals: [], tagIds: [], placeLine: '', usualPlaces: [], prompts: [], about: EMPTY_ABOUT } });
     const { findByTestId } = await render(<EditStatusScreen />);
     await fireEvent.changeText(await findByTestId('editor-status-editor-input'), '  gym at 6  ');
     await fireEvent.press(await findByTestId('editor-status-editor-save'));

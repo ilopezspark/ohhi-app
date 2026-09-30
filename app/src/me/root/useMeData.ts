@@ -6,12 +6,13 @@ import { listMyPhotos, signedPhotoUrls } from '../../api/photos';
 import { getFirstName, getGradYear, getStatusLine } from '../../api/profile';
 import { getUserGoals } from '../../api/goals';
 import { getUserTags } from '../../api/tags';
+import { getMyAbout } from '../../api/about';
 import { tintForPhoto } from '../../photos/tint';
 import { identityLine } from '../../profile/identityLine';
 import { profileCompletion } from '../../profile/completion';
 import { colors } from '../../theme/tokens';
 import { queryKeys } from '../queryKeys';
-import { getAlbumsSummary, getMajorLabel, getPrivateCardShareCount } from './queries';
+import { getAlbumsSummary, getPrivateCardShareCount } from './queries';
 
 export interface UseMeDataResult {
   /** True until the first `me()` read resolves — every other value below is a safe, empty-state default before then. */
@@ -47,7 +48,6 @@ export function useMeData(): UseMeDataResult {
   const meQuery = useQuery({ queryKey: queryKeys.me.result, queryFn: fetchMe });
   const meData = meQuery.data;
   const userId = meData?.id ?? null;
-  const campusId = meData?.campus_id ?? null;
 
   const firstNameQuery = useQuery({ queryKey: queryKeys.me.firstName, queryFn: getFirstName });
   const gradYearQuery = useQuery({ queryKey: queryKeys.me.gradYear, queryFn: getGradYear });
@@ -56,11 +56,8 @@ export function useMeData(): UseMeDataResult {
   const goalsQuery = useQuery({ queryKey: queryKeys.me.goals, queryFn: getUserGoals });
   const tagsQuery = useQuery({ queryKey: queryKeys.me.tags, queryFn: getUserTags });
 
-  const majorQuery = useQuery({
-    queryKey: [...queryKeys.me.majorLabel, campusId],
-    queryFn: () => getMajorLabel(campusId),
-    enabled: !!userId,
-  });
+  // Migration 0018: the major is the about section's, not a tag.
+  const aboutQuery = useQuery({ queryKey: queryKeys.me.aboutSection, queryFn: getMyAbout });
 
   const privateCardSharesQuery = useQuery({
     queryKey: queryKeys.me.shares,
@@ -88,7 +85,7 @@ export function useMeData(): UseMeDataResult {
     void queryClient.invalidateQueries({ queryKey: queryKeys.me.status });
     void queryClient.invalidateQueries({ queryKey: queryKeys.me.goals });
     void queryClient.invalidateQueries({ queryKey: queryKeys.me.tags });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.me.majorLabel });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.me.aboutSection });
     void queryClient.invalidateQueries({ queryKey: queryKeys.me.shares });
     void queryClient.invalidateQueries({ queryKey: queryKeys.me.albumsSummary });
     void queryClient.invalidateQueries({ queryKey: queryKeys.me.albums });
@@ -108,12 +105,12 @@ export function useMeData(): UseMeDataResult {
     photoCount: photos.length,
     hasStatus: !!statusQuery.data,
     hasHereFor: (goalsQuery.data ?? []).length > 0,
-    hasTags: (tagsQuery.data ?? []).length > 0,
+    tagCount: (tagsQuery.data ?? []).length,
   });
 
   const identityText = identityLine({
     campusShort: meData?.campus_slug ? meData.campus_slug.toUpperCase() : null,
-    majorLabel: majorQuery.data ?? null,
+    majorLabel: aboutQuery.data?.major?.label ?? null,
     gradYear: gradYearQuery.data ?? null,
   });
 

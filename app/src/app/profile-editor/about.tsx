@@ -17,6 +17,7 @@ import {
 } from '../../settings/vocab';
 import { Chip, Input, KeyboardScrollView, Text, Toggle } from '../../ui';
 import { colors, radii, spacing } from '../../theme/tokens';
+import { HEADER_TOP_GAP } from '../../ui/screenInsets';
 
 /**
  * `/profile-editor/about` (`docs/design/me-redesign/brief.md`'s `about you`
@@ -150,7 +151,7 @@ export default function AboutYouEditorScreen() {
             cancel
           </Text>
           <Text variant="title" style={styles.headerTitle} numberOfLines={1}>
-            about you
+            pronouns and orientation
           </Text>
           <Text testID="about-editor-done" variant="rowLabel" color={colors.signal} onPress={() => mutation.mutate()}>
             done
@@ -230,7 +231,8 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   container: { paddingHorizontal: spacing.lgXl, paddingBottom: spacing.huge, gap: spacing.lgXl },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.mdLg },
+  // The Me screen's heading padding (owner ruling): the shared 12 below the status bar.
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.mdLg, paddingTop: HEADER_TOP_GAP },
   headerTitle: { flex: 1, textAlign: 'center', fontSize: 18 },
   section: { gap: spacing.smMd },
   chipCard: {

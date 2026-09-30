@@ -1,14 +1,14 @@
 export interface IdentityLineInput {
   /** e.g. `"CLC"` — a campus's short name/slug, uppercased for display. */
   campusShort?: string | null;
-  /** The label of the user's first tag of category `major`, if any (e.g. `"cs"`). Lowercase, matching the tag's own stored label — this doesn't reformat it. */
+  /** The about section's major label (`about.major.label`, migration 0018), if any (e.g. `"cs"`). Shown as stored. */
   majorLabel?: string | null;
   gradYear?: number | null;
 }
 
 /**
  * `docs/design/me-redesign/brief.md`'s Me-tab identity line: `CLC · cs '27`
- * — campus short name, the user's first `major`-category tag, and grad
+ * — campus short name, the about section's major, and grad
  * year, degrading gracefully as parts go missing:
  *
  * - all three: `"CLC · cs '27"`

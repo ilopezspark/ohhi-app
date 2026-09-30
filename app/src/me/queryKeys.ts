@@ -54,8 +54,6 @@ export const queryKeys = {
     gradYear: ['me', 'grad_year'] as const,
     /** Album count plus how many of those albums currently have at least one active share (`{ albumCount, sharedAlbumCount }`) — this build's own aggregate over `albums`/`shares` (`src/me/root/queries.ts#getAlbumsSummary`). Kept distinct from `albums` above, which is the raw `AlbumRow[]` list — same underlying tables, different shape, so a different key. */
     albumsSummary: ['me', 'albums_summary'] as const,
-    /** The label of the caller's first `major`-category tag (`src/me/root/queries.ts#getMajorLabel`) — Me's identity line (`"CLC · cs '27"`). Own aggregate over `tags`/`user_tags`; not reported by `me()`. */
-    majorLabel: ['me', 'major_label'] as const,
     /** `api/notificationPrefs.ts`. Settings-only. */
     notificationPrefs: ['me', 'notification_prefs'] as const,
     /** `api/blocks.ts#listBlockedUsers()`. Read by Settings' "blocked" row and `/me/blocked`. */
@@ -68,7 +66,17 @@ export const queryKeys = {
     profileFields: ['me', 'profile_fields'] as const,
     /** `api/profileFields.ts#listActivePrompts()` — the prompt picker's question list (shared, not per-user, but only the editor reads it). */
     promptOptions: ['me', 'prompt_options'] as const,
+
+    // -- Tags and about (migration 0018) -------------------------------------
+    /** `api/about.ts#getMyAbout()` — the structured about section (major, minor, graduating, work). Me's identity line reads the major from here. Distinct from `about` above, which is pronouns/orientation. */
+    aboutSection: ['me', 'about_section'] as const,
+    /** `api/about.ts#listPrograms()` — the campus's majors/minors for the about editor. */
+    programs: ['me', 'programs'] as const,
+    /** `api/notices.ts#listUnseenNotices()` — one-time notices (the 0018 tags notice). */
+    notices: ['me', 'notices'] as const,
   },
+  /** `api/tags.ts#listTagCatalog()` — the interest catalog offered to the caller (campus-filtered server-side). Shared by the editor, the profile screen and the pickers. */
+  tagCatalog: ['tag_catalog'] as const,
 } as const;
 
 export type QueryKeys = typeof queryKeys;

@@ -148,7 +148,9 @@ const styles = StyleSheet.create({
     gap: spacing.smMd,
     alignItems: 'center',
     paddingHorizontal: spacing.lgXl,
-    paddingBottom: spacing.xxl,
+    // Small: the thread screen keeps the home indicator / navigation bar
+    // inset below the composer (and the keyboard, while it is up).
+    paddingBottom: spacing.smMd,
     paddingTop: spacing.xs,
   },
   iconButton: {
@@ -185,7 +187,6 @@ const styles = StyleSheet.create({
   locked: {
     paddingHorizontal: spacing.lgXl,
     paddingVertical: spacing.xl,
-    paddingBottom: spacing.xxl,
   },
   lockedText: { textAlign: 'center' },
 });

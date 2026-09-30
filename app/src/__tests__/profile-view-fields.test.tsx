@@ -34,6 +34,7 @@ const MAYA: ProfileViewData = {
   gateOpen: false,
   joinedMonth: null,
   joinedRecency: null,
+  about: null,
 };
 
 const LUIS: ProfileViewData = {

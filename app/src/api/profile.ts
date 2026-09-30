@@ -1,6 +1,7 @@
 import { supabase } from './client';
-import { mapSupabaseError } from './errors';
+import { InvalidInputError, mapSupabaseError } from './errors';
 import { currentUserId } from './session';
+import { friendlyFieldError } from '../profile/fields';
 
 export type ProfileUpdate = {
   first_name?: string;
@@ -54,5 +55,13 @@ export async function getGradYear(): Promise<number | null> {
 export async function updateProfile(patch: ProfileUpdate): Promise<void> {
   const uid = await currentUserId();
   const { error } = await supabase.from('profiles').update(patch).eq('id', uid);
-  if (error) throw mapSupabaseError(error);
+  if (error) {
+    // Migration 0018's `profiles_guard` refuses a filtered status line
+    // (`that text can't be used`) and a grad year outside this year .. +8
+    // with `22023`; both are bad input the person can fix, so say why.
+    if ((error as { code?: string }).code === '22023') {
+      throw new InvalidInputError(friendlyFieldError(error.message));
+    }
+    throw mapSupabaseError(error);
+  }
 }

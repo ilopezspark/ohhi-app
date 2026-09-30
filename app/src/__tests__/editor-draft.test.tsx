@@ -16,7 +16,13 @@ jest.mock('../api/profile', () => ({
   updateProfile: jest.fn(),
 }));
 jest.mock('../api/goals', () => ({ getUserGoals: jest.fn(), setUserGoals: jest.fn() }));
-jest.mock('../api/tags', () => ({ getUserTags: jest.fn(), setUserTags: jest.fn(), listTagsForCampus: jest.fn() }));
+jest.mock('../api/tags', () => ({
+  getUserTags: jest.fn(),
+  setMyTags: jest.fn(),
+  listTagCatalog: jest.fn(),
+  minTagsToSave: (held: number) => Math.min(3, Math.max(0, held)),
+}));
+jest.mock('../api/about', () => ({ getMyAbout: jest.fn(), setMyAbout: jest.fn() }));
 jest.mock('../api/photos', () => ({ listMyPhotos: jest.fn() }));
 jest.mock('../api/profileFields', () => ({
   getMyProfileFields: jest.fn(),
@@ -28,7 +34,9 @@ jest.mock('../api/profileFields', () => ({
 import { me } from '../api/me';
 import { getFirstName, getGradYear, getStatusLine, updateProfile } from '../api/profile';
 import { getUserGoals, setUserGoals } from '../api/goals';
-import { getUserTags, setUserTags, listTagsForCampus } from '../api/tags';
+import { getUserTags, setMyTags as setUserTags, listTagCatalog } from '../api/tags';
+import { getMyAbout, setMyAbout } from '../api/about';
+import { EMPTY_ABOUT, type AboutSection } from '../profile/about';
 import { listMyPhotos } from '../api/photos';
 import { getMyProfileFields, setMyPlaceLine, setMyPrompts, setMyUsualPlaces } from '../api/profileFields';
 import { InvalidInputError } from '../api/errors';
@@ -62,6 +70,18 @@ function wrapperFor(client: QueryClient) {
   };
 }
 
+const CATALOG = [
+  { id: 't1', label: 'coffee', category: 'food_drink', categoryLabel: 'food & drink', categoryOrder: 8, sortOrder: 4 },
+  { id: 't2', label: 'gym', category: 'fitness', categoryLabel: 'fitness', categoryOrder: 2, sortOrder: 1 },
+];
+
+const BASE_ABOUT: AboutSection = {
+  ...EMPTY_ABOUT,
+  major: { id: 'p1', label: 'nursing' },
+  graduatingTerm: 'spring',
+  graduatingYear: 2027,
+};
+
 beforeEach(() => {
   jest.clearAllMocks();
   (me as jest.Mock).mockResolvedValue(baseMe());
@@ -70,14 +90,13 @@ beforeEach(() => {
   (getStatusLine as jest.Mock).mockResolvedValue('at the library');
   (getUserGoals as jest.Mock).mockResolvedValue(['friends']);
   (getUserTags as jest.Mock).mockResolvedValue([{ tag_id: 't1', position: 0 }]);
-  (listTagsForCampus as jest.Mock).mockResolvedValue([
-    { id: 't1', label: 'library', category: 'other', campus_id: null },
-    { id: 't2', label: 'gym', category: 'other', campus_id: null },
-  ]);
+  (listTagCatalog as jest.Mock).mockResolvedValue(CATALOG);
+  (getMyAbout as jest.Mock).mockResolvedValue(BASE_ABOUT);
+  (setMyAbout as jest.Mock).mockImplementation(async () => BASE_ABOUT);
   (listMyPhotos as jest.Mock).mockResolvedValue([{ position: 0 }, { position: 1 }]);
   (updateProfile as jest.Mock).mockResolvedValue(undefined);
   (setUserGoals as jest.Mock).mockResolvedValue(undefined);
-  (setUserTags as jest.Mock).mockResolvedValue(undefined);
+  (setUserTags as jest.Mock).mockImplementation(async (ids: string[]) => ids);
   (getMyProfileFields as jest.Mock).mockResolvedValue(baseFields());
   (setMyPlaceLine as jest.Mock).mockResolvedValue('2026-09-29T20:00:00Z');
   (setMyUsualPlaces as jest.Mock).mockImplementation(async (places: string[]) => places);
@@ -109,6 +128,7 @@ describe('useProfileEditorDraft — loading and identity fields', () => {
       placeLine: 'library, 2nd floor',
       usualPlaces: ['library'],
       prompts: [{ promptId: 'cafe_order', question: 'my order at the campus cafe', gated: false, answer: 'oat latte' }],
+      about: BASE_ABOUT,
     });
     expect(result.current.dirty).toBe(false);
   });
@@ -138,7 +158,8 @@ describe('useProfileEditorDraft — completion', () => {
     const { result } = await renderHook(() => useProfileEditorDraft(), { wrapper: wrapperFor(makeClient()) });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    const expected = profileCompletion({ photoCount: 2, hasStatus: true, hasHereFor: true, hasTags: true });
+    // One interest held: tags only count from 3 on (migration 0018).
+    const expected = profileCompletion({ photoCount: 2, hasStatus: true, hasHereFor: true, tagCount: 1 });
     expect(result.current.completion.percent).toBe(expected.percent);
   });
 
@@ -154,13 +175,13 @@ describe('useProfileEditorDraft — completion', () => {
       photoCount: result.current.photoCount,
       hasStatus: result.current.draft.statusLine.trim().length > 0,
       hasHereFor: result.current.draft.goals.length > 0,
-      hasTags: result.current.draft.tagIds.length > 0,
+      tagCount: result.current.draft.tagIds.length,
     };
 
     expect(sectionWeight('photos', input)).toBe(20); // photo1 filled, photo2 missing
     expect(sectionWeight('status', input)).toBe(10);
     expect(sectionWeight('hereFor', input)).toBe(10);
-    expect(sectionWeight('tags', input)).toBe(0); // tags already filled -> nothing left, no badge
+    expect(sectionWeight('tags', input)).toBe(10); // one interest held: tags count from 3 on
   });
 
   it('editing the draft (before saving) updates the completion picture immediately', async () => {
@@ -469,15 +490,110 @@ describe('useProfileEditorDraft — migration 0015 fields', () => {
   });
 });
 
-describe('useProfileEditorDraft — campus tags', () => {
-  it("fetches the caller's campus tag options once me() resolves", async () => {
+describe('useProfileEditorDraft — tag catalog and the tag minimum (migration 0018)', () => {
+  it('reads tag_catalog() and exposes it', async () => {
+    const { result } = await renderHook(() => useProfileEditorDraft(), { wrapper: wrapperFor(makeClient()) });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(listTagCatalog).toHaveBeenCalled();
+    expect(result.current.catalog).toEqual(CATALOG);
+  });
+
+  it('minTags mirrors set_my_tags: min(3, held)', async () => {
+    const { result } = await renderHook(() => useProfileEditorDraft(), { wrapper: wrapperFor(makeClient()) });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.savedTagCount).toBe(1);
+    expect(result.current.minTags).toBe(1);
+  });
+
+  it('saves tags through set_my_tags in picked order', async () => {
+    const { result } = await renderHook(() => useProfileEditorDraft(), { wrapper: wrapperFor(makeClient()) });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      result.current.setTagIds(['t2', 't1']);
+    });
+    await act(async () => {
+      await result.current.commit();
+    });
+    expect(setUserTags).toHaveBeenCalledWith(['t2', 't1']);
+  });
+});
+
+describe('useProfileEditorDraft — about section (migration 0018)', () => {
+  it('sends only the changed about keys through set_my_about and folds the returned section in', async () => {
+    const stored: AboutSection = { ...BASE_ABOUT, workType: 'retail', jobTitle: 'cashier' };
+    (setMyAbout as jest.Mock).mockResolvedValue(stored);
+    const client = makeClient();
+    const invalidateSpy = jest.spyOn(client, 'invalidateQueries');
+    const { result } = await renderHook(() => useProfileEditorDraft(), { wrapper: wrapperFor(client) });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      result.current.setAbout({ ...BASE_ABOUT, workType: 'retail', jobTitle: ' cashier ' });
+    });
+    await waitFor(() => expect(result.current.dirty).toBe(true));
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.commit();
+    });
+
+    expect(ok).toBe(true);
+    expect(setMyAbout).toHaveBeenCalledWith({ work_type: 'retail', job_title: 'cashier' });
+    expect(updateProfile).not.toHaveBeenCalled();
+    expect(result.current.draft.about).toEqual(stored);
+    expect(result.current.dirty).toBe(false);
+    const keys = invalidateSpy.mock.calls.map((c) => (c[0] as { queryKey: readonly unknown[] }).queryKey);
+    expect(keys).toContainEqual(queryKeys.me.aboutSection);
+  });
+
+  it('gradYear follows the draft about section', async () => {
+    const { result } = await renderHook(() => useProfileEditorDraft(), { wrapper: wrapperFor(makeClient()) });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.gradYear).toBe(2027);
+    await act(async () => {
+      result.current.setAbout({ ...BASE_ABOUT, graduatingUnsure: true, graduatingYear: null, graduatingTerm: null });
+    });
+    expect(result.current.gradYear).toBeNull();
+  });
+});
+
+describe('useProfileEditorDraft — word filter refusals stay on the field', () => {
+  const FILTERED = "that text can't be used.";
+
+  it('a filtered status shows the neutral line on that field, keeps the text, and clears once edited', async () => {
+    (updateProfile as jest.Mock).mockRejectedValue(new InvalidInputError(FILTERED));
     const { result } = await renderHook(() => useProfileEditorDraft(), { wrapper: wrapperFor(makeClient()) });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(listTagsForCampus).toHaveBeenCalledWith('c1');
-    expect(result.current.campusTags).toEqual([
-      { id: 't1', label: 'library', category: 'other', campus_id: null },
-      { id: 't2', label: 'gym', category: 'other', campus_id: null },
-    ]);
+    await act(async () => {
+      result.current.setStatusLine('call me 555 123 4567');
+    });
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.commit();
+    });
+
+    expect(ok).toBe(false);
+    expect(result.current.fieldErrors.statusLine).toBe(FILTERED);
+    expect(result.current.draft.statusLine).toBe('call me 555 123 4567');
+    expect(result.current.dirty).toBe(true);
+
+    await act(async () => {
+      result.current.setStatusLine('at the library');
+    });
+    expect(result.current.fieldErrors.statusLine).toBeUndefined();
+  });
+
+  it('a filtered job title lands on the about field and keeps the text', async () => {
+    (setMyAbout as jest.Mock).mockRejectedValue(new InvalidInputError(FILTERED));
+    const { result } = await renderHook(() => useProfileEditorDraft(), { wrapper: wrapperFor(makeClient()) });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      result.current.setAbout({ ...BASE_ABOUT, jobTitle: 'some words here' });
+    });
+    await act(async () => {
+      await result.current.commit();
+    });
+    expect(result.current.fieldErrors.about).toBe(FILTERED);
+    expect(result.current.draft.about.jobTitle).toBe('some words here');
   });
 });

@@ -30,6 +30,7 @@ import {
 import { queryKeys } from '../../me/queryKeys';
 import { BackIcon, Button, CheckIcon, DragIcon, PencilIcon, PlusIcon, Sheet, Text, XIcon } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
+import { HEADER_TOP_GAP } from '../../ui/screenInsets';
 
 const GRID_COLUMNS = 2;
 const GRID_GAP = spacing.smMd;
@@ -600,7 +601,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: spacing.lgXl,
+    // The Me screen's heading padding (owner ruling): the shared 12 below the status bar.
+    paddingTop: HEADER_TOP_GAP,
+    paddingBottom: spacing.lgXl,
     paddingHorizontal: spacing.lgXl,
   },
   headerBtn: { minWidth: 44, minHeight: 44, alignItems: 'flex-start', justifyContent: 'center' },

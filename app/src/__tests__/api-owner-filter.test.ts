@@ -44,6 +44,8 @@ const OWNER_SCOPED_TABLES: Record<string, string> = {
   // applies the gate), but listed so a future direct read is checked.
   user_prompts: 'user_id',
   user_usual_places: 'user_id',
+  // Migration 0018: owner-only select, no client writes (dismiss_notice only).
+  user_notices: 'user_id',
 };
 
 /** Owner-scoped tables with no call site in src/api/ yet; see the guard that every other listed table is actually queried. */
@@ -215,6 +217,52 @@ describe('every "my row" query in src/api/ filters explicitly on the owner colum
     it('writes each field through its own set_my_* RPC', () => {
       const all = code();
       for (const rpc of ['set_my_place_line', 'set_my_usual_places', 'set_my_prompts', 'my_profile_fields']) {
+        expect(all).toMatch(new RegExp(`\\.rpc\\(\\s*['"]${rpc}['"]`));
+      }
+    });
+  });
+
+  // Migration 0018 (decision 94, docs/design/tags-about/contract.md): a
+  // user's tags are written only by set_my_tags (the owner insert/update/
+  // delete grants on user_tags are revoked), the about section only by
+  // set_my_about (its profiles columns are not granted), notices only by
+  // dismiss_notice, and the shared catalog lists are never written.
+  describe('migration 0018 writes go through their RPCs only', () => {
+    const code = () =>
+      listApiFiles()
+        .map((f) => stripComments(fs.readFileSync(path.join(API_DIR, f), 'utf8')))
+        .join('\n');
+
+    function statementsFor(all: string, table: string): string[] {
+      const pattern = new RegExp(`\\.from\\(\\s*['"]${table}['"]\\s*\\)`, 'g');
+      const out: string[] = [];
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(all)) !== null) out.push(statementFrom(all, match.index));
+      return out;
+    }
+
+    it('never writes user_tags, user_notices, tags, tag_categories or programs as tables', () => {
+      const all = code();
+      for (const table of ['user_tags', 'user_notices', 'tags', 'tag_categories', 'programs', 'tag_suggestions']) {
+        for (const statement of statementsFor(all, table)) {
+          expect(statement).not.toMatch(/\.(insert|upsert|update|delete)\(/);
+        }
+      }
+    });
+
+    it('never touches the suggestion queue as a table', () => {
+      expect(code()).not.toMatch(/\.from\(\s*['"]tag_suggestions['"]\s*\)/);
+    });
+
+    it('never reads or writes the about columns on profiles directly', () => {
+      for (const statement of statementsFor(code(), 'profiles')) {
+        expect(statement).not.toMatch(/major_id|minor_id|graduating_term|graduating_unsure|work_type|work_hours|job_title/);
+      }
+    });
+
+    it('uses each 0018 RPC', () => {
+      const all = code();
+      for (const rpc of ['tag_catalog', 'set_my_tags', 'suggest_tag', 'my_about', 'set_my_about', 'dismiss_notice']) {
         expect(all).toMatch(new RegExp(`\\.rpc\\(\\s*['"]${rpc}['"]`));
       }
     });

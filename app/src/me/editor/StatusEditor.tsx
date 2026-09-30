@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { CardTextInput, FieldCard, FieldFooter, InfoIcon, KeyboardScrollView, Text } from '../../ui';
+import { CardTextInput, FieldCard, FieldFooter, InfoIcon, KeyboardScrollView, Text, useHeaderInsets } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 
 export const STATUS_MAX_LENGTH = 140;
@@ -52,14 +51,18 @@ export function StatusEditor({
 
   // Re-seed if the caller hands this a new `initialValue` after mount (e.g.
   // QuickStatus re-opening with a freshly-loaded saved status).
+  // The Me screen's heading padding (owner ruling): shared top inset; the
+  // side gutter is the root's own 16, the same value.
+  const insets = useHeaderInsets();
+
   useEffect(() => {
     setValue(initialValue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialValue]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']} testID={testID}>
-      <View style={styles.header}>
+    <View style={styles.safe} testID={testID}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <Pressable
           testID={`${testID}-cancel`}
           accessibilityRole="button"
@@ -145,7 +148,7 @@ export function StatusEditor({
           </Text>
         ) : null}
       </KeyboardScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -153,7 +156,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper, paddingHorizontal: spacing.lgXl },
   body: { paddingBottom: spacing.xxl },
   extra: { marginTop: spacing.xxl, gap: spacing.smMd },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.lgXl },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: spacing.lgXl },
   intro: { lineHeight: 19, marginBottom: spacing.lgXl },
   fieldCard: { minHeight: 140 },
   // Fills the card's minimum height, so the footer sits at its bottom (07-edit-status.png).

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { blockUser } from '../../../api/blocks';
@@ -8,7 +7,7 @@ import { refreshBadges } from '../../../badges/badgeCounts';
 import { mapSupabaseError } from '../../../api/errors';
 import { supabase } from '../../../api/client';
 import { ConfirmButton } from '../../../settings/ConfirmButton';
-import { Button, Text } from '../../../ui';
+import { Button, ScreenHeader, Text } from '../../../ui';
 import { colors, spacing } from '../../../theme/tokens';
 
 /**
@@ -71,7 +70,8 @@ export default function BlockScreen() {
   const errorMessage = mutation.isError ? mapSupabaseError(mutation.error).message : null;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <View style={styles.safe}>
+      <ScreenHeader onBack={() => router.back()} backTestID="block-back" />
       <View style={styles.container} testID="block-screen">
         <Text variant="titleLg">{`Block ${displayName}?`}</Text>
         <Text variant="body" color={colors.muted}>
@@ -93,7 +93,7 @@ export default function BlockScreen() {
           />
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

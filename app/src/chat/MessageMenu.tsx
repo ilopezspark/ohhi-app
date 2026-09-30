@@ -1,6 +1,6 @@
 import { Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
-import { Text } from '../ui';
+import { Text, useHeaderInsets } from '../ui';
 import { ReplyIcon } from './mediaIcons';
 import { MENU_ROW_HEIGHT, MENU_WIDTH, menuHeight, menuPosition, type MenuAnchor } from './menuPlacement';
 
@@ -19,7 +19,7 @@ interface Props {
   onDismiss: () => void;
 }
 
-/** Status bar and home indicator room the menu keeps clear of. */
+/** Status bar and home indicator room the menu keeps clear of, at least (the real insets when larger). */
 const SAFE_TOP = 48;
 const SAFE_BOTTOM = 34;
 
@@ -30,11 +30,17 @@ const SAFE_BOTTOM = 34;
  */
 export function MessageMenu({ anchor, mine, actions, onDismiss }: Props) {
   const window = useWindowDimensions();
+  const insets = useHeaderInsets();
   if (!anchor) return null;
 
   const position = menuPosition(
     anchor,
-    { width: window.width, height: window.height, top: SAFE_TOP, bottom: SAFE_BOTTOM },
+    {
+      width: window.width,
+      height: window.height,
+      top: Math.max(SAFE_TOP, insets.top),
+      bottom: Math.max(SAFE_BOTTOM, insets.bottom),
+    },
     mine,
     actions.length
   );

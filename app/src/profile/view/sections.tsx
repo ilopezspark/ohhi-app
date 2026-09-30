@@ -19,12 +19,15 @@ import {
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 import { displayName } from '../../ui/displayName';
 import { GATED_NOTE, joinedMonthLabel } from '../fields';
-import { classOf, type ProfilePrompt, type ProfileViewData } from './model';
+import { type ProfilePrompt, type ProfileViewData } from './model';
+import { aboutRows, type AboutRowKey } from '../about';
+import { BriefcaseIcon, CalendarIcon } from '../../ui/icons/AboutIcons';
 
 /**
  * The profile's detail list (`03-profile-scrolled.png`, `04-profile-full*.png`)
  * as a plain ordered list of sections, in the brief's section order: what
- * you two share, the basics, photo 2, a prompt, into, photo 3, the next
+ * you two share, about (migration 0018: major, graduating, work), the basics
+ * (pronouns and orientation, when public), photo 2, a prompt, into, photo 3, the next
  * prompt(s), around campus, the footer. Each section renders only when it
  * has data; a section with nothing to show is left out, not drawn empty.
  * Classes, commute and year-in-school rows are not built (ruling 1).
@@ -84,6 +87,13 @@ export function detailSections(
 
   if (data.sharedLines.length > 0) {
     sections.push({ key: 'shared', render: () => <SharedCard lines={data.sharedLines} testID={`${prefix}-shared`} /> });
+  }
+
+  // Migration 0018: the about card sits above the basics. Rows with no
+  // value are left out, and with none the card is not drawn at all.
+  const about = aboutCardRows(data, prefix);
+  if (about.length > 0) {
+    sections.push({ key: 'about', render: () => <BasicsCard title="about" rows={about} testID={`${prefix}-about`} /> });
   }
 
   const basics = basicsRows(data, prefix);
@@ -215,19 +225,36 @@ export interface BasicsRow {
   testID?: string;
 }
 
-/** The basics card's rows: major and year, pronouns, orientation. Transfer plans, commute and year-in-school are not scoped. */
+const ABOUT_ICONS: Record<AboutRowKey, ReactNode> = {
+  major: <CapIcon size={20} color={colors.muted} />,
+  graduating: <CalendarIcon size={20} color={colors.muted} />,
+  work: <BriefcaseIcon size={20} color={colors.muted} />,
+};
+
+/**
+ * The about card's rows (`docs/design/tags-about/contract.md` §4, as ruled):
+ * major (minor as a sub-line), `graduating spring 2028` or `not sure yet`,
+ * work type and job title (hours as a sub-line). A row with no value is left
+ * out; there is never a placeholder.
+ */
+export function aboutCardRows(data: Pick<ProfileViewData, 'about'>, prefix: string): BasicsRow[] {
+  return aboutRows(data.about).map((row) => ({
+    key: row.key,
+    icon: ABOUT_ICONS[row.key],
+    primary: row.primary,
+    secondary: row.secondary,
+    testID: `${prefix}-about-${row.key}`,
+  }));
+}
+
+/**
+ * The basics card's rows: pronouns and orientation, each only when the
+ * person made them public. The major and graduating year moved to the about
+ * card (migration 0018), so nothing shows twice; with neither row the card
+ * is not drawn.
+ */
 export function basicsRows(data: ProfileViewData, prefix: string): BasicsRow[] {
   const rows: BasicsRow[] = [];
-  const year = classOf(data.gradYear);
-  if (data.majorLabel || year) {
-    rows.push({
-      key: 'major',
-      icon: <CapIcon size={20} color={colors.muted} />,
-      primary: data.majorLabel ?? (year as string),
-      secondary: data.majorLabel ? year : null,
-      testID: `${prefix}-basics-major`,
-    });
-  }
   if (data.pronouns) {
     rows.push({
       key: 'pronouns',
@@ -248,10 +275,11 @@ export function basicsRows(data: ProfileViewData, prefix: string): BasicsRow[] {
   return rows;
 }
 
-export function BasicsCard({ rows, testID }: { rows: BasicsRow[]; testID?: string }) {
+/** An icon-and-value card with hairline-separated rows: `the basics`, and the about card (`title="about"`). */
+export function BasicsCard({ rows, title = 'the basics', testID }: { rows: BasicsRow[]; title?: string; testID?: string }) {
   return (
     <View style={[styles.card, shadows.card]} testID={testID}>
-      <CardHeader icon={<PersonIcon size={16} color={colors.muted} />} label="the basics" />
+      <CardHeader icon={<PersonIcon size={16} color={colors.muted} />} label={title} />
       <View>
         {rows.map((row, i) => (
           <View key={row.key} style={[styles.basicsRow, i < rows.length - 1 && styles.divider]} testID={row.testID}>

@@ -10,7 +10,7 @@ import { useMessageListRealtime } from '../../chat/useChatRealtime';
 import { useRefetchOnFocus } from '../../query/gone';
 import { colors, layout, spacing } from '../../theme/tokens';
 import { ChatIcon } from '../../ui/icons';
-import { EmptyState, Text } from '../../ui';
+import { EmptyState, ScreenHeader, Text } from '../../ui';
 
 /**
  * The chat list (`docs/app-social-plan.md` §3, `Chat-List.html`).
@@ -167,53 +167,49 @@ export default function ChatsScreen() {
 
   const data = conversations ?? [];
 
+  // The heading stays put at the shared heading padding (clear of the
+  // status bar); the list scrolls under it.
   return (
-    <FlatList
-      testID="chats-list"
-      data={data}
-      keyExtractor={(item) => item.id}
-      style={styles.screen}
-      contentContainerStyle={styles.list}
-      ListHeaderComponent={
-        <View style={styles.header}>
-          <Text variant="headline" style={styles.title}>
-            chat
-          </Text>
-        </View>
-      }
-      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={onRefresh} tintColor={colors.ink} />}
-      ListEmptyComponent={
-        <EmptyState
-          testID="chats-empty"
-          icon={<ChatIcon size={40} color={colors.faint} />}
-          title="no chats yet"
-          message="Say hi to someone on the grid to start one."
-        />
-      }
-      ListFooterComponent={
-        data.length > 0 ? (
-          <Text variant="helper" style={styles.footerHint}>
-            chats you don&apos;t answer in 7 days quietly close.
-          </Text>
-        ) : null
-      }
-      renderItem={({ item }) => (
-        <ConversationRow
-          item={item}
-          meId={meId ?? ''}
-          photoUrl={item.other.photoPath ? photoUrls?.[item.other.photoPath] : undefined}
-          onPress={openThread}
-        />
-      )}
-    />
+    <View style={styles.screen}>
+      <ScreenHeader title="chat" titleSize={32} testID="chats-header" />
+      <FlatList
+        testID="chats-list"
+        data={data}
+        keyExtractor={(item) => item.id}
+        style={styles.screen}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={onRefresh} tintColor={colors.ink} />}
+        ListEmptyComponent={
+          <EmptyState
+            testID="chats-empty"
+            icon={<ChatIcon size={40} color={colors.faint} />}
+            title="no chats yet"
+            message="Say hi to someone on the grid to start one."
+          />
+        }
+        ListFooterComponent={
+          data.length > 0 ? (
+            <Text variant="helper" style={styles.footerHint}>
+              chats you don&apos;t answer in 7 days quietly close.
+            </Text>
+          ) : null
+        }
+        renderItem={({ item }) => (
+          <ConversationRow
+            item={item}
+            meId={meId ?? ''}
+            photoUrl={item.other.photoPath ? photoUrls?.[item.other.photoPath] : undefined}
+            onPress={openThread}
+          />
+        )}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.paper },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: spacing.xxl, flexGrow: 1 },
-  header: { paddingTop: spacing.smMd, paddingBottom: spacing.smMd },
-  title: { fontSize: 32 },
+  list: { paddingHorizontal: layout.gutter, paddingTop: spacing.smMd, paddingBottom: spacing.xxl, flexGrow: 1 },
   footerHint: { textAlign: 'center', paddingTop: spacing.xl },
 });

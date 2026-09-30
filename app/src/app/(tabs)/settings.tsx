@@ -1,7 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { CompletionBar, Header, PillButton, RowCard, SectionLabel, SettingsRow, Text } from '../../ui';
+import { CompletionBar, ScreenHeader, PillButton, RowCard, SectionLabel, SettingsRow, Text } from '../../ui';
 import { CheckIcon, EyeIcon, PencilIcon, SettingsIcon } from '../../ui/icons';
 import { displayName } from '../../ui/displayName';
 import { ProfileTile } from '../../profile/ProfileTile';
@@ -41,24 +40,23 @@ export default function MeScreen() {
   const hasStatus = !!statusLine && statusLine.trim().length > 0;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']} testID="me-screen">
+    <View style={styles.safe} testID="me-screen">
+      <ScreenHeader
+        title="me"
+        titleSize={30}
+        right={
+          <Pressable
+            testID="me-settings-gear"
+            accessibilityRole="button"
+            accessibilityLabel="settings"
+            style={styles.gear}
+            onPress={() => router.push('/me/settings' as never)}
+          >
+            <SettingsIcon size={20} />
+          </Pressable>
+        }
+      />
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Header
-          title="me"
-          titleSize={30}
-          right={
-            <Pressable
-              testID="me-settings-gear"
-              accessibilityRole="button"
-              accessibilityLabel="settings"
-              style={styles.gear}
-              onPress={() => router.push('/me/settings' as never)}
-            >
-              <SettingsIcon size={20} />
-            </Pressable>
-          }
-        />
-
         <View style={styles.identityRow}>
           <ProfileTile
             testID="me-photo-tile"
@@ -163,7 +161,7 @@ export default function MeScreen() {
           </RowCard>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -178,7 +176,7 @@ function albumsLabel(albumCount: number, sharedAlbumCount: number): string {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.mdLg, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
   gear: {
     width: 40,
     height: 40,

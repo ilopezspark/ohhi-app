@@ -30,6 +30,16 @@ const MAYA: ProfileViewData = {
   gateOpen: false,
   joinedMonth: null,
   joinedRecency: null,
+  about: {
+    major: { id: 'p-nursing', label: 'nursing' },
+    minor: { id: 'p-bio', label: 'bio' },
+    graduatingTerm: 'spring',
+    graduatingYear: 2027,
+    graduatingUnsure: false,
+    workType: 'food_service',
+    jobTitle: 'barista at a place downtown',
+    workHours: ['part_time', 'weekends'],
+  },
 };
 
 const LUIS: ProfileViewData = {
@@ -48,6 +58,7 @@ const LUIS: ProfileViewData = {
   pronouns: null,
   photoPaths: ['p0'],
   photoUrls: {},
+  about: null,
 };
 
 function renderView(data: ProfileViewData, props: Partial<Parameters<typeof ProfileView>[0]> = {}) {
@@ -185,10 +196,10 @@ describe('ProfileView — photo pager', () => {
 });
 
 describe('ProfileView — detail list (03, 04)', () => {
-  it('renders shared, basics, photo 2, into, photo 3 and the footer, in that order', async () => {
+  it('renders shared, about, basics, photo 2, into, photo 3 and the footer, in that order (about above the basics)', async () => {
     const screen = await renderView(MAYA);
     const details = screen.getByTestId('profile-details');
-    const order = ['profile-shared', 'profile-basics', 'profile-photo-card-1', 'profile-into', 'profile-photo-card-2', 'profile-footer'];
+    const order = ['profile-shared', 'profile-about', 'profile-basics', 'profile-photo-card-1', 'profile-into', 'profile-photo-card-2', 'profile-footer'];
     const ids = details.children.map((child) => {
       const node = typeof child === 'string' ? null : child.children[0];
       return node && typeof node !== 'string' ? node.props.testID : null;
@@ -204,14 +215,43 @@ describe('ProfileView — detail list (03, 04)', () => {
     expect(none.queryByTestId('profile-shared')).toBeNull();
   });
 
-  it('the basics shows major + year and pronouns only when public', async () => {
+  it('the about card shows major (minor sub-line), graduating, and work (hours sub-line), in that order', async () => {
     const screen = await renderView(MAYA);
-    expect(screen.getByTestId('profile-basics-major')).toHaveTextContent(/nursing/);
-    expect(screen.getByTestId('profile-basics-major')).toHaveTextContent(/class of '27/);
+    const about = screen.getByTestId('profile-about');
+    expect(within(about).getByText('about')).toBeTruthy();
+    expect(screen.getByTestId('profile-about-major')).toHaveTextContent(/nursing/);
+    expect(screen.getByTestId('profile-about-major')).toHaveTextContent(/minor in bio/);
+    expect(screen.getByTestId('profile-about-graduating')).toHaveTextContent('graduating spring 2027');
+    expect(screen.getByTestId('profile-about-work')).toHaveTextContent(/food service · barista at a place downtown/);
+    expect(screen.getByTestId('profile-about-work')).toHaveTextContent(/part time · weekends/);
+  });
+
+  it('nothing shows twice: the major and year are only in the about card', async () => {
+    const screen = await renderView(MAYA);
+    expect(screen.queryByTestId('profile-basics-major')).toBeNull();
+    expect(screen.getByTestId('profile-basics')).not.toHaveTextContent(/nursing|class of/);
+  });
+
+  it('skips empty about rows, shows not sure yet, and hides the card when empty', async () => {
+    const unsure = await renderView({
+      ...MAYA,
+      about: { ...MAYA.about!, minor: null, graduatingUnsure: true, graduatingYear: null, graduatingTerm: null, workType: 'rather_not_say', jobTitle: null, workHours: [] },
+    });
+    expect(unsure.getByTestId('profile-about-graduating')).toHaveTextContent('not sure yet');
+    expect(unsure.queryByTestId('profile-about-work')).toBeNull();
+    expect(unsure.getByTestId('profile-about-major')).not.toHaveTextContent(/minor/);
+
+    const none = await renderView(LUIS);
+    expect(none.queryByTestId('profile-about')).toBeNull();
+  });
+
+  it('the basics shows pronouns only when public, and is hidden when empty', async () => {
+    const screen = await renderView(MAYA);
     expect(screen.getByTestId('profile-identity')).toHaveTextContent('she/her');
 
     const privateIdentity = await renderView({ ...MAYA, pronouns: null });
     expect(privateIdentity.queryByTestId('profile-identity')).toBeNull();
+    expect(privateIdentity.queryByTestId('profile-basics')).toBeNull();
   });
 
   it('into lists the tags and is hidden without any', async () => {

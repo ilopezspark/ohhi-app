@@ -58,6 +58,7 @@ export default function EditUsualPlacesScreen() {
       intro={`up to ${USUAL_PLACES_MAX} spots where you usually end up on campus.`}
       onCancel={guard.requestClose}
       onSave={save}
+      error={draftState.fieldErrors.usualPlaces ?? null}
     >
       {places.map((place, index) => (
         <View key={index} style={styles.row} testID={`editor-usual-places-item-${index}`}>

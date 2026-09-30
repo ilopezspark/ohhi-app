@@ -27,6 +27,7 @@ import { EditSections } from '../me/editor/EditSections';
 import { clockLabel, placeLineStatus, placeLineStatusCopy } from '../me/editor/PlaceLineField';
 import { moveItem } from '../me/editor/listEdit';
 import { queryKeys } from '../me/queryKeys';
+import { EMPTY_ABOUT } from '../profile/about';
 import EditPlaceScreen from '../app/profile-editor/place';
 import EditPromptsScreen from '../app/profile-editor/prompts';
 import EditUsualPlacesScreen from '../app/profile-editor/usual-places';
@@ -43,9 +44,11 @@ function draftState(overrides: Record<string, unknown> = {}, draft: Record<strin
     ready: true,
     userId: 'u1',
     firstName: 'izaac',
-    campusTags: [],
+    catalog: [],
+    fieldErrors: {},
+    minTags: 0,
     photoCount: 1,
-    draft: { statusLine: '', goals: [], tagIds: [], placeLine: '', usualPlaces: [], prompts: [], ...draft },
+    draft: { statusLine: '', goals: [], tagIds: [], placeLine: '', usualPlaces: [], prompts: [], about: EMPTY_ABOUT, ...draft },
     fieldsMeta: { savedPlaceLine: null, placeLineUntil: null, placeLineShown: false, joinedMonth: null, joinedRecency: null },
     setPlaceLine: jest.fn(),
     setUsualPlaces: jest.fn(),
@@ -54,6 +57,7 @@ function draftState(overrides: Record<string, unknown> = {}, draft: Record<strin
     setStatusLine: jest.fn(),
     setGoals: jest.fn(),
     setTagIds: jest.fn(),
+    setAbout: jest.fn(),
     ...overrides,
   };
 }
@@ -345,17 +349,89 @@ describe('EditSections — the three new rows', () => {
     expect(screen.getByTestId('editor-usual-places-row')).toHaveTextContent('add where you usually end up');
   });
 
-  it("the tags picker opens in a Modal, so its dim covers the whole editor, not just the tags section it's declared in", async () => {
+  it('interests: `change` pushes the full-screen picker route (the old sheet could not scroll)', async () => {
+    (useProfileEditorDraftContext as jest.Mock).mockReturnValue({
+      ...draftState(
+        {
+          catalog: [
+            { id: 't1', label: 'coffee', category: 'food_drink', categoryLabel: 'food & drink', categoryOrder: 8, sortOrder: 1 },
+            { id: 't2', label: 'gym', category: 'fitness', categoryLabel: 'fitness', categoryOrder: 2, sortOrder: 1 },
+          ],
+        },
+        { tagIds: ['t2', 't1'] }
+      ),
+      completion: { percent: 50, items: [], nextBest: null },
+    });
+    const screen = await render(<EditSections />);
+    // picked order is kept
+    expect(screen.getByTestId('editor-tags-selected')).toHaveTextContent('gymcoffeechange');
+    expect(screen.queryByTestId('editor-tags-sheet')).toBeNull();
+    await fireEvent.press(screen.getByTestId('editor-tags-change'));
+    expect(router.push).toHaveBeenCalledWith('/profile-editor/tags');
+  });
+
+  it('interests: with none picked, a clear line and a pick action', async () => {
     (useProfileEditorDraftContext as jest.Mock).mockReturnValue({
       ...draftState(),
       completion: { percent: 50, items: [], nextBest: null },
     });
     const screen = await render(<EditSections />);
-    await fireEvent.press(screen.getByTestId('editor-tags-change'));
-    let host = screen.getByTestId('editor-tags-sheet').parent;
-    while (host && host.props.transparent === undefined) host = host.parent;
-    expect(host?.props).toMatchObject({ visible: true, transparent: true, statusBarTranslucent: true, navigationBarTranslucent: true });
-    await fireEvent.press(screen.getByTestId('editor-tags-sheet-backdrop'));
-    expect(screen.queryByTestId('editor-tags-sheet')).toBeNull();
+    expect(screen.getByTestId('editor-tags-empty')).toHaveTextContent(/pick at least three interests/);
+    expect(screen.getByTestId('editor-tags-change')).toHaveTextContent('pick interests');
+  });
+
+  it('about you: `school and work` (with a summary) sits above interests, separate from pronouns and orientation', async () => {
+    (useProfileEditorDraftContext as jest.Mock).mockReturnValue({
+      ...draftState(
+        {},
+        {
+          about: {
+            ...EMPTY_ABOUT,
+            major: { id: 'p-business', label: 'business' },
+            graduatingTerm: 'spring',
+            graduatingYear: 2028,
+            workType: 'retail',
+          },
+        }
+      ),
+      completion: { percent: 50, items: [], nextBest: null },
+    });
+    const screen = await render(<EditSections />);
+    expect(screen.getByTestId('editor-school-work-row')).toHaveTextContent(/school and work/);
+    expect(screen.getByTestId('editor-school-work-row')).toHaveTextContent(/business · graduating spring 2028 · retail/);
+    expect(screen.getByTestId('editor-about-row')).toHaveTextContent(/pronouns and orientation/);
+    // no completion weight, no nag
+    expect(screen.queryByTestId('editor-section-about-weight')).toBeNull();
+    expect(screen.queryByTestId('editor-section-about-dot')).toBeNull();
+
+    const order = screen
+      .toJSON()
+      ? JSON.stringify(screen.toJSON()).indexOf('editor-section-about') < JSON.stringify(screen.toJSON()).indexOf('editor-section-tags')
+      : false;
+    expect(order).toBe(true);
+
+    await fireEvent.press(screen.getByTestId('editor-school-work-row'));
+    await fireEvent.press(screen.getByTestId('editor-about-row'));
+    expect((router.push as jest.Mock).mock.calls.map((c) => c[0])).toEqual(['/profile-editor/school-and-work', '/profile-editor/about']);
+  });
+
+  it('about you: an empty section invites without nagging', async () => {
+    (useProfileEditorDraftContext as jest.Mock).mockReturnValue({
+      ...draftState(),
+      completion: { percent: 50, items: [], nextBest: null },
+    });
+    const screen = await render(<EditSections />);
+    expect(screen.getByTestId('editor-school-work-row')).toHaveTextContent(/add your major, graduating term and work/);
+  });
+
+  it('a refused field save shows its line under that row', async () => {
+    (useProfileEditorDraftContext as jest.Mock).mockReturnValue({
+      ...draftState({ fieldErrors: { statusLine: "that text can't be used.", about: "that text can't be used." } }, { statusLine: 'x' }),
+      completion: { percent: 50, items: [], nextBest: null },
+    });
+    const screen = await render(<EditSections />);
+    expect(screen.getByTestId('editor-field-error-statusLine')).toHaveTextContent("that text can't be used.");
+    expect(screen.getByTestId('editor-field-error-about')).toHaveTextContent("that text can't be used.");
+    expect(screen.queryByTestId('editor-field-error-prompts')).toBeNull();
   });
 });

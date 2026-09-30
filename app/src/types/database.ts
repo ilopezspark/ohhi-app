@@ -110,6 +110,7 @@ export type Database = {
       }
       campuses: {
         Row: {
+          campus_type: Database["public"]["Enums"]["campus_type"]
           center_point: unknown
           city: string
           county_boundary: unknown
@@ -127,6 +128,7 @@ export type Database = {
           timezone: string
         }
         Insert: {
+          campus_type?: Database["public"]["Enums"]["campus_type"]
           center_point: unknown
           city: string
           county_boundary?: unknown
@@ -144,6 +146,7 @@ export type Database = {
           timezone?: string
         }
         Update: {
+          campus_type?: Database["public"]["Enums"]["campus_type"]
           center_point?: unknown
           city?: string
           county_boundary?: unknown
@@ -586,49 +589,105 @@ export type Database = {
           created_at: string
           first_name: string | null
           grad_year: number | null
+          graduating_term: Database["public"]["Enums"]["graduating_term"] | null
+          graduating_unsure: boolean
           here_now_until: string | null
           id: string
+          job_title: string | null
           last_active_at: string
+          major_id: string | null
+          minor_id: string | null
           place_line: string | null
           place_line_until: string | null
           status: Database["public"]["Enums"]["user_status"]
           status_line: string | null
           updated_at: string
           verification_status: Database["public"]["Enums"]["verification_status"]
+          work_hours: Database["public"]["Enums"]["work_hours"][] | null
+          work_type: Database["public"]["Enums"]["work_type"] | null
         }
         Insert: {
           campus_id?: string | null
           created_at?: string
           first_name?: string | null
           grad_year?: number | null
+          graduating_term?: Database["public"]["Enums"]["graduating_term"] | null
+          graduating_unsure?: boolean
           here_now_until?: string | null
           id: string
+          job_title?: string | null
           last_active_at?: string
+          major_id?: string | null
+          minor_id?: string | null
           place_line?: string | null
           place_line_until?: string | null
           status?: Database["public"]["Enums"]["user_status"]
           status_line?: string | null
           updated_at?: string
           verification_status?: Database["public"]["Enums"]["verification_status"]
+          work_hours?: Database["public"]["Enums"]["work_hours"][] | null
+          work_type?: Database["public"]["Enums"]["work_type"] | null
         }
         Update: {
           campus_id?: string | null
           created_at?: string
           first_name?: string | null
           grad_year?: number | null
+          graduating_term?: Database["public"]["Enums"]["graduating_term"] | null
+          graduating_unsure?: boolean
           here_now_until?: string | null
           id?: string
+          job_title?: string | null
           last_active_at?: string
+          major_id?: string | null
+          minor_id?: string | null
           place_line?: string | null
           place_line_until?: string | null
           status?: Database["public"]["Enums"]["user_status"]
           status_line?: string | null
           updated_at?: string
           verification_status?: Database["public"]["Enums"]["verification_status"]
+          work_hours?: Database["public"]["Enums"]["work_hours"][] | null
+          work_type?: Database["public"]["Enums"]["work_type"] | null
         }
         Relationships: [
           {
             foreignKeyName: "profiles_campus_id_fkey"
+            columns: ["campus_id"]
+            isOneToOne: false
+            referencedRelation: "campuses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      programs: {
+        Row: {
+          active: boolean
+          campus_id: string
+          created_at: string
+          id: string
+          label: string
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          campus_id: string
+          created_at?: string
+          id?: string
+          label: string
+          sort_order?: number
+        }
+        Update: {
+          active?: boolean
+          campus_id?: string
+          created_at?: string
+          id?: string
+          label?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "programs_campus_id_fkey"
             columns: ["campus_id"]
             isOneToOne: false
             referencedRelation: "campuses"
@@ -792,27 +851,54 @@ export type Database = {
         }
         Relationships: []
       }
+      tag_categories: {
+        Row: {
+          created_at: string
+          label: string
+          slug: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          label: string
+          slug: string
+          sort_order: number
+        }
+        Update: {
+          created_at?: string
+          label?: string
+          slug?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       tags: {
         Row: {
           campus_id: string | null
-          category: Database["public"]["Enums"]["tag_category"]
+          campus_type: Database["public"]["Enums"]["tag_campus_type"]
+          category: string
           created_at: string
           id: string
           label: string
+          sort_order: number
         }
         Insert: {
           campus_id?: string | null
-          category: Database["public"]["Enums"]["tag_category"]
+          campus_type?: Database["public"]["Enums"]["tag_campus_type"]
+          category: string
           created_at?: string
           id?: string
           label: string
+          sort_order?: number
         }
         Update: {
           campus_id?: string | null
-          category?: Database["public"]["Enums"]["tag_category"]
+          campus_type?: Database["public"]["Enums"]["tag_campus_type"]
+          category?: string
           created_at?: string
           id?: string
           label?: string
+          sort_order?: number
         }
         Relationships: [
           {
@@ -821,6 +907,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "campuses"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tags_category_fkey"
+            columns: ["category"]
+            isOneToOne: false
+            referencedRelation: "tag_categories"
+            referencedColumns: ["slug"]
           },
         ]
       }
@@ -883,6 +976,41 @@ export type Database = {
             foreignKeyName: "user_identity_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_notices: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          payload: Json
+          seen_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          payload?: Json
+          seen_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          payload?: Json
+          seen_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_notices_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -1450,6 +1578,7 @@ export type Database = {
         Returns: Database["public"]["Enums"]["user_status"]
       }
       delete_my_account: { Args: never; Returns: undefined }
+      dismiss_notice: { Args: { p_id: string }; Returns: boolean }
       delete_my_album: { Args: { p_album_id: string }; Returns: string[] }
       disablelongtransactions: { Args: never; Returns: string }
       dropgeometrycolumn:
@@ -1646,6 +1775,7 @@ export type Database = {
           verification_status: Database["public"]["Enums"]["verification_status"]
         }[]
       }
+      my_about: { Args: never; Returns: Json }
       my_profile_fields: {
         Args: never
         Returns: {
@@ -1720,17 +1850,36 @@ export type Database = {
           tier: Database["public"]["Enums"]["presence_tier"]
           user_id: string
           usual_places: string[]
+          about: Json
         }[]
       }
       request_waitlist: { Args: { p_email: string }; Returns: undefined }
       set_here_now: { Args: { p_on: boolean }; Returns: undefined }
+      set_my_about: { Args: { p_about: Json }; Returns: Json }
       set_my_place_line: { Args: { p_line: string }; Returns: string }
       set_my_prompts: { Args: { p_prompts: Json }; Returns: Json }
       set_my_tier: {
         Args: { p_tier: Database["public"]["Enums"]["presence_tier"] }
         Returns: undefined
       }
+      set_my_tags: { Args: { p_tag_ids: string[] }; Returns: string[] }
       set_my_usual_places: { Args: { p_places: string[] }; Returns: string[] }
+      suggest_tag: {
+        Args: { p_category?: string | null; p_label: string }
+        Returns: undefined
+      }
+      tag_catalog: {
+        Args: never
+        Returns: {
+          campus_type: Database["public"]["Enums"]["tag_campus_type"]
+          category: string
+          category_label: string
+          category_order: number
+          id: string
+          label: string
+          sort_order: number
+        }[]
+      }
       st_3dclosestpoint: {
         Args: { geom1: unknown; geom2: unknown }
         Returns: unknown
@@ -2332,6 +2481,7 @@ export type Database = {
     }
     Enums: {
       campus_status: "live" | "coming_soon" | "waitlist"
+      campus_type: "commuter" | "residential"
       consent_kind: "terms" | "privacy" | "biometric"
       conversation_state:
         | "awaiting_reply"
@@ -2340,6 +2490,7 @@ export type Database = {
         | "closed_block"
         | "closed_deleted"
       device_platform: "ios" | "android"
+      graduating_term: "spring" | "summer" | "fall" | "winter"
       hi_state: "sent" | "answered" | "dismissed" | "expired"
       media_kind: "photo" | "video"
       moderation_action:
@@ -2362,7 +2513,7 @@ export type Database = {
       report_severity: "p0" | "p1" | "p2"
       report_state: "open" | "in_review" | "resolved" | "dismissed"
       share_subject_type: "album" | "private_card"
-      tag_category: "major" | "place" | "interest"
+      tag_campus_type: "all" | "commuter" | "residential"
       user_goal: "friends" | "study" | "dates" | "group" | "whatever"
       user_status:
         | "onboarding"
@@ -2384,6 +2535,35 @@ export type Database = {
         | "manual_review"
         | "verified"
         | "id_failed"
+      work_hours:
+        | "part_time"
+        | "full_time"
+        | "nights"
+        | "weekends"
+        | "seasonal"
+        | "on_call"
+      work_type:
+        | "food_service"
+        | "retail"
+        | "warehouse"
+        | "delivery"
+        | "healthcare_aide"
+        | "childcare"
+        | "tutoring"
+        | "landscaping"
+        | "construction"
+        | "trades_apprentice"
+        | "office_or_admin"
+        | "customer_service"
+        | "security"
+        | "campus_job"
+        | "internship"
+        | "family_business"
+        | "freelance"
+        | "military_or_reserves"
+        | "rideshare"
+        | "not_working_right_now"
+        | "rather_not_say"
     }
     CompositeTypes: {
       geometry_dump: {
@@ -2520,6 +2700,7 @@ export const Constants = {
   public: {
     Enums: {
       campus_status: ["live", "coming_soon", "waitlist"],
+      campus_type: ["commuter", "residential"],
       consent_kind: ["terms", "privacy", "biometric"],
       conversation_state: [
         "awaiting_reply",
@@ -2529,6 +2710,7 @@ export const Constants = {
         "closed_deleted",
       ],
       device_platform: ["ios", "android"],
+      graduating_term: ["spring", "summer", "fall", "winter"],
       hi_state: ["sent", "answered", "dismissed", "expired"],
       media_kind: ["photo", "video"],
       moderation_action: [
@@ -2553,7 +2735,7 @@ export const Constants = {
       report_severity: ["p0", "p1", "p2"],
       report_state: ["open", "in_review", "resolved", "dismissed"],
       share_subject_type: ["album", "private_card"],
-      tag_category: ["major", "place", "interest"],
+      tag_campus_type: ["all", "commuter", "residential"],
       user_goal: ["friends", "study", "dates", "group", "whatever"],
       user_status: [
         "onboarding",
@@ -2577,6 +2759,37 @@ export const Constants = {
         "manual_review",
         "verified",
         "id_failed",
+      ],
+      work_hours: [
+        "part_time",
+        "full_time",
+        "nights",
+        "weekends",
+        "seasonal",
+        "on_call",
+      ],
+      work_type: [
+        "food_service",
+        "retail",
+        "warehouse",
+        "delivery",
+        "healthcare_aide",
+        "childcare",
+        "tutoring",
+        "landscaping",
+        "construction",
+        "trades_apprentice",
+        "office_or_admin",
+        "customer_service",
+        "security",
+        "campus_job",
+        "internship",
+        "family_business",
+        "freelance",
+        "military_or_reserves",
+        "rideshare",
+        "not_working_right_now",
+        "rather_not_say",
       ],
     },
   },

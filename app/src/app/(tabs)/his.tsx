@@ -7,7 +7,7 @@ import { isUnavailableError } from '../../api/errors';
 import { markHiHandledOptimistically, refreshBadges } from '../../badges/badgeCounts';
 import { signedPhotoUrls } from '../../api/photos';
 import { tintForPhoto } from '../../photos/tint';
-import { Avatar, EmptyState, HisIcon, Text } from '../../ui';
+import { Avatar, EmptyState, HisIcon, ScreenHeader, Text } from '../../ui';
 import { displayName } from '../../ui/displayName';
 import { colors, hairline, radii, shadows, spacing } from '../../theme/tokens';
 
@@ -111,86 +111,86 @@ export default function HisScreen() {
 
   const data = his ?? [];
 
+  // The heading stays put at the shared heading padding (clear of the
+  // status bar); the list scrolls under it.
   return (
-    <FlatList
-      testID="his-list"
-      data={data}
-      keyExtractor={(row) => row.id}
-      refreshing={isRefetching}
-      onRefresh={() => void refetch()}
-      contentContainerStyle={styles.list}
-      ListHeaderComponent={
-        <Text variant="headline" style={styles.header}>
-          hi&apos;s
-        </Text>
-      }
-      ListEmptyComponent={
-        <EmptyState
-          testID="his-empty"
-          title="no hi's yet"
-          message="they'll show up here."
-          icon={
-            <View style={styles.emptyIcon}>
-              <HisIcon size={36} color={colors.subtle} />
-            </View>
-          }
-        />
-      }
-      renderItem={({ item }) => {
-        const url = item.photoPath ? photoUrls?.[item.photoPath] : undefined;
-        return (
-          <View style={styles.row} testID={`his-row-${item.id}`}>
-            <Pressable
-              testID={`his-row-photo-${item.id}`}
-              onPress={() => router.push(`/profile/${item.fromUserId}` as never)}
-            >
-              <Avatar uri={url} tint={tintForPhoto(item.fromUserId, 0)} size="md" />
-            </Pressable>
-
-            <Pressable
-              style={styles.nameButton}
-              testID={`his-row-name-${item.id}`}
-              onPress={() => router.push(`/profile/${item.fromUserId}` as never)}
-            >
-              <Text variant="rowLabel" numberOfLines={1}>
-                {displayName(item.firstName) || 'someone'}
-              </Text>
-            </Pressable>
-
-            <View style={styles.actions}>
+    <View style={styles.screen}>
+      <ScreenHeader title="hi's" titleSize={32} testID="his-header" />
+      <FlatList
+        testID="his-list"
+        data={data}
+        keyExtractor={(row) => row.id}
+        refreshing={isRefetching}
+        onRefresh={() => void refetch()}
+        contentContainerStyle={styles.list}
+        ListEmptyComponent={
+          <EmptyState
+            testID="his-empty"
+            title="no hi's yet"
+            message="they'll show up here."
+            icon={
+              <View style={styles.emptyIcon}>
+                <HisIcon size={36} color={colors.subtle} />
+              </View>
+            }
+          />
+        }
+        renderItem={({ item }) => {
+          const url = item.photoPath ? photoUrls?.[item.photoPath] : undefined;
+          return (
+            <View style={styles.row} testID={`his-row-${item.id}`}>
               <Pressable
-                testID={`his-row-hiback-${item.id}`}
-                accessibilityRole="button"
-                disabled={hiBackMutation.isPending}
-                style={[styles.hiBackButton, hiBackMutation.isPending && styles.disabled]}
-                onPress={() => hiBackMutation.mutate(item.id)}
+                testID={`his-row-photo-${item.id}`}
+                onPress={() => router.push(`/profile/${item.fromUserId}` as never)}
               >
-                <Text variant="caption" color={colors.onDark}>
-                  Hi back
+                <Avatar uri={url} tint={tintForPhoto(item.fromUserId, 0)} size="md" />
+              </Pressable>
+
+              <Pressable
+                style={styles.nameButton}
+                testID={`his-row-name-${item.id}`}
+                onPress={() => router.push(`/profile/${item.fromUserId}` as never)}
+              >
+                <Text variant="rowLabel" numberOfLines={1}>
+                  {displayName(item.firstName) || 'someone'}
                 </Text>
               </Pressable>
-              <Pressable
-                testID={`his-row-dismiss-${item.id}`}
-                accessibilityRole="button"
-                style={[styles.dismissButton, shadows.sm]}
-                onPress={() => dismissMutation.mutate(item.id)}
-              >
-                <Text variant="caption" color={colors.muted}>
-                  Dismiss
-                </Text>
-              </Pressable>
+
+              <View style={styles.actions}>
+                <Pressable
+                  testID={`his-row-hiback-${item.id}`}
+                  accessibilityRole="button"
+                  disabled={hiBackMutation.isPending}
+                  style={[styles.hiBackButton, hiBackMutation.isPending && styles.disabled]}
+                  onPress={() => hiBackMutation.mutate(item.id)}
+                >
+                  <Text variant="caption" color={colors.onDark}>
+                    Hi back
+                  </Text>
+                </Pressable>
+                <Pressable
+                  testID={`his-row-dismiss-${item.id}`}
+                  accessibilityRole="button"
+                  style={[styles.dismissButton, shadows.sm]}
+                  onPress={() => dismissMutation.mutate(item.id)}
+                >
+                  <Text variant="caption" color={colors.muted}>
+                    Dismiss
+                  </Text>
+                </Pressable>
+              </View>
             </View>
-          </View>
-        );
-      }}
-    />
+          );
+        }}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.paper },
-  list: { paddingBottom: spacing.xxl, backgroundColor: colors.paper, flexGrow: 1 },
-  header: { fontSize: 32, paddingTop: spacing.xxl, paddingHorizontal: spacing.lgXl, marginBottom: spacing.smMd },
+  screen: { flex: 1, backgroundColor: colors.paper },
+  list: { paddingTop: spacing.smMd, paddingBottom: spacing.xxl, backgroundColor: colors.paper, flexGrow: 1 },
   emptyIcon: {
     width: 96,
     height: 96,

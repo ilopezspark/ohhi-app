@@ -5,7 +5,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getProfileCard } from '../../api/profileCard';
 import { getIdentity } from '../../api/identity';
 import { me as fetchMe } from '../../api/me';
-import { getUserTags, listTagsForCampus } from '../../api/tags';
+import { getUserTags, listTagCatalog } from '../../api/tags';
+import { getMyAbout } from '../../api/about';
 import { sendHi } from '../../api/his';
 import { startConversation } from '../../api/conversations';
 import { sendMessage } from '../../api/messages';
@@ -54,11 +55,11 @@ class ConversationCreatedSendFailedError extends Error {
  *
  * Reads, in parallel: `profile_card_for` (the card), the `identity` edge
  * function (pronouns/orientation, only when the person opted in; a 404
- * just leaves the rows out), and three reads for the client-side joins:
- * `me()` (my campus, for the tag catalog and the footer's campus name),
- * the campus tag catalog (which of their tags is the major) and my own tags
- * (what you two share). None of those three can block the screen: if any
- * fails, the major stays a chip and the shared card stays hidden.
+ * just leaves the rows out), and the reads for the client-side joins:
+ * `me()` (the footer's campus name), the tag catalog and my own tags and
+ * about section (what you two share: shared interests, and the shared major,
+ * which since migration 0018 comes from `about`, never from tags). None of
+ * those can block the screen: if any fails, the shared card stays hidden.
  *
  * Gone (migration 0014, decision 90): a card that was on screen and then
  * comes back empty on a refetch (focus, app foreground, reconnect, or the
@@ -92,13 +93,12 @@ export default function ProfileScreen() {
   });
 
   const meQuery = useQuery({ queryKey: queryKeys.me.result, queryFn: fetchMe, enabled: !gone });
-  const campusId = meQuery.data?.campus_id ?? null;
-  const catalogQuery = useQuery({
-    queryKey: ['campus_tags', campusId],
-    queryFn: () => listTagsForCampus(campusId),
-    enabled: meQuery.isSuccess && !gone,
-  });
+  // The catalog only turns my own tag ids into labels for "what you two
+  // share"; the card's own tags arrive as labels. `tag_catalog()` is already
+  // campus-filtered server-side.
+  const catalogQuery = useQuery({ queryKey: queryKeys.tagCatalog, queryFn: listTagCatalog, enabled: !gone });
   const myTagsQuery = useQuery({ queryKey: queryKeys.me.tags, queryFn: getUserTags, enabled: !gone });
+  const myAboutQuery = useQuery({ queryKey: queryKeys.me.aboutSection, queryFn: getMyAbout, enabled: !gone });
 
   const card = cardQuery.data ?? null;
   const emptyRead = cardQuery.isSuccess && cardQuery.data === null;
@@ -261,6 +261,7 @@ export default function ProfileScreen() {
     card,
     catalog: catalogQuery.data ?? [],
     myTagIds: (myTagsQuery.data ?? []).map((tag) => tag.tag_id),
+    myAbout: myAboutQuery.data ?? null,
     identity: identityQuery.data ?? null,
     campusShort: meQuery.data?.campus_slug ? meQuery.data.campus_slug.toUpperCase() : null,
     photoUrls: photoUrlsQuery.data ?? {},

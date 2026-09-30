@@ -455,6 +455,22 @@ const SCOPE_FILES: string[] = [
   path.join(SRC, 'api', 'badges.ts'),
   path.join(SRC, 'app', '(tabs)', '_layout.tsx'),
   ...listTsFiles(path.join(SRC, 'badges')),
+  // Tags and about (migration 0018, decision 94). The picker, the notice,
+  // the standalone interests screen, the onboarding tag step and their API
+  // modules are app copy and are linted. The catalog's tag and category
+  // labels, program labels and the work options are the owner's DATA, shown
+  // verbatim (some contain voice-rule words, e.g. `catching the bus`), so
+  // they are deliberately never typed into these files: tags and programs
+  // come from the server (`tag_catalog()`, `public.programs`), and the work
+  // type/hours options are the server enums' generated lists in
+  // `types/database.ts`, which this sweep excludes on purpose.
+  ...listTsFiles(path.join(SRC, 'tags')),
+  ...listTsFiles(path.join(SRC, 'notices')),
+  path.join(SRC, 'app', 'interests.tsx'),
+  path.join(SRC, 'app', '(onboarding)', 'tags.tsx'),
+  path.join(SRC, 'api', 'tags.ts'),
+  path.join(SRC, 'api', 'about.ts'),
+  path.join(SRC, 'api', 'notices.ts'),
 ].filter((file) => fs.existsSync(file));
 
 describe('voice rules — real source tree', () => {
@@ -525,6 +541,20 @@ describe('voice rules — real source tree', () => {
         path.join('badges', 'badgeCounts.ts'),
         path.join('badges', 'useBadgeCounts.ts'),
         path.join('badges', 'appBadge.ts'),
+        // tags and about
+        path.join('tags', 'TagPicker.tsx'),
+        path.join('tags', 'SuggestTagSheet.tsx'),
+        path.join('tags', 'pickerModel.ts'),
+        path.join('notices', 'TagsChangedNotice.tsx'),
+        path.join('app', 'interests.tsx'),
+        path.join('app', '(onboarding)', 'tags.tsx'),
+        path.join('app', 'profile-editor', 'tags.tsx'),
+        path.join('app', 'profile-editor', 'school-and-work.tsx'),
+        path.join('profile', 'about.ts'),
+        path.join('me', 'editor', 'ProgramPickerSheet.tsx'),
+        path.join('api', 'tags.ts'),
+        path.join('api', 'about.ts'),
+        path.join('api', 'notices.ts'),
       ])
     );
   });

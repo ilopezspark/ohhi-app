@@ -1,7 +1,8 @@
 import { useContext, type ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, StyleSheet, View, Pressable, type StyleProp, type ViewStyle } from 'react-native';
+import { Modal, StyleSheet, View, Pressable, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
+import { KeyboardSpacer } from './KeyboardSpacer';
 
 export interface SheetProps {
   children?: ReactNode;
@@ -31,6 +32,7 @@ const SHEET_BOTTOM = spacing.xxxl + spacing.xs;
  */
 export function Sheet({ children, onDismiss, showHandle = true, style, testID }: SheetProps) {
   const bottomInset = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
+  const paddingBottom = Math.max(SHEET_BOTTOM, bottomInset + spacing.lgXl);
   return (
     <View style={StyleSheet.absoluteFill} testID={testID ?? 'sheet'} pointerEvents="box-none">
       <Pressable
@@ -40,18 +42,22 @@ export function Sheet({ children, onDismiss, showHandle = true, style, testID }:
         style={styles.dim}
         onPress={onDismiss}
       />
-      {/* `padding` on both platforms: with Android's edge-to-edge (always on
-          since SDK 54) the window no longer resizes for the keyboard, so
-          `undefined` there would leave a field under it. */}
-      <KeyboardAvoidingView behavior="padding" style={styles.keyboard} pointerEvents="box-none">
+      {/* Rides the keyboard with `KeyboardSpacer` (react-native-keyboard-
+          controller): with Android's edge-to-edge the window no longer
+          resizes for the keyboard, and React Native's KeyboardAvoidingView
+          only moved once the keyboard had finished opening and kept the
+          home-indicator padding on top of the keyboard. While the keyboard
+          is up the panel keeps just its own `lgXl` below the content. */}
+      <View style={styles.keyboard} pointerEvents="box-none">
         <View
-          style={[styles.sheet, shadows.sheet, { paddingBottom: Math.max(SHEET_BOTTOM, bottomInset + spacing.lgXl) }, style]}
+          style={[styles.sheet, shadows.sheet, { paddingBottom }, style]}
           testID={testID ? `${testID}-panel` : 'sheet-panel'}
         >
           {showHandle ? <View style={styles.handle} /> : null}
           {children}
         </View>
-      </KeyboardAvoidingView>
+        <KeyboardSpacer bottomInset={paddingBottom - spacing.lgXl} testID={testID ? `${testID}-keyboard` : 'sheet-keyboard'} />
+      </View>
     </View>
   );
 }

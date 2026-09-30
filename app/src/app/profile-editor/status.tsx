@@ -15,6 +15,7 @@ export default function EditStatusScreen() {
     <StatusEditor
       testID="editor-status-editor"
       initialValue={draftState.draft.statusLine}
+      error={draftState.fieldErrors.statusLine ?? null}
       onCancel={() => router.back()}
       onSave={(value) => {
         draftState.setStatusLine(value);

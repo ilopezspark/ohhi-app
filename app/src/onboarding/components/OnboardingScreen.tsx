@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { colors, layout, spacing } from '../../theme/tokens';
+import { useHeaderInsets } from '../../ui/useHeaderInsets';
 import { OnboardingHeader } from './OnboardingHeader';
 
 export interface OnboardingScreenProps {
@@ -27,13 +28,16 @@ export interface OnboardingScreenProps {
  * extra handling here).
  */
 export function OnboardingScreen({ step, onBack, backTestID, children, footer, testID }: OnboardingScreenProps) {
+  // The Me screen's heading padding (owner ruling): below the status bar,
+  // the shared 12 gap, rather than a fixed 56 that ignored the real inset.
+  const insets = useHeaderInsets();
   return (
     <KeyboardAvoidingView
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       testID={testID}
     >
-      <View style={styles.frame}>
+      <View style={[styles.frame, { paddingTop: insets.top, paddingHorizontal: insets.gutter }]}>
         <OnboardingHeader step={step} onBack={onBack} backTestID={backTestID} />
         <ScrollView
           style={styles.scroll}
@@ -54,7 +58,6 @@ const styles = StyleSheet.create({
   frame: {
     flex: 1,
     paddingHorizontal: layout.gutter,
-    paddingTop: layout.topInset,
   },
   scroll: { flex: 1 },
   scrollContent: { gap: spacing.xl, paddingTop: spacing.xxl, paddingBottom: spacing.xl },

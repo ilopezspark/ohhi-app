@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,7 +10,7 @@ import {
   VerificationUnavailableError,
 } from '../../api/verification';
 import { mapSupabaseError } from '../../api/errors';
-import { Button, Header, Text, VerificationPill } from '../../ui';
+import { Button, ScreenHeader, Text, VerificationPill } from '../../ui';
 import { colors, spacing } from '../../theme/tokens';
 import { queryKeys } from '../../me/queryKeys';
 import { canStartVerification, isVerified, verificationLabel } from '../../me/settings/verification';
@@ -56,10 +55,9 @@ export default function VerificationScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <View style={styles.safe}>
+      <ScreenHeader title="verification" titleSize={26} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={styles.scroll} testID="verification-screen">
-        <Header title="verification" titleSize={26} onBack={() => router.back()} />
-
         <VerificationPill
           size="md"
           verified={verified}
@@ -89,11 +87,11 @@ export default function VerificationScreen() {
 
         {meQuery.isLoading ? <ActivityIndicator color={colors.ink} /> : null}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.mdLg, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
 });

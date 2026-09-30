@@ -97,6 +97,7 @@ export default function EditPromptsScreen() {
       intro={`pick up to ${PROMPTS_MAX} questions and answer them in your own words. they show on your profile between your photos.`}
       onCancel={guard.requestClose}
       onSave={save}
+      error={draftState.fieldErrors.prompts ?? null}
       overlay={picker}
     >
       {answers.map((prompt, index) => {

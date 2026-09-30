@@ -10,6 +10,7 @@ import { useMyPhotos } from '../me/editor/useMyPhotos';
 import { PreviewCard } from '../me/editor/PreviewCard';
 import { buildPreviewData } from '../me/editor/previewData';
 import { usePresenceStore } from '../presence/store';
+import { EMPTY_ABOUT, type AboutSection } from '../profile/about';
 
 const thisYear = new Date().getFullYear();
 
@@ -22,10 +23,10 @@ const BASE_DRAFT_STATE = {
   campusShort: 'CLC',
   verified: true,
   photoCount: 1,
-  campusTags: [
-    { id: 't1', label: 'library', category: 'place', campus_id: null },
-    { id: 't2', label: 'gym', category: 'place', campus_id: null },
-    { id: 't3', label: 'nursing', category: 'major', campus_id: null },
+  catalog: [
+    { id: 't1', label: 'coffee', category: 'food_drink', categoryLabel: 'food & drink', categoryOrder: 8, sortOrder: 4 },
+    { id: 't2', label: 'gym', category: 'fitness', categoryLabel: 'fitness', categoryOrder: 2, sortOrder: 1 },
+    { id: 't3', label: 'anime', category: 'film_tv', categoryLabel: 'film & tv', categoryOrder: 4, sortOrder: 6 },
   ],
   draft: {
     statusLine: 'at the library',
@@ -34,6 +35,7 @@ const BASE_DRAFT_STATE = {
     placeLine: '',
     usualPlaces: [] as string[],
     prompts: [] as { promptId: string; question: string; gated: boolean; answer: string }[],
+    about: { ...EMPTY_ABOUT, major: { id: 'p-nursing', label: 'nursing' }, graduatingTerm: 'spring', graduatingYear: 2027 } as AboutSection,
   },
   fieldsMeta: {
     savedPlaceLine: null as string | null,
@@ -108,9 +110,29 @@ describe('PreviewCard', () => {
     const screen = await render(<PreviewCard />);
     expect(screen.getByTestId('profile-editor-preview-status-line')).toHaveTextContent('a brand new unsaved status');
     expect(screen.getByTestId('profile-editor-preview-goals')).toHaveTextContent('here for study');
-    expect(screen.getByTestId('profile-editor-preview-tags')).toHaveTextContent('here for studygym');
-    // the major goes to the pin line, not a chip
+    expect(screen.getByTestId('profile-editor-preview-tags')).toHaveTextContent('here for studygymanime'); // every tag is an interest chip, in picked order
+    // the major comes from the draft about section and goes to the pin line
     expect(screen.getByTestId('profile-editor-preview-meta')).toHaveTextContent("on campus · nursing '27");
+  });
+
+  it('shows the draft about section as the about card, through the shared ProfileView', async () => {
+    withDraft({
+      about: {
+        ...EMPTY_ABOUT,
+        major: { id: 'p-cs', label: 'cs' },
+        graduatingUnsure: true,
+        workType: 'retail',
+        jobTitle: 'cashier',
+        workHours: ['weekends'],
+      },
+    });
+    const screen = await render(<PreviewCard />);
+    expect(screen.getByTestId('profile-editor-preview-about-major')).toHaveTextContent('cs');
+    expect(screen.getByTestId('profile-editor-preview-about-graduating')).toHaveTextContent('not sure yet');
+    expect(screen.getByTestId('profile-editor-preview-about-work')).toHaveTextContent(/retail · cashier/);
+    // not sure yet: no year on the pin line
+    expect(screen.getByTestId('profile-editor-preview-meta')).toHaveTextContent('on campus · cs');
+    expect(screen.getByTestId('profile-editor-preview-meta')).not.toHaveTextContent(/'2/);
   });
 
   it('shows draft prompts between the photos, with the gated note on a gated one', async () => {
@@ -154,7 +176,7 @@ describe('buildPreviewData — the place line', () => {
     gradYear: 2027,
     verified: true,
     campusShort: 'CLC',
-    campusTags: [],
+    catalog: [],
     photoPaths: [],
     photoUrls: {},
     tier: 'on_campus' as const,

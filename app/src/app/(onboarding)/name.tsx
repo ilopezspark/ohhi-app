@@ -16,9 +16,9 @@ import { OnboardingScreen } from '../../onboarding/components/OnboardingScreen';
  *
  * **Deviation**: the design shows grad year as a fixed row of 5 year chips
  * ('26/'27/'28/'29/"later"). Kept as the existing free-text numeric field
- * instead — the app validates a much wider range (`GRAD_YEAR_MIN`/`MAX`,
- * current year ±10, `onboarding/validation.ts`) than 5 discrete chips could
- * express, and narrowing that would be a behaviour change, not a restyle.
+ * instead. The range is this year to this year + 8 since migration 0018
+ * (`GRAD_YEAR_MIN`/`MAX`, `onboarding/validation.ts`), matching the
+ * server's check, which refuses anything else with `22023`.
  *
  * Errors render as their own `Text` below each `Input` (rather than through
  * `Input`'s own `error` prop, which has no testID of its own) so the

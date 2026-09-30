@@ -29,7 +29,7 @@ export function PreviewCard() {
     gradYear: draftState.gradYear,
     verified: draftState.verified,
     campusShort: draftState.campusShort,
-    campusTags: draftState.campusTags,
+    catalog: draftState.catalog,
     draft: draftState.draft,
     fieldsMeta: draftState.fieldsMeta ?? null,
     photoPaths: photos.map((photo) => photo.storage_path),

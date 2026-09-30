@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { InfoIcon, KeyboardScrollView, Text } from '../../ui';
+import { InfoIcon, KeyboardScrollView, Text, useHeaderInsets } from '../../ui';
 import { colors, radii, spacing } from '../../theme/tokens';
 
 export interface FieldEditorFrameProps {
@@ -35,9 +34,11 @@ export function FieldEditorFrame({
   overlay,
   testID,
 }: FieldEditorFrameProps) {
+  // The Me screen's heading padding (owner ruling): shared top inset and gutter.
+  const insets = useHeaderInsets();
   return (
-    <SafeAreaView style={styles.safe} edges={['top']} testID={testID}>
-      <View style={styles.header}>
+    <View style={styles.safe} testID={testID}>
+      <View style={[styles.header, { paddingTop: insets.top, paddingHorizontal: insets.gutter }]}>
         <Pressable testID={`${testID}-cancel`} accessibilityRole="button" onPress={onCancel} hitSlop={8}>
           <Text variant="labelLg" color={colors.muted}>
             cancel
@@ -73,7 +74,7 @@ export function FieldEditorFrame({
         ) : null}
       </KeyboardScrollView>
       {overlay}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -95,8 +96,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lgXl,
-    paddingVertical: spacing.lgXl,
+    paddingBottom: spacing.lgXl,
   },
   body: { paddingHorizontal: spacing.lgXl, paddingBottom: spacing.huge, gap: spacing.lgXl },
   intro: { lineHeight: 19 },

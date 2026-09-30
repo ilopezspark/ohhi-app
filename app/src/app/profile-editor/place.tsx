@@ -42,6 +42,7 @@ export default function EditPlaceScreen() {
       intro="a few words about where you are right now, for example library, 2nd floor."
       onCancel={guard.requestClose}
       onSave={save}
+      error={draftState.fieldErrors.placeLine ?? null}
     >
       <PlaceLineField testID="editor-place-field" value={value} onChange={setValue} status={status} autoFocus />
     </FieldEditorFrame>
