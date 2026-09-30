@@ -8,6 +8,7 @@ import {
   internalError,
   json,
   notFound,
+  preflight,
   rateLimited,
   validationFailed,
 } from "../_shared/http.ts";
@@ -86,11 +87,16 @@ export function routeSegments(pathname: string): string[] {
 // Handler
 // -----------------------------------------------------------------------------
 
-export function createHandler(deps: RouterDeps): (req: Request) => Promise<Response> {
+export function createHandler(
+  deps: RouterDeps,
+): (req: Request) => Promise<Response> {
   const now = deps.now ?? (() => Date.now());
   const log = deps.log ?? ((entry) => console.log(JSON.stringify(entry)));
 
   return async function handle(req: Request): Promise<Response> {
+    // A browser preflight carries no token; answer it before the caller check.
+    if (req.method === "OPTIONS") return preflight();
+
     const startedAt = now();
     const segments = routeSegments(new URL(req.url).pathname);
     const route = `${req.method} /${segments.join("/")}`;
@@ -167,7 +173,9 @@ async function openMedia(
   userId: string,
   deps: RouterDeps,
 ): Promise<Response> {
-  const { message_id: messageId } = validateMediaOpenRequest(await readJsonBody(req));
+  const { message_id: messageId } = validateMediaOpenRequest(
+    await readJsonBody(req),
+  );
 
   // Plan §4 step 2: not found, or keep-in-chat (`view_limit is null`) --
   // `db.getMessageMedia` already folds both into one `null`.
@@ -242,7 +250,10 @@ interface MintInput {
 }
 
 /** Plan §4 step 5: sign against `chat-media-limited`, 60s TTL, poster too for video. */
-async function mintResponse(storage: StorageClient, input: MintInput): Promise<Response> {
+async function mintResponse(
+  storage: StorageClient,
+  input: MintInput,
+): Promise<Response> {
   const url = await signLimitedMediaUrl(storage, input.mediaPath);
   if (!url) return internalError();
 

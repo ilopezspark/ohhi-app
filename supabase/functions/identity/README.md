@@ -449,4 +449,4 @@ curl -s "$BASE/card/$USER_ID/reveal/safer_sex" "${H[@]}"
   structurally, because it is encrypted.
 - **Logs** carry route (ids and a revealed section redacted), user id, status and duration;
   never a body, payload, typed entry, key or connection string.
-- **No CORS headers.** The client is the native app.
+- **CORS.** Every response carries `access-control-allow-origin: *` and an `OPTIONS` preflight is answered with 204 before the caller check (`_shared/http.ts`): the app also runs in a browser (Expo web). Origin grants nothing; every route is still protected by the caller's JWT.

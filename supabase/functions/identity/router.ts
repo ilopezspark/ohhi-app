@@ -10,6 +10,7 @@ import {
   internalError,
   json,
   notFound,
+  preflight,
   rateLimited,
   unauthenticated,
   validationFailed,
@@ -49,7 +50,8 @@ import {
   IDENTITY_FIELDS,
 } from "./vocab.ts";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Decision 22: 30 requests per minute per authenticated user. */
 export const RATE_LIMIT_MAX = 30;
@@ -134,7 +136,9 @@ export function routeSegments(pathname: string): string[] {
 export function routeLabel(method: string, segments: string[]): string {
   const labelled = segments.map((s, i) => {
     if (UUID_RE.test(s)) return ":id";
-    if (i === 3 && segments[0] === "card" && segments[2] === "reveal") return ":section";
+    if (i === 3 && segments[0] === "card" && segments[2] === "reveal") {
+      return ":section";
+    }
     return s;
   });
   return `${method} /${labelled.join("/")}`;
@@ -144,11 +148,16 @@ export function routeLabel(method: string, segments: string[]): string {
 // Handler
 // -----------------------------------------------------------------------------
 
-export function createHandler(deps: RouterDeps): (req: Request) => Promise<Response> {
+export function createHandler(
+  deps: RouterDeps,
+): (req: Request) => Promise<Response> {
   const now = deps.now ?? (() => Date.now());
   const log = deps.log ?? ((entry) => console.log(JSON.stringify(entry)));
 
   return async function handle(req: Request): Promise<Response> {
+    // A browser preflight carries no token; answer it before the caller check.
+    if (req.method === "OPTIONS") return preflight();
+
     const startedAt = now();
     const segments = routeSegments(new URL(req.url).pathname);
     const route = routeLabel(req.method, segments);
@@ -213,7 +222,9 @@ async function dispatch(
   }
   // GET /identity/:user_id
   if (segments.length === 1 && UUID_RE.test(first)) {
-    return method === "GET" ? await getIdentity(first, userId, deps) : notFound();
+    return method === "GET"
+      ? await getIdentity(first, userId, deps)
+      : notFound();
   }
   // GET /identity/card/:user_id
   if (segments.length === 2 && first === "card" && UUID_RE.test(second)) {
@@ -249,7 +260,10 @@ type CardValues = Partial<
   Record<keyof IdentityPayloadV2, IdentityPayloadV2[keyof IdentityPayloadV2]>
 >;
 
-function cardValues(payload: IdentityPayloadV2, card: IdentityCard): CardValues {
+function cardValues(
+  payload: IdentityPayloadV2,
+  card: IdentityCard,
+): CardValues {
   const out: CardValues = {};
   for (const field of IDENTITY_CARDS[card]) out[field] = payload[field];
   return out;
@@ -307,7 +321,10 @@ async function getIdentity(
     row.payload_version,
     await deps.decrypt("identity", row.payload_ciphertext, row.key_version),
   );
-  const cards = visibleCards(payload, row.audiences, { isOwner, gateOpen: row.gate_open });
+  const cards = visibleCards(payload, row.audiences, {
+    isOwner,
+    gateOpen: row.gate_open,
+  });
   if (!isOwner && Object.keys(cards).length === 0) return notFound();
 
   const body: Record<string, unknown> = { user_id: targetId, cards };
@@ -329,7 +346,10 @@ async function getIdentity(
 // GET /identity/card/:user_id and …/reveal/:section
 // -----------------------------------------------------------------------------
 
-async function loadCard(targetId: string, deps: RouterDeps): Promise<CardPayloadV2 | null> {
+async function loadCard(
+  targetId: string,
+  deps: RouterDeps,
+): Promise<CardPayloadV2 | null> {
   const row = await deps.db.getCard(targetId);
   if (!row || !row.payload_ciphertext) return null;
   return cardFromStored(
@@ -362,10 +382,14 @@ async function getCard(
   // sections are covers only (names, never content), and only those ticked on
   // this share that hold something.
   const body: Record<string, unknown> = { user_id: targetId };
-  for (const section of [...CARD_GROUPS.standard, ...CARD_GROUPS.always_attached]) {
+  for (
+    const section of [...CARD_GROUPS.standard, ...CARD_GROUPS.always_attached]
+  ) {
     body[section] = payload[section];
   }
-  body.gated = CARD_GROUPS.gated.filter((s) => ticked.includes(s) && isFilled(payload[s]));
+  body.gated = CARD_GROUPS.gated.filter((s) =>
+    ticked.includes(s) && isFilled(payload[s])
+  );
   return json(body);
 }
 
@@ -395,33 +419,48 @@ async function putIdentity(
   deps: RouterDeps,
 ): Promise<Response> {
   const put = validateIdentityPut(await readJsonBody(req));
-  const written = await deps.db.updateIdentity(userId, async (current, tools) => {
-    const stored = current?.payload_ciphertext
-      ? identityFromStored(
-        current.payload_version,
-        await deps.decrypt("identity", current.payload_ciphertext, current.key_version),
-      )
-      : emptyIdentity();
-    const { payload, audiences } = applyIdentityPut(
-      put,
-      stored,
-      current?.audiences ?? defaultAudiences(),
-    );
-    const typed = newTypedEntries(IDENTITY_FIELD_SPECS, IDENTITY_FIELDS, stored, payload);
-    if (typed.length > 0) await tools.assertClean(typed);
-    const { ciphertext, keyVersion } = await deps.encrypt("identity", payload);
-    return {
-      ciphertext,
-      keyVersion,
-      fieldsFilled: identityFieldsFilled(payload),
-      // `write_identity` always sets is_public. On an existing row it gets the
-      // stored value back (a no-op), so the 0023 trigger
-      // `user_identity_audience_sync` lets the identity_audience update that
-      // follows drive it. A new row gets the value that audience implies.
-      isPublic: current ? current.is_public : isPublicFor(audiences),
-      audiences,
-    };
-  });
+  const written = await deps.db.updateIdentity(
+    userId,
+    async (current, tools) => {
+      const stored = current?.payload_ciphertext
+        ? identityFromStored(
+          current.payload_version,
+          await deps.decrypt(
+            "identity",
+            current.payload_ciphertext,
+            current.key_version,
+          ),
+        )
+        : emptyIdentity();
+      const { payload, audiences } = applyIdentityPut(
+        put,
+        stored,
+        current?.audiences ?? defaultAudiences(),
+      );
+      const typed = newTypedEntries(
+        IDENTITY_FIELD_SPECS,
+        IDENTITY_FIELDS,
+        stored,
+        payload,
+      );
+      if (typed.length > 0) await tools.assertClean(typed);
+      const { ciphertext, keyVersion } = await deps.encrypt(
+        "identity",
+        payload,
+      );
+      return {
+        ciphertext,
+        keyVersion,
+        fieldsFilled: identityFieldsFilled(payload),
+        // `write_identity` always sets is_public. On an existing row it gets the
+        // stored value back (a no-op), so the 0023 trigger
+        // `user_identity_audience_sync` lets the identity_audience update that
+        // follows drive it. A new row gets the value that audience implies.
+        isPublic: current ? current.is_public : isPublicFor(audiences),
+        audiences,
+      };
+    },
+  );
   return json({ user_id: userId, ...written });
 }
 
@@ -435,11 +474,20 @@ async function putCard(
     const stored = current?.payload_ciphertext
       ? cardFromStored(
         current.payload_version,
-        await deps.decrypt("card", current.payload_ciphertext, current.key_version),
+        await deps.decrypt(
+          "card",
+          current.payload_ciphertext,
+          current.key_version,
+        ),
       )
       : emptyCard();
     const payload = applyCardPut(patch, stored);
-    const typed = newTypedEntries(CARD_SECTION_SPECS, CARD_SECTIONS, stored, payload);
+    const typed = newTypedEntries(
+      CARD_SECTION_SPECS,
+      CARD_SECTIONS,
+      stored,
+      payload,
+    );
     if (typed.length > 0) await tools.assertClean(typed);
     const { ciphertext, keyVersion } = await deps.encrypt("card", payload);
     return { ciphertext, keyVersion, fieldsFilled: cardFieldsFilled(payload) };

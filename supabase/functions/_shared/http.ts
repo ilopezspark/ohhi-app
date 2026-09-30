@@ -9,11 +9,38 @@ export interface ApiErrorBody {
   error: { code: string; message: string };
 }
 
-const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
+/**
+ * CORS: the app also runs in a browser (Expo web), which sends a preflight
+ * `OPTIONS` and then refuses any response without these headers. The origin is
+ * `*` because every route is protected by the caller's JWT, never by origin;
+ * `authorization` and `apikey` are what supabase-js and the app's own `fetch`
+ * send, `x-client-info` is supabase-js's version header.
+ */
+export const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers":
+    "authorization, apikey, content-type, x-client-info",
+  "access-control-allow-methods": "GET, POST, PUT, OPTIONS",
+  "access-control-max-age": "86400",
+};
+
+const JSON_HEADERS = {
+  "content-type": "application/json; charset=utf-8",
+  ...CORS_HEADERS,
+};
 
 /** 200-by-default JSON response. */
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
+}
+
+/**
+ * The browser's preflight. Answered before any authentication, since a
+ * preflight carries no credentials by design; it grants nothing but the right
+ * to make the real request, which is then checked as usual.
+ */
+export function preflight(): Response {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
 }
 
 /** JSON error in the uniform shape. */
