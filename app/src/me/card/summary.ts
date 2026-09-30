@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getMyIdentity } from '../../api/identity';
-import { isAudienceCard, type Audience, type IdentityCard } from '../../profile/fields';
+import { isAudienceCard, type Audience, type CardPayload, type IdentityCard } from '../../profile/fields';
 import { CARD_SECTIONS, IDENTITY_CARD_ORDER } from '../../settings/vocab';
 import { cardDraftFrom, cardFillCount, type OwnIdentityCards } from '../editor/identityCardDraft';
 import { queryKeys } from '../queryKeys';
@@ -12,11 +12,23 @@ import { sectionHasContent, useMyCard } from './myCard';
  * once it holds something. Reads the owner's v2 card (`myCard.ts`, all nine
  * sections; a never-written card is all empty, not an error). Display copy
  * only: the private card carries no completion weight.
+ *
+ * The count is the identity function's own `fields_filled` rule
+ * (`supabase/functions/identity/fields.ts#cardFieldsFilled`: one per
+ * non-empty section, a single value when it is a non-empty string).
+ *
+ * `filled` is `null` while the card is loading or when the read failed (the
+ * row then shows no subtitle, like the public cards' rows): an unread card is
+ * never reported as `0 of 9`, which would tell someone with a full card that
+ * theirs is empty.
  */
-export function usePrivateCardSummary(): { filled: number; total: number } {
+export function privateCardFilledCount(card: Partial<CardPayload> | null | undefined): number {
+  return CARD_SECTIONS.filter((section) => sectionHasContent(card, section)).length;
+}
+
+export function usePrivateCardSummary(): { filled: number | null; total: number } {
   const card = useMyCard().data;
-  const filled = CARD_SECTIONS.filter((section) => sectionHasContent(card, section)).length;
-  return { filled, total: CARD_SECTIONS.length };
+  return { filled: card ? privateCardFilledCount(card) : null, total: CARD_SECTIONS.length };
 }
 
 /**

@@ -403,7 +403,7 @@ function PrivateCardSection() {
           testID="editor-private-card-row"
           icon="lock"
           title="private card"
-          subtitle={`${filled} of ${total} filled in`}
+          subtitle={filled === null ? undefined : `${filled} of ${total} filled in`}
           accessory={{ kind: 'chevron' }}
           onPress={() => router.push('/profile-editor/private-card' as never)}
         />

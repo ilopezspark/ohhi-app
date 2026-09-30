@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
+import { FALLBACK, goBack } from '../../routing/goBack';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putCard } from '../../api/identityWrite';
 import { mapSupabaseError } from '../../api/errors';
@@ -8,7 +8,7 @@ import { queryKeys } from '../../me/queryKeys';
 import { CARD_GROUP_LABELS, CARD_SECTION_ROWS } from '../../me/card/fieldLabels';
 import { CARD_GROUP_CAPTIONS } from '../../me/card/groupCaptions';
 import { hardNosAtCap, normalizeTypedHardNo, typedHardNos, type HardNoRejection } from '../../me/card/hardNos';
-import { cardPatch, fetchMyCard, inOptionOrder } from '../../me/card/myCard';
+import { cardPatch, fetchMyCard, inOptionOrder, sectionValues } from '../../me/card/myCard';
 import {
   CARD_SECTION_SPECS,
   emptyCardPayload,
@@ -20,7 +20,7 @@ import {
   type CardSection,
 } from '../../profile/fields';
 import { CARD_GROUP_ORDER, HARD_NO_MAX_LENGTH, HARD_NO_MAX_TYPED, HARD_NO_OPTIONS, PRACTICE_GROUP_ORDER, PRACTICE_GROUPS } from '../../settings/vocab';
-import { Button, Chip, Input, KeyboardScrollView, ScreenHeader, Text } from '../../ui';
+import { Button, Chip, EmptyState, Input, KeyboardScrollView, ScreenHeader, Text } from '../../ui';
 import { LockIcon } from '../../ui/icons';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 
@@ -66,7 +66,9 @@ export default function EditPrivateCardScreen() {
   const [card, setCard] = useState<CardPayload>(emptyCardPayload);
   const [initialCard, setInitialCard] = useState<CardPayload>(emptyCardPayload);
   const [loaded, setLoaded] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  // Bumped by "try again" after a failed read, which re-runs the load below.
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const [addingHardNo, setAddingHardNo] = useState(false);
   const [hardNoDraft, setHardNoDraft] = useState('');
@@ -74,14 +76,16 @@ export default function EditPrivateCardScreen() {
 
   useEffect(() => {
     let cancelled = false;
+    setLoaded(false);
+    setLoadFailed(false);
     fetchMyCard()
       .then((current) => {
         if (cancelled) return;
         setCard(current);
         setInitialCard(current);
       })
-      .catch((error) => {
-        if (!cancelled) setLoadError(mapSupabaseError(error).message);
+      .catch(() => {
+        if (!cancelled) setLoadFailed(true);
       })
       .finally(() => {
         if (!cancelled) setLoaded(true);
@@ -89,7 +93,7 @@ export default function EditPrivateCardScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAttempt]);
 
   const patch = cardPatch(initialCard, card);
   const dirty = Object.keys(patch).length > 0;
@@ -98,13 +102,13 @@ export default function EditPrivateCardScreen() {
     mutationFn: () => putCard(patch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.me.card });
-      router.back();
+      goBack(FALLBACK.editor);
     },
   });
 
   function save() {
     if (!dirty) {
-      router.back();
+      goBack(FALLBACK.editor);
       return;
     }
     mutation.mutate();
@@ -112,12 +116,12 @@ export default function EditPrivateCardScreen() {
 
   function handleCancel() {
     if (!dirty) {
-      router.back();
+      goBack(FALLBACK.editor);
       return;
     }
     Alert.alert('discard changes?', 'the changes you made here have not been saved.', [
       { text: 'keep editing', style: 'cancel' },
-      { text: 'discard', style: 'destructive', onPress: () => router.back() },
+      { text: 'discard', style: 'destructive', onPress: () => goBack(FALLBACK.editor) },
     ]);
   }
 
@@ -172,8 +176,44 @@ export default function EditPrivateCardScreen() {
     );
   }
 
+  // A failed read never opens the editor on an empty card: every chip would
+  // show unpicked, and someone with a full card would see it as empty.
+  if (loadFailed) {
+    return (
+      <View style={styles.safe}>
+        <ScreenHeader
+          title="private card"
+          titleSize={26}
+          onBack={handleCancel}
+          backTestID="private-card-editor-cancel"
+          testID="private-card-editor-header"
+        />
+        <EmptyState
+          testID="private-card-editor-load-error"
+          title="couldn't load your card."
+          message="nothing on it has changed. try again in a moment."
+          action={
+            <Button testID="private-card-editor-load-retry" label="try again" onPress={() => setLoadAttempt((n) => n + 1)} />
+          }
+        />
+      </View>
+    );
+  }
+
   const wordFilterRefused = mutation.isError && isWordFilterError(mutation.error);
-  const errorMessage = mutation.isError && !wordFilterRefused ? mapSupabaseError(mutation.error).message : loadError;
+  const errorMessage = mutation.isError && !wordFilterRefused ? mapSupabaseError(mutation.error).message : null;
+
+  /**
+   * Saved values that are not on the section's fixed list (a chip retired
+   * after it was saved; a typed hard no is handled by the hard nos' own
+   * row). Shown after the list so nothing the preview and the `N of 9` count
+   * include is hidden here; deselecting one removes it on save.
+   */
+  function offListValues(section: CardSection): string[] {
+    const options = CARD_SECTION_SPECS[section].options;
+    const saved = [...sectionValues(initialCard[section]), ...sectionValues(card[section])];
+    return saved.filter((value, i) => !options.includes(value) && saved.indexOf(value) === i);
+  }
 
   function chip(section: CardSection, value: string, tone: 'tint' | 'boundary' = 'tint') {
     return (
@@ -200,6 +240,9 @@ export default function EditPrivateCardScreen() {
               <View style={styles.chipRow}>{PRACTICE_GROUPS[practiceGroup].map((option) => chip('practices', option))}</View>
             </View>
           ))}
+          {offListValues('practices').length > 0 ? (
+            <View style={styles.chipRow}>{offListValues('practices').map((value) => chip('practices', value))}</View>
+          ) : null}
         </View>
       );
     }
@@ -253,7 +296,11 @@ export default function EditPrivateCardScreen() {
     }
 
     const tone = section === 'privacy' ? 'boundary' : 'tint';
-    return <View style={styles.chipRow}>{CARD_SECTION_SPECS[section].options.map((option) => chip(section, option, tone))}</View>;
+    return (
+      <View style={styles.chipRow}>
+        {[...CARD_SECTION_SPECS[section].options, ...offListValues(section)].map((option) => chip(section, option, tone))}
+      </View>
+    );
   }
 
   function renderGroup(group: CardGroup) {

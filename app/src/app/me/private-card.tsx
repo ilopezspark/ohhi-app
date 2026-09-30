@@ -1,5 +1,6 @@
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import { FALLBACK, goBack } from '../../routing/goBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getFirstName } from '../../api/profile';
 import { revokeShare } from '../../api/shares';
@@ -92,7 +93,7 @@ export default function PrivateCardScreen() {
       <ScreenHeader
         title="private card"
         titleSize={26}
-        onBack={() => router.back()}
+        onBack={() => goBack(FALLBACK.me)}
         right={
           <Text
             testID="private-card-edit-link"
@@ -113,7 +114,25 @@ export default function PrivateCardScreen() {
           </Text>
         </View>
 
-        {!card || !hasAnyValue(card) ? (
+        {!card && cardQuery.isError ? (
+          // A failed read is never shown as "nothing here yet": that would
+          // tell someone with a full card that theirs is empty.
+          <EmptyState
+            testID="private-card-load-error"
+            style={styles.empty}
+            title="couldn't load your card."
+            message="nothing on it has changed. try again in a moment."
+            action={
+              <Button
+                testID="private-card-load-retry"
+                label="try again"
+                loading={cardQuery.isFetching}
+                disabled={cardQuery.isFetching}
+                onPress={() => cardQuery.refetch()}
+              />
+            }
+          />
+        ) : !card || !hasAnyValue(card) ? (
           <EmptyState
             testID="private-card-empty"
             style={styles.empty}
