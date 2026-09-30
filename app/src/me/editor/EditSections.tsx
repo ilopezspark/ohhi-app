@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { Chip, ChipGroup, RowCard, SectionLabel, SettingsRow, Text } from '../../ui';
@@ -11,8 +12,11 @@ import { GOAL_LABELS, OFFERED_GOAL_OPTIONS } from '../../profile/goalLabels';
 import { colors, radii, spacing } from '../../theme/tokens';
 import { IDENTITY_CARD_ROWS } from '../card/fieldLabels';
 import { useIdentityCardSummaries, usePrivateCardSummary } from '../card/summary';
+import { PhotoStatePill } from '../../photos/PhotoStatePill';
+import type { UserPhotoRow } from '../../api/photos';
 import { IDENTITY_CARD_ROUTES } from './identityCardDraft';
 import { useProfileEditorDraftContext } from './ProfileEditorDraftContext';
+import { gridSlotLabel, hasPhotoUnderReview, PHOTO_STATE_COPY } from './photoStates';
 import { useMyPhotos } from './useMyPhotos';
 import type { UserGoal } from './useProfileEditorDraft';
 import type { DraftField, UseProfileEditorDraftResult } from './useProfileEditorDraft';
@@ -47,7 +51,7 @@ function FieldError({ field }: { field: DraftField }) {
 
 function PhotosSection() {
   const draftState = useProfileEditorDraftContext();
-  const { photos, urls } = useMyPhotos();
+  const { photos, urls, resignUrls } = useMyPhotos();
   const weight = sectionWeight('photos', completionInputFrom(draftState));
 
   function openPhotos() {
@@ -67,35 +71,15 @@ function PhotosSection() {
           const photo = photos[i];
 
           if (photo) {
-            const url = urls[photo.storage_path];
             return (
-              <Pressable
+              <PhotoRowTile
                 key={i}
-                testID={`editor-photo-tile-${i}`}
-                accessibilityRole="button"
-                accessibilityLabel={i === 0 ? 'photo 1, on the grid' : `photo ${i + 1}`}
-                style={styles.photoTile}
+                index={i}
+                photo={photo}
+                url={urls[photo.storage_path]}
                 onPress={openPhotos}
-              >
-                {url ? (
-                  <Image testID={`editor-photo-tile-${i}-image`} source={{ uri: url }} style={styles.photoTileImage} />
-                ) : (
-                  <TintedPlaceholder
-                    tint={photo.tint ?? colors.avatarTints[i]}
-                    pending={photo.moderation_state === 'pending'}
-                  />
-                )}
-                <View style={styles.pencilBadge}>
-                  <PencilIcon size={14} color={colors.ink} />
-                </View>
-                {i === 0 ? (
-                  <View style={styles.onGridPill}>
-                    <Text variant="micro" color={colors.onDark}>
-                      on the grid
-                    </Text>
-                  </View>
-                ) : null}
-              </Pressable>
+                onImageError={resignUrls}
+              />
             );
           }
 
@@ -122,7 +106,89 @@ function PhotosSection() {
       <Text variant="micro" color={colors.inkSoft}>
         tap to edit, drag to reorder. the first one is your tile.
       </Text>
+      {hasPhotoUnderReview(photos) ? (
+        <Text variant="micro" color={colors.inkSoft} testID="editor-photo-review-hint">
+          {PHOTO_STATE_COPY.underReviewHint}
+        </Text>
+      ) : null}
     </View>
+  );
+}
+
+/**
+ * One filled slot of the editor's photos row. The owner sees every photo they
+ * have (owner ruling): an approved one as is, a pending one with its image and
+ * an "under review" pill, a removed one as a neutral tile saying so (tapping
+ * opens the photos screen, where it is replaced). The first slot's pill says
+ * "on the grid once approved" until that photo is approved.
+ */
+function PhotoRowTile({
+  index,
+  photo,
+  url,
+  onPress,
+  onImageError,
+}: {
+  index: number;
+  photo: UserPhotoRow;
+  url: string | undefined;
+  onPress: () => void;
+  onImageError: () => void;
+}) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const state = photo.moderation_state;
+  const removed = state === 'removed';
+  const showImage = !removed && !!url && failedUrl !== url;
+  const stateLabel = state === 'pending' ? PHOTO_STATE_COPY.underReview : null;
+
+  return (
+    <Pressable
+      testID={`editor-photo-tile-${index}`}
+      accessibilityRole="button"
+      accessibilityLabel={
+        removed
+          ? `photo ${index + 1}, removed. replace it`
+          : [index === 0 ? `photo 1, ${gridSlotLabel(state)}` : `photo ${index + 1}`, stateLabel].filter(Boolean).join(', ')
+      }
+      style={styles.photoTile}
+      onPress={onPress}
+    >
+      {removed ? (
+        <View style={styles.photoTileRemoved} testID={`editor-photo-tile-${index}-removed`}>
+          <Text variant="micro" color={colors.inkSoft}>
+            {PHOTO_STATE_COPY.removed}
+          </Text>
+        </View>
+      ) : showImage ? (
+        <Image
+          testID={`editor-photo-tile-${index}-image`}
+          source={{ uri: url }}
+          style={styles.photoTileImage}
+          onError={() => {
+            setFailedUrl(url ?? null);
+            onImageError();
+          }}
+        />
+      ) : (
+        <TintedPlaceholder
+          tint={photo.tint ?? colors.avatarTints[index]}
+          testID={`editor-photo-tile-${index}-placeholder`}
+        />
+      )}
+      <View style={styles.pencilBadge}>
+        <PencilIcon size={14} color={colors.ink} />
+      </View>
+      {stateLabel ? (
+        <PhotoStatePill label={stateLabel} style={styles.statePill} testID={`editor-photo-tile-${index}-under-review`} />
+      ) : null}
+      {index === 0 && !removed ? (
+        <View style={styles.onGridPill} testID="editor-photo-tile-0-grid-pill">
+          <Text variant="micro" color={colors.onDark}>
+            {gridSlotLabel(state)}
+          </Text>
+        </View>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -477,9 +543,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  photoTileRemoved: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.paperTint,
+  },
+  // Content-sized pills that wrap rather than run off a narrow tile (the pencil badge sits top-right).
+  statePill: { position: 'absolute', top: 8, left: 8, maxWidth: '62%' },
   onGridPill: {
     position: 'absolute',
     left: 8,
+    maxWidth: '88%',
     bottom: 8,
     backgroundColor: colors.ink,
     borderRadius: radii.pill,

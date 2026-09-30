@@ -43,7 +43,7 @@ jest.mock('../api/photos', () => ({
 }));
 
 import * as ImagePicker from 'expo-image-picker';
-import { addProfilePhoto, listMyPhotos, removeProfilePhoto, replaceProfilePhoto, setMyPhotoOrder } from '../api/photos';
+import { addProfilePhoto, listMyPhotos, removeProfilePhoto, replaceProfilePhoto, setMyPhotoOrder, signedPhotoUrls } from '../api/photos';
 import EditPhotosScreen from '../app/profile-editor/photos';
 
 const USER = 'b6b6b6b6-1111-4b11-8b11-111111111111';
@@ -79,6 +79,7 @@ function grantPicker() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  (signedPhotoUrls as jest.Mock).mockResolvedValue({});
 });
 
 describe('EditPhotosScreen', () => {
@@ -91,10 +92,115 @@ describe('EditPhotosScreen', () => {
     expect(getByText('what gets through review')).toBeTruthy();
   });
 
-  it('labels a photo still in review', async () => {
+  it('shows every photo the owner has: ok as is, pending with its image and "under review", removed as a neutral tile', async () => {
+    (listMyPhotos as jest.Mock).mockResolvedValue([row('a', 0), row('b', 1, 'pending'), row('c', 2, 'removed')]);
+    (signedPhotoUrls as jest.Mock).mockResolvedValue({
+      [`${USER}/a.jpg`]: 'https://signed/a',
+      [`${USER}/b.jpg`]: 'https://signed/b',
+      [`${USER}/c.jpg`]: 'https://signed/c',
+    });
+    const { findByTestId, queryByTestId, getByTestId } = await renderScreen();
+
+    // ok: its image, the plain grid pill, no state pill
+    await findByTestId('editor-photos-tile-0-image');
+    expect(getByTestId('editor-photos-tile-0-grid-pill')).toHaveTextContent('on the grid');
+    expect(queryByTestId('editor-photos-tile-0-under-review')).toBeNull();
+
+    // pending: its image AND the pill (not an empty slot)
+    await findByTestId('editor-photos-tile-1-image');
+    expect(getByTestId('editor-photos-tile-1-under-review')).toHaveTextContent('under review');
+    expect(getByTestId('editor-photos-pencil-1')).toBeTruthy();
+
+    // removed: no image, a neutral tile saying so
+    expect(queryByTestId('editor-photos-tile-2-image')).toBeNull();
+    expect(getByTestId('editor-photos-tile-2-removed')).toHaveTextContent('removed');
+    expect(queryByTestId('editor-photos-tile-2-under-review')).toBeNull();
+
+    // no free slot is offered while three photos exist
+    expect(queryByTestId('editor-photos-add-badge')).toBeNull();
+
+    expect(getByTestId('editor-photos-review-hint')).toHaveTextContent(
+      "under review means only you can see it until it's approved."
+    );
+  });
+
+  it('a pending photo whose image cannot be signed still shows its slot with the pill over a neutral tile', async () => {
     (listMyPhotos as jest.Mock).mockResolvedValue([row('a', 0), row('b', 1, 'pending')]);
+    (signedPhotoUrls as jest.Mock).mockResolvedValue({ [`${USER}/a.jpg`]: 'https://signed/a' });
+    const { findByTestId, getByTestId } = await renderScreen();
+    await findByTestId('editor-photos-tile-1-placeholder');
+    expect(getByTestId('editor-photos-tile-1-under-review')).toHaveTextContent('under review');
+  });
+
+  it('a pending first photo says it goes on the grid once approved', async () => {
+    (listMyPhotos as jest.Mock).mockResolvedValue([row('a', 0, 'pending')]);
+    const { findByTestId, getByTestId } = await renderScreen();
+    expect(await findByTestId('editor-photos-tile-0-grid-pill')).toHaveTextContent('on the grid once approved');
+    expect(getByTestId('editor-photos-tile-0-under-review')).toBeTruthy();
+  });
+
+  it('shows no review hint when every photo is approved', async () => {
+    (listMyPhotos as jest.Mock).mockResolvedValue([row('a', 0), row('b', 1)]);
+    const { findByTestId, queryByTestId } = await renderScreen();
+    await findByTestId('editor-photos-pencil-1');
+    expect(queryByTestId('editor-photos-review-hint')).toBeNull();
+  });
+
+  it('tapping a removed photo replaces it', async () => {
+    (listMyPhotos as jest.Mock)
+      .mockResolvedValueOnce([row('a', 0), row('b', 1, 'removed')])
+      .mockResolvedValue([row('a', 0), { ...row('b', 1, 'pending'), storage_path: `${USER}/fresh.jpg` }]);
+    (replaceProfilePhoto as jest.Mock).mockResolvedValue({ ...row('b', 1, 'pending'), storage_path: `${USER}/fresh.jpg` });
+    grantPicker();
     const { findByTestId } = await renderScreen();
-    await findByTestId('editor-photos-tile-1-in-review');
+
+    await fireEvent.press(await findByTestId('editor-photos-tile-1-replace'));
+
+    await waitFor(() => expect(replaceProfilePhoto).toHaveBeenCalled());
+    expect((replaceProfilePhoto as jest.Mock).mock.calls[0][0]).toMatchObject({ photoId: 'b', position: 1 });
+    // The replacement is pending: the tile now shows the pill, not "removed".
+    await findByTestId('editor-photos-tile-1-under-review');
+  });
+
+  it('a new upload appears in the grid at once, under review', async () => {
+    (listMyPhotos as jest.Mock)
+      .mockResolvedValueOnce([row('a', 0)])
+      .mockResolvedValue([row('a', 0), row('new', 1, 'pending')]);
+    (addProfilePhoto as jest.Mock).mockResolvedValue(row('new', 1, 'pending'));
+    grantPicker();
+    const { findByTestId, getByTestId } = await renderScreen();
+
+    await findByTestId('editor-photos-add-badge');
+    await fireEvent.press(await findByTestId('editor-photos-tile-1'));
+
+    expect(await findByTestId('editor-photos-tile-1-under-review')).toHaveTextContent('under review');
+    expect(getByTestId('editor-photos-pencil-1')).toBeTruthy();
+    expect(getByTestId('editor-photos-review-hint')).toBeTruthy();
+    // ...and the shared photos key was refetched, so the editor row, Me and the preview agree.
+    await waitFor(() => expect(listMyPhotos).toHaveBeenCalledTimes(2));
+  });
+
+  it('"make first" on a pending photo reorders like any other when the caller is already off the grid', async () => {
+    (listMyPhotos as jest.Mock).mockResolvedValue([row('a', 0, 'pending'), row('b', 1), row('c', 2, 'pending')]);
+    (setMyPhotoOrder as jest.Mock).mockResolvedValue([row('c', 0, 'pending'), row('a', 1, 'pending'), row('b', 2)]);
+    const { findByTestId, queryByTestId } = await renderScreen();
+
+    await fireEvent.press(await findByTestId('editor-photos-pencil-2'));
+    await fireEvent.press(await findByTestId('editor-photo-action-make-first'));
+
+    await waitFor(() => expect(setMyPhotoOrder).toHaveBeenCalledWith(['c', 'a', 'b']));
+    expect(queryByTestId('editor-photo-pending-confirm-sheet')).toBeNull();
+  });
+
+  it('removes a pending photo through removeProfilePhoto like any other', async () => {
+    (listMyPhotos as jest.Mock).mockResolvedValue([row('a', 0), row('b', 1, 'pending'), row('c', 2, 'pending')]);
+    (removeProfilePhoto as jest.Mock).mockResolvedValue([row('a', 0), row('c', 1, 'pending')]);
+    const { findByTestId } = await renderScreen();
+
+    await fireEvent.press(await findByTestId('editor-photos-pencil-1'));
+    await fireEvent.press(await findByTestId('editor-photo-action-remove'));
+
+    await waitFor(() => expect(removeProfilePhoto).toHaveBeenCalledWith('b', `${USER}/b.jpg`, ['a', 'c']));
   });
 
   it('adds a new photo into the first free slot through addProfilePhoto (the 0011 insert path)', async () => {

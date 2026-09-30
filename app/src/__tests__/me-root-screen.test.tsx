@@ -14,6 +14,7 @@ function baseData(overrides: Partial<ReturnType<typeof useMeData>> = {}) {
     verified: true,
     identityText: "CLC · cs '27",
     photoUrl: undefined,
+    photoState: 'ok' as 'ok' | 'pending' | 'removed' | null,
     tint: '#E8C9B4',
     completionPercent: 80,
     nextBestCopy: 'one more photo and you stop looking half-finished on the grid.',
@@ -33,6 +34,20 @@ function mockData(overrides: Partial<ReturnType<typeof useMeData>> = {}) {
 describe('MeScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('shows a pending first photo with its image and an "under review" pill', async () => {
+    mockData({ photoUrl: 'https://signed/0.jpg', photoState: 'pending' });
+    const { getByTestId, queryByTestId } = await render(<MeScreen />);
+    expect(getByTestId('me-photo-under-review')).toHaveTextContent('under review');
+    expect(queryByTestId('me-photo-removed')).toBeNull();
+  });
+
+  it('shows no pill on an approved first photo', async () => {
+    mockData({ photoUrl: 'https://signed/0.jpg', photoState: 'ok' });
+    const { queryByTestId } = await render(<MeScreen />);
+    expect(queryByTestId('me-photo-under-review')).toBeNull();
+    expect(queryByTestId('me-photo-removed')).toBeNull();
   });
 
   it('renders an incomplete profile with its next-best line', async () => {

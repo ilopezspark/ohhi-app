@@ -194,6 +194,7 @@ export function ProfileView({
               firstName={name}
               paths={data.photoPaths}
               urls={data.photoUrls}
+              badges={data.photoBadges}
               barsTop={insets.top + spacing.md}
               sideInset={sideInset}
               testIDPrefix={p}

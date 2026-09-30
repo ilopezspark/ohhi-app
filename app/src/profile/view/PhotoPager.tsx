@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, View, type AccessibilityActionEvent } from 'react-native';
+import { PhotoStatePill } from '../../photos/PhotoStatePill';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { tintForPhoto } from '../../photos/tint';
 import { BackIcon, ChevronRightIcon } from '../../ui';
@@ -15,6 +16,11 @@ export interface PhotoPagerProps {
   paths: string[];
   /** path -> signed URL. A missing entry, or a load failure, falls back to the tint. */
   urls: Record<string, string>;
+  /**
+   * The owner's preview only: path -> a pill shown on that photo while it is
+   * on screen ("under review" on a pending one). Absent everywhere else.
+   */
+  badges?: Record<string, string>;
   /** Distance from the top of the hero to the progress bars (the safe-area inset plus air). */
   barsTop: number;
   /** Extra space either side of the bars and chevrons, keeping them in the centred content column on a wide screen. 0 on a phone. */
@@ -49,6 +55,7 @@ export function PhotoPager({
   firstName,
   paths,
   urls,
+  badges,
   barsTop,
   sideInset = 0,
   testIDPrefix = 'profile',
@@ -63,6 +70,7 @@ export function PhotoPager({
   const p = testIDPrefix;
   const currentPath = paths[current];
   const canReplyHere = !!reply && !!currentPath && reply.canReply(currentPath);
+  const currentBadge = currentPath ? badges?.[currentPath] : undefined;
 
   function go(delta: number) {
     setIndex((prev) => Math.max(0, Math.min(count - 1, prev + delta)));
@@ -170,6 +178,15 @@ export function PhotoPager({
         </>
       ) : null}
 
+      {currentBadge ? (
+        <PhotoStatePill
+          label={currentBadge}
+          tone="photo"
+          style={[styles.badge, { top: barsTop + spacing.lgXl, right: spacing.lgXl + sideInset }]}
+          testID={`${p}-photo-badge-${current}`}
+        />
+      ) : null}
+
       {canReplyHere && reply && currentPath ? (
         <ReplyAction
           appearance="photo"
@@ -213,4 +230,5 @@ const styles = StyleSheet.create({
   },
   chevronDisabled: { opacity: 0.4 },
   reply: { position: 'absolute' },
+  badge: { position: 'absolute' },
 });

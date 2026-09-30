@@ -35,7 +35,7 @@ export function TintedPlaceholder({ tint, pending = false, size, style, testID }
     >
       {pending ? (
         <View style={styles.badge} testID="tinted-placeholder-pending-badge">
-          <Text style={styles.badgeText}>Under review</Text>
+          <Text style={styles.badgeText}>under review</Text>
         </View>
       ) : null}
     </View>

@@ -15,10 +15,19 @@ export interface UseMyPhotosResult {
   isLoaded: boolean;
   refetch: () => void;
   invalidate: () => void;
+  /**
+   * Signs the current paths again. For a tile whose image failed to load:
+   * the URLs live 60 seconds, so a screen left open longer than that holds
+   * dead ones, and the owner's own pending photos would render as nothing.
+   */
+  resignUrls: () => void;
 }
 
 /**
- * The caller's own photos + their signed URLs, shared by every profile-editor
+ * The caller's own photos (every one, whatever its moderation state: the owner
+ * always sees their pending and removed photos, badged) + their signed URLs
+ * (the bucket's "owner read" policy signs the owner's own folder regardless of
+ * state), shared by every profile-editor
  * surface that shows them (`EditSections`'s photos row, `EditPhotos`,
  * the preview screen's hero). Keyed identically to `me/root/useMeData.ts`'s own
  * `queryKeys.me.photos` read, so React Query dedupes the two into one
@@ -32,8 +41,9 @@ export function useMyPhotos(): UseMyPhotosResult {
 
   const photos = photosQuery.data ?? [];
   const paths = photos.map((photo) => photo.storage_path);
+  const urlsKey = [...queryKeys.me.photos, 'urls', paths.join('|')];
   const urlsQuery = useQuery({
-    queryKey: [...queryKeys.me.photos, 'urls', paths.join('|')],
+    queryKey: urlsKey,
     queryFn: () => signedPhotoUrls(paths),
     enabled: paths.length > 0,
   });
@@ -51,5 +61,8 @@ export function useMyPhotos(): UseMyPhotosResult {
       void photosQuery.refetch();
     },
     invalidate,
+    resignUrls: () => {
+      void queryClient.invalidateQueries({ queryKey: urlsKey });
+    },
   };
 }

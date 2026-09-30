@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { PhotoStatePill } from '../../photos/PhotoStatePill';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { tintForPhoto } from '../../photos/tint';
 import {
@@ -149,6 +150,7 @@ export function detailSections(
             userId={data.userId}
             position={position}
             url={data.photoUrls[path]}
+            badge={data.photoBadges?.[path]}
             firstName={name}
             onReply={subject && replies ? () => replies.onReply(subject) : undefined}
             testID={`${prefix}-photo-card-${position}`}
@@ -442,6 +444,7 @@ export function PhotoCard({
   url,
   firstName,
   onReply,
+  badge,
   testID,
 }: {
   userId: string;
@@ -449,6 +452,8 @@ export function PhotoCard({
   url?: string;
   firstName: string;
   onReply?: () => void;
+  /** The owner's preview only: "under review" on a pending photo. */
+  badge?: string;
   testID?: string;
 }) {
   const [failed, setFailed] = useState(false);
@@ -461,6 +466,9 @@ export function PhotoCard({
           <TintedPlaceholder tint={tintForPhoto(userId, position)} style={styles.photoPlaceholder} />
         )}
       </View>
+      {badge ? (
+        <PhotoStatePill label={badge} tone="photo" style={styles.photoBadge} testID={testID ? `${testID}-badge` : undefined} />
+      ) : null}
       {onReply ? (
         <ReplyAction
           appearance="photo"
@@ -592,6 +600,7 @@ const styles = StyleSheet.create({
   photoFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   photo: { width: '100%', height: '100%' },
   photoReply: { position: 'absolute', right: spacing.mdLg, bottom: spacing.mdLg },
+  photoBadge: { position: 'absolute', left: spacing.mdLg, top: spacing.mdLg },
   photoPlaceholder: { borderRadius: 0 },
   footer: { gap: spacing.mdLg, paddingHorizontal: spacing.xs, paddingTop: spacing.xs },
   footerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.smMd },

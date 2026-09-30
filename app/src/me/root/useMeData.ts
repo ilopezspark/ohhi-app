@@ -22,6 +22,8 @@ export interface UseMeDataResult {
   /** `identityLine()`'s output, e.g. `"CLC · cs '27"` — empty string when every part is missing. */
   identityText: string;
   photoUrl: string | undefined;
+  /** The first photo's moderation state (null with no photos): Me's tile says "under review" while it is `pending`. */
+  photoState: 'ok' | 'pending' | 'removed' | null;
   tint: string;
   completionPercent: number;
   /** One line of copy for the single highest-value missing item, or `null` at 100%. */
@@ -120,6 +122,7 @@ export function useMeData(): UseMeDataResult {
     verified: meData?.verification_status === 'verified',
     identityText,
     photoUrl,
+    photoState: mainPhoto?.moderation_state ?? null,
     tint,
     completionPercent: completion.percent,
     nextBestCopy: completion.nextBest?.copy ?? null,

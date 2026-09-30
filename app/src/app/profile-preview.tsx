@@ -7,6 +7,7 @@ import { getMyIdentity } from '../api/identity';
 import { CtaButton } from '../card/CtaButton';
 import { getPreviewDraft, previewSourceOf, type PreviewSource } from '../me/editor/previewDraft';
 import { buildPreviewData } from '../me/editor/previewData';
+import { previewPhotos } from '../me/editor/photoStates';
 import { useMyPhotos } from '../me/editor/useMyPhotos';
 import { useProfileEditorDraft } from '../me/editor/useProfileEditorDraft';
 import { usePresenceStore } from '../presence/store';
@@ -79,6 +80,7 @@ export default function ProfilePreviewScreen() {
     );
   }
 
+  const shownPhotos = previewPhotos(photos);
   const data = buildPreviewData({
     userId: source.userId,
     firstName: source.firstName,
@@ -88,8 +90,11 @@ export default function ProfilePreviewScreen() {
     catalog: source.catalog,
     draft: source.draft,
     fieldsMeta: source.fieldsMeta ?? null,
-    photoPaths: photos.map((photo) => photo.storage_path),
+    // Every photo the owner has, pending ones included and badged "under
+    // review" (owner ruling); a removed one is left out.
+    photoPaths: shownPhotos.paths,
     photoUrls: urls,
+    photoBadges: shownPhotos.badges,
     tier,
     hereNow,
     identity: identityQuery.data ?? null,

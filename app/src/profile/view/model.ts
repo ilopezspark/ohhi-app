@@ -53,6 +53,12 @@ export interface ProfileViewData {
   campusShort: string | null;
   photoPaths: string[];
   photoUrls: Record<string, string>;
+  /**
+   * The owner's own preview only: path -> the pill a photo carries ("under
+   * review" on a pending one, which only the owner can see). Absent on anyone
+   * else's profile, whose paths are `ok`-only.
+   */
+  photoBadges?: Record<string, string>;
   /** Self-typed "where i am" line. The server returns it only while fresh and not away; the hero also drops it whenever there is no tier word. */
   placeLine: string | null;
   /** In the owner's order. Gated ones are simply absent before the gate. */

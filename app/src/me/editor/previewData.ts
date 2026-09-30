@@ -15,6 +15,8 @@ export interface PreviewDataInput {
   /** The caller's own photos (storage paths, position order) and their signed URLs. */
   photoPaths: string[];
   photoUrls: Record<string, string>;
+  /** path -> "under review" for each pending photo (`photoStates.ts#previewPhotos`). The owner sees every photo they have, badged. */
+  photoBadges?: Record<string, string>;
   /** Live, from the presence store. */
   tier: ProfileViewData['tier'];
   hereNow: boolean;
@@ -84,6 +86,7 @@ export function buildPreviewData(input: PreviewDataInput): ProfileViewData {
     campusShort: input.campusShort,
     photoPaths: input.photoPaths,
     photoUrls: input.photoUrls,
+    photoBadges: input.photoBadges ?? {},
     placeLine: placeVisible ? place : null,
     prompts,
     usualPlaces: usualPlaces.length > 0 ? usualPlaces : null,

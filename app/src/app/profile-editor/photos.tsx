@@ -4,7 +4,7 @@ import { Image, Platform, Pressable, StyleSheet, View, type LayoutChangeEvent } 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { router } from 'expo-router';
+import { FALLBACK, goBack } from '../../routing/goBack';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   addProfilePhoto,
@@ -15,7 +15,9 @@ import {
 } from '../../api/photos';
 import { mapSupabaseError } from '../../api/errors';
 import type { ProfilePhotoPosition } from '../../photos/path';
+import { PhotoStatePill } from '../../photos/PhotoStatePill';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
+import { gridSlotLabel, hasPhotoUnderReview, PHOTO_STATE_COPY } from '../../me/editor/photoStates';
 import { useMyPhotos } from '../../me/editor/useMyPhotos';
 import {
   computeDropIndex,
@@ -74,13 +76,22 @@ type OffGridConfirm = { copy: string; run: () => void };
  * so this screen, the editor's photos row, Preview and Me all update
  * together, and rolls back (then refetches the truth) on failure.
  *
+ * The owner sees every photo they have, whatever its moderation state (owner
+ * ruling: "should still show but indicate under review not public until
+ * reviewed"): a pending photo shows its image with an "under review" pill (the
+ * first slot's pill reads "on the grid once approved"), and a removed one is a
+ * neutral tile that replaces it on tap. Reorder and remove treat a pending
+ * photo like any other. Words: `me/editor/photoStates.ts`.
+ *
  * A change that would take the caller off the grid (a not-yet-approved photo
  * becoming first, by reorder, removal or replacing the first photo) asks
  * first, per the reorder contract's "the app warns before doing it".
  */
 export default function EditPhotosScreen() {
   const queryClient = useQueryClient();
-  const { photos, urls, isLoaded } = useMyPhotos();
+  const { photos, urls, isLoaded, resignUrls } = useMyPhotos();
+  /** Signed URLs that failed to load (expired after 60s, say): the tile shows its placeholder until a fresh one arrives. */
+  const [failedUrls, setFailedUrls] = useState<Record<string, true>>({});
 
   const [actionSheetIndex, setActionSheetIndex] = useState<number | null>(null);
   const [offGridConfirm, setOffGridConfirm] = useState<OffGridConfirm | null>(null);
@@ -113,6 +124,24 @@ export default function EditPhotosScreen() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.me.photos });
   }
 
+  /**
+   * After a successful write the cache already holds the server's rows (so a
+   * new upload shows at once, as under review); this reconciles every other
+   * reader of the owner's photos with the server: the editor row, the preview
+   * and the draft's photo count (`queryKeys.me.photos` and its signed URLs),
+   * and the Me tile's own first-photo URL.
+   */
+  function syncAfterWrite() {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.me.photos });
+    void queryClient.invalidateQueries({ queryKey: ['me_photo_urls'] });
+  }
+
+  function onImageError(url: string) {
+    if (failedUrls[url]) return;
+    setFailedUrls((prev) => ({ ...prev, [url]: true }));
+    resignUrls();
+  }
+
   /** Runs `run` now, or after a confirmation when `next` would take the caller off the grid. */
   function guardOffGrid(next: Pick<UserPhotoRow, 'moderation_state'>[], copy: string, run: () => void) {
     if (takesYouOffTheGrid(currentCache(), next)) {
@@ -139,6 +168,7 @@ export default function EditPhotosScreen() {
     try {
       const saved = await setMyPhotoOrder(newOrder.map((p) => p.id));
       setPhotosCache(saved);
+      syncAfterWrite();
     } catch (cause) {
       setPhotosCache(previous);
       setError(mapSupabaseError(cause).message);
@@ -170,6 +200,7 @@ export default function EditPhotosScreen() {
         remaining.map((p) => p.id)
       );
       setPhotosCache(saved);
+      syncAfterWrite();
     } catch (cause) {
       // The row delete may have landed before a later step failed, so the
       // rollback is only a placeholder until the refetch reports the truth.
@@ -203,7 +234,9 @@ export default function EditPhotosScreen() {
         width: picked.asset.width,
         height: picked.asset.height,
       });
+      // Shows at once, as under review (the server always inserts `pending`).
       setPhotosCache([...currentCache(), created].sort((a, b) => a.position - b.position));
+      syncAfterWrite();
     } catch (cause) {
       setError(mapSupabaseError(cause).message);
       refetchTruth();
@@ -241,6 +274,7 @@ export default function EditPhotosScreen() {
         height: picked.asset.height,
       });
       setPhotosCache(currentCache().map((p) => (p.id === updated.id ? updated : p)));
+      syncAfterWrite();
     } catch (cause) {
       setError(mapSupabaseError(cause).message);
       refetchTruth();
@@ -261,7 +295,7 @@ export default function EditPhotosScreen() {
             testID="editor-photos-back"
             accessibilityRole="button"
             accessibilityLabel="back"
-            onPress={() => router.back()}
+            onPress={() => goBack(FALLBACK.editor)}
             style={styles.headerBtn}
           >
             <BackIcon size={20} color={colors.ink} />
@@ -270,7 +304,7 @@ export default function EditPhotosScreen() {
           <Pressable
             testID="editor-photos-done"
             accessibilityRole="button"
-            onPress={() => router.back()}
+            onPress={() => goBack(FALLBACK.editor)}
             style={styles.headerBtnRight}
           >
             <Text variant="labelLg" color={colors.signal}>
@@ -304,33 +338,50 @@ export default function EditPhotosScreen() {
                     draggable={Platform.OS !== 'web' && geometry.cellWidth > 0 && photos.length > 1}
                     onDrop={onDragDrop}
                   >
-                    {url ? (
-                      <Image testID={`editor-photos-tile-${i}-image`} source={{ uri: url }} style={styles.tileImage} />
+                    {photo.moderation_state === 'removed' ? (
+                      // A removed photo is never shown, not even to its owner:
+                      // a neutral tile that replaces it on tap.
+                      <Pressable
+                        testID={`editor-photos-tile-${i}-replace`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`photo ${i + 1} was removed. replace it`}
+                        style={styles.removedFill}
+                        onPress={() => requestReplace(photo)}
+                      >
+                        <Text variant="labelLg" color={colors.inkSoft} testID={`editor-photos-tile-${i}-removed`}>
+                          {PHOTO_STATE_COPY.removed}
+                        </Text>
+                        <Text variant="micro" color={colors.inkSoft}>
+                          {PHOTO_STATE_COPY.removedTapToReplace}
+                        </Text>
+                      </Pressable>
+                    ) : url && failedUrls[url] !== true ? (
+                      <Image
+                        testID={`editor-photos-tile-${i}-image`}
+                        source={{ uri: url }}
+                        style={styles.tileImage}
+                        onError={() => onImageError(url)}
+                      />
                     ) : (
-                      <TintedPlaceholder tint={photo.tint ?? colors.avatarTints[i]} />
+                      <TintedPlaceholder
+                        tint={photo.tint ?? colors.avatarTints[i]}
+                        testID={`editor-photos-tile-${i}-placeholder`}
+                      />
                     )}
 
-                    <View style={styles.topPills}>
-                      {i === 0 ? (
-                        <View style={styles.onGridPill}>
+                    <View style={styles.topPills} pointerEvents="none">
+                      {i === 0 && photo.moderation_state !== 'removed' ? (
+                        <View style={styles.onGridPill} testID="editor-photos-tile-0-grid-pill">
                           <Text variant="micro" color={colors.ink}>
-                            on the grid
+                            {gridSlotLabel(photo.moderation_state)}
                           </Text>
                         </View>
                       ) : null}
                       {photo.moderation_state === 'pending' ? (
-                        <View style={styles.statePill} testID={`editor-photos-tile-${i}-in-review`}>
-                          <Text variant="micro" color={colors.ink}>
-                            in review
-                          </Text>
-                        </View>
-                      ) : null}
-                      {photo.moderation_state === 'removed' ? (
-                        <View style={styles.statePill} testID={`editor-photos-tile-${i}-removed`}>
-                          <Text variant="micro" color={colors.danger}>
-                            removed
-                          </Text>
-                        </View>
+                        <PhotoStatePill
+                          testID={`editor-photos-tile-${i}-under-review`}
+                          label={PHOTO_STATE_COPY.underReview}
+                        />
                       ) : null}
                     </View>
 
@@ -392,6 +443,12 @@ export default function EditPhotosScreen() {
               </Text>
             </View>
           </View>
+
+          {hasPhotoUnderReview(photos) ? (
+            <Text variant="micro" color={colors.inkSoft} testID="editor-photos-review-hint" style={styles.reviewHint}>
+              {PHOTO_STATE_COPY.underReviewHint}
+            </Text>
+          ) : null}
 
           {error ? (
             <Text variant="helper" color={colors.danger} testID="editor-photos-error" style={styles.error}>
@@ -658,12 +715,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.smMd,
     paddingVertical: spacing.xxs,
   },
-  statePill: {
-    backgroundColor: colors.paperRaised,
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.smMd,
-    paddingVertical: spacing.xxs,
-  },
   pencilBadge: {
     position: 'absolute',
     top: 8,
@@ -699,6 +750,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   error: { marginTop: spacing.mdLg },
+  reviewHint: { marginTop: spacing.mdLg },
+  removedFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.paperTint,
+  },
   rulesCard: {
     backgroundColor: colors.paperRaised,
     borderRadius: radii.card,

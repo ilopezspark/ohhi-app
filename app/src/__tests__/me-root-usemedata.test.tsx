@@ -80,6 +80,17 @@ describe('useMeData', () => {
     (getPrivateCardShareCount as jest.Mock).mockResolvedValue(3);
   });
 
+  it("reports the first photo's moderation state, so Me can badge a pending one", async () => {
+    (listMyPhotos as jest.Mock).mockResolvedValue([
+      { position: 0, storage_path: 'u1/0.jpg', moderation_state: 'pending' },
+      { position: 1, storage_path: 'u1/1.jpg', moderation_state: 'ok' },
+    ]);
+    const { result } = await renderHook(() => useMeData(), { wrapper });
+    await waitFor(() => expect(result.current.photoState).toBe('pending'));
+    // The owner signs their own pending photo like any other.
+    await waitFor(() => expect(result.current.photoUrl).toBe('https://example.com/0.jpg'));
+  });
+
   it('computes a completion percent equal to profileCompletion() run over the same underlying data', async () => {
     const { result } = await renderHook(() => useMeData(), { wrapper });
     await waitFor(() => expect(result.current.isLoading).toBe(false));

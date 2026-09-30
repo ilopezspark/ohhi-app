@@ -6,6 +6,8 @@ import { displayName } from '../../ui/displayName';
 import { ProfileTile } from '../../profile/ProfileTile';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 import { useMeData } from '../../me/root/useMeData';
+import { PHOTO_STATE_COPY } from '../../me/editor/photoStates';
+import { PhotoStatePill } from '../../photos/PhotoStatePill';
 
 /**
  * `docs/design/me-redesign/brief.md`'s Me screen — the Me tab's root and
@@ -28,6 +30,7 @@ export default function MeScreen() {
     verified,
     identityText,
     photoUrl,
+    photoState,
     tint,
     completionPercent,
     nextBestCopy,
@@ -58,17 +61,27 @@ export default function MeScreen() {
       />
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.identityRow}>
-          <ProfileTile
-            testID="me-photo-tile"
-            size="thumbnail"
-            data={{
-              firstName,
-              // `thumbnail` never renders `tier` — required by `ProfileTileData` regardless.
-              tier: 'away',
-              photoUrl,
-              tint,
-            }}
-          />
+          <View>
+            <ProfileTile
+              testID="me-photo-tile"
+              size="thumbnail"
+              data={{
+                firstName,
+                // `thumbnail` never renders `tier` — required by `ProfileTileData` regardless.
+                tier: 'away',
+                // A removed first photo is never shown, not even here: the tint stands in.
+                photoUrl: photoState === 'removed' ? undefined : photoUrl,
+                tint,
+              }}
+            />
+            {photoState === 'pending' || photoState === 'removed' ? (
+              <PhotoStatePill
+                testID={photoState === 'pending' ? 'me-photo-under-review' : 'me-photo-removed'}
+                label={photoState === 'pending' ? PHOTO_STATE_COPY.underReview : PHOTO_STATE_COPY.removed}
+                style={styles.photoStatePill}
+              />
+            ) : null}
+          </View>
           <View style={styles.identityCol}>
             <View style={styles.nameRow}>
               <Text variant="display" numberOfLines={1} style={styles.name} testID="me-name">
@@ -187,6 +200,7 @@ const styles = StyleSheet.create({
     ...shadows.float,
   },
   identityRow: { flexDirection: 'row', gap: spacing.lgXl, alignItems: 'flex-start' },
+  photoStatePill: { position: 'absolute', left: spacing.xs, right: spacing.xs, bottom: spacing.xs, paddingHorizontal: spacing.xs, alignItems: 'center' },
   identityCol: { flex: 1, gap: spacing.xs, paddingTop: spacing.xs },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.smMd },
   name: { flexShrink: 1 },

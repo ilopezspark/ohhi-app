@@ -372,3 +372,57 @@ describe('ProfilePreviewScreen — the public cards (owner view)', () => {
     expect(none.identityAudiences).toBeNull();
   });
 });
+
+describe('ProfilePreviewScreen — the owner sees every photo they have', () => {
+  function withPhotos(photos: { storage_path: string; moderation_state: 'ok' | 'pending' | 'removed' }[], urls: Record<string, string> = {}) {
+    (useMyPhotos as jest.Mock).mockReturnValue({ photos, urls, isLoading: false, isLoaded: true, refetch: jest.fn(), invalidate: jest.fn() });
+  }
+
+  it('puts pending photos in the pager, each badged "under review", and leaves a removed one out', async () => {
+    withPhotos(
+      [
+        { storage_path: 'u1/a.jpg', moderation_state: 'ok' },
+        { storage_path: 'u1/b.jpg', moderation_state: 'pending' },
+        { storage_path: 'u1/c.jpg', moderation_state: 'pending' },
+        { storage_path: 'u1/d.jpg', moderation_state: 'removed' },
+      ],
+      { 'u1/a.jpg': 'https://signed/a', 'u1/b.jpg': 'https://signed/b', 'u1/c.jpg': 'https://signed/c' }
+    );
+    const screen = await renderPreview();
+
+    // three bars: ok + two pending, the removed one is not there
+    for (const i of [0, 1, 2]) screen.getByTestId(`profile-preview-photo-progress-${i}`, { includeHiddenElements: true });
+    expect(screen.queryByTestId('profile-preview-photo-progress-3', { includeHiddenElements: true })).toBeNull();
+    for (const i of [0, 1, 2]) expect(screen.getByTestId(`profile-preview-photo-image-${i}`)).toBeTruthy();
+
+    // the approved first photo carries no badge
+    expect(screen.queryByTestId('profile-preview-photo-badge-0')).toBeNull();
+    await fireEvent.press(screen.getByTestId('profile-preview-photo-next'));
+    expect(screen.getByTestId('profile-preview-photo-badge-1')).toHaveTextContent('under review');
+    await fireEvent.press(screen.getByTestId('profile-preview-photo-next'));
+    expect(screen.getByTestId('profile-preview-photo-badge-2')).toHaveTextContent('under review');
+
+    // and the photo cards in the details carry it too
+    expect(screen.getByTestId('profile-preview-photo-card-1-badge')).toHaveTextContent('under review');
+    expect(screen.getByTestId('profile-preview-photo-card-2-badge')).toHaveTextContent('under review');
+  });
+
+  it('buildPreviewData carries the badges through', () => {
+    const data = buildPreviewData({
+      userId: 'u1',
+      firstName: 'izaac',
+      gradYear: 2027,
+      verified: true,
+      campusShort: 'CLC',
+      catalog: [],
+      draft: { ...BASE_DRAFT_STATE.draft, goals: [] },
+      fieldsMeta: null,
+      photoPaths: ['u1/a.jpg', 'u1/b.jpg'],
+      photoUrls: {},
+      photoBadges: { 'u1/b.jpg': 'under review' },
+      tier: 'on_campus',
+      hereNow: false,
+    });
+    expect(data.photoBadges).toEqual({ 'u1/b.jpg': 'under review' });
+  });
+});
