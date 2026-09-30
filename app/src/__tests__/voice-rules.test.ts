@@ -423,6 +423,8 @@ const SCOPE_FILES: string[] = [
   // card pieces it renders. `profile/view/*` is already covered by the
   // `profile/` sweep above.
   path.join(SRC, 'app', 'profile', '[id].tsx'),
+  // Your own profile as others see it: the same screen, pushed from Me and the editor.
+  path.join(SRC, 'app', 'profile-preview.tsx'),
   path.join(SRC, 'card', 'CtaButton.tsx'),
   path.join(SRC, 'card', 'OverflowMenu.tsx'),
   // Profile redesign phase 2 (migration 0015). Everything else it added sits
@@ -515,6 +517,7 @@ describe('voice rules — real source tree', () => {
         path.join('profile', 'view', 'ProfileView.tsx'),
         path.join('profile', 'view', 'sections.tsx'),
         path.join('app', 'profile', '[id].tsx'),
+        path.join('app', 'profile-preview.tsx'),
         path.join('card', 'CtaButton.tsx'),
         path.join('card', 'OverflowMenu.tsx'),
         // profile redesign phase 2
@@ -529,7 +532,7 @@ describe('voice rules — real source tree', () => {
         path.join('me', 'editor', 'listEdit.ts'),
         path.join('me', 'editor', 'previewData.ts'),
         path.join('me', 'editor', 'useDiscardGuard.ts'),
-        path.join('me', 'editor', 'PreviewCard.tsx'),
+        path.join('me', 'editor', 'previewDraft.ts'),
         path.join('me', 'editor', 'EditSections.tsx'),
         // album viewer
         path.join('albums', 'StoryViewer.tsx'),

@@ -20,7 +20,7 @@ export interface UseMyPhotosResult {
 /**
  * The caller's own photos + their signed URLs, shared by every profile-editor
  * surface that shows them (`EditSections`'s photos row, `EditPhotos`,
- * `PreviewCard`'s carousel). Keyed identically to `me/root/useMeData.ts`'s own
+ * the preview screen's hero). Keyed identically to `me/root/useMeData.ts`'s own
  * `queryKeys.me.photos` read, so React Query dedupes the two into one
  * subscription rather than issuing the request twice, and a write here shows
  * up on Me the next time it focuses without either screen knowing about the

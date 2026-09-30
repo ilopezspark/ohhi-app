@@ -1,22 +1,23 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { router, useLocalSearchParams, useNavigation } from 'expo-router';
+import { Redirect, router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { usePreventRemove, type NavigationAction } from 'expo-router/react-navigation';
 import { EditSections } from '../../me/editor/EditSections';
-import { PreviewCard } from '../../me/editor/PreviewCard';
 import { useProfileEditorDraftContext } from '../../me/editor/ProfileEditorDraftContext';
-import { Text, useHeaderInsets } from '../../ui';
+import { previewSourceOf, setPreviewDraft } from '../../me/editor/previewDraft';
+import { PillButton, Text, useHeaderInsets } from '../../ui';
+import { EyeIcon } from '../../ui/icons';
 import { displayName } from '../../ui/displayName';
 import { colors, spacing } from '../../theme/tokens';
 import { HEADER_TOP_GAP } from '../../ui/screenInsets';
 import { footerBottomPadding } from '../../ui/keyboardInset';
 
-type EditorTab = 'edit' | 'preview';
-
 /**
- * `ProfileEditor` — `Edit`/`Preview` tab switch
- * (`docs/design/me-redesign/brief.md`). `?tab=preview` opens straight onto
- * Preview (Me's "see how you look on the grid" pill uses this). `cancel`
+ * `ProfileEditor` — one edit screen (`docs/design/me-redesign/brief.md`).
+ * `preview` pushes `/profile-preview?from=editor`, your profile as others
+ * see it (the real profile screen), showing this draft, unsaved edits
+ * included; back from there returns here. `?tab=preview` is an old link:
+ * it redirects to `/profile-preview`. `cancel`
  * discards the shared draft (`ProfileEditorDraftContext`, provided by
  * `_layout.tsx`) and asks for confirmation first if it's dirty, matching the
  * private-card editor's own `Alert.alert` confirm pattern
@@ -31,8 +32,7 @@ type EditorTab = 'edit' | 'preview';
  */
 export default function ProfileEditorScreen() {
   const params = useLocalSearchParams<{ tab?: string | string[] }>();
-  const initialTabParam = Array.isArray(params.tab) ? params.tab[0] : params.tab;
-  const [tab, setTab] = useState<EditorTab>(initialTabParam === 'preview' ? 'preview' : 'edit');
+  const tabParam = Array.isArray(params.tab) ? params.tab[0] : params.tab;
 
   const draftState = useProfileEditorDraftContext();
   // The Me screen's heading padding (owner ruling), shared with every screen.
@@ -78,10 +78,18 @@ export default function ProfileEditorScreen() {
     else leave();
   }
 
+  function openPreview() {
+    setPreviewDraft(previewSourceOf(draftState));
+    router.push('/profile-preview?from=editor' as never);
+  }
+
   async function handleDone() {
     const ok = await draftState.commit();
     if (ok) leave();
   }
+
+  // An old `?tab=preview` link: the preview is its own screen now.
+  if (tabParam === 'preview') return <Redirect href={'/profile-preview' as never} />;
 
   if (draftState.loading) {
     return (
@@ -146,13 +154,12 @@ export default function ProfileEditorScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.tabRow}>
-        <TabButton testID="profile-editor-tab-edit" label="edit" active={tab === 'edit'} onPress={() => setTab('edit')} />
-        <TabButton
-          testID="profile-editor-tab-preview"
+      <View style={styles.previewRow}>
+        <PillButton
+          testID="profile-editor-preview"
           label="preview"
-          active={tab === 'preview'}
-          onPress={() => setTab('preview')}
+          icon={<EyeIcon size={16} color={colors.ink} />}
+          onPress={openPreview}
         />
       </View>
 
@@ -167,50 +174,14 @@ export default function ProfileEditorScreen() {
         </Text>
       ) : null}
 
-      {tab === 'edit' ? (
-        <ScrollView
-          // The end clears the home indicator / navigation bar (the shared bar rule).
-          contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(insets.bottom, { edge: spacing.huge }) }]}
-          testID="profile-editor-edit-scroll"
-        >
-          <EditSections />
-        </ScrollView>
-      ) : (
-        <View
-          style={[styles.previewWrap, { paddingBottom: footerBottomPadding(insets.bottom, { edge: spacing.lgXl }) }]}
-          testID="profile-editor-preview-wrap"
-        >
-          <PreviewCard />
-        </View>
-      )}
+      <ScrollView
+        // The end clears the home indicator / navigation bar (the shared bar rule).
+        contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(insets.bottom, { edge: spacing.huge }) }]}
+        testID="profile-editor-edit-scroll"
+      >
+        <EditSections />
+      </ScrollView>
     </View>
-  );
-}
-
-function TabButton({
-  label,
-  active,
-  onPress,
-  testID,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-  testID: string;
-}) {
-  return (
-    <Pressable
-      testID={testID}
-      accessibilityRole="tab"
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
-      style={styles.tabButton}
-    >
-      <Text variant="bodyStrong" color={active ? colors.ink : colors.inkFaint}>
-        {label}
-      </Text>
-      <View style={[styles.tabUnderline, active && styles.tabUnderlineActive]} />
-    </Pressable>
   );
 }
 
@@ -228,11 +199,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lgXl,
   },
   headerName: { flex: 1, textAlign: 'center' },
-  tabRow: { flexDirection: 'row', paddingHorizontal: spacing.lgXl, borderBottomWidth: 1, borderBottomColor: colors.line },
-  tabButton: { flex: 1, alignItems: 'center', paddingBottom: spacing.mdLg, gap: spacing.smMd },
-  tabUnderline: { height: 2, width: '100%', backgroundColor: 'transparent' },
-  tabUnderlineActive: { backgroundColor: colors.ink },
+  previewRow: { paddingHorizontal: spacing.lgXl, paddingBottom: spacing.lgXl },
   doneError: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.smMd },
   scroll: { padding: spacing.lgXl },
-  previewWrap: { flex: 1, padding: spacing.lgXl },
 });

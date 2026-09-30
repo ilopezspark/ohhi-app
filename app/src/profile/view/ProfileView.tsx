@@ -28,7 +28,6 @@ export const PROFILE_MAX_WIDTH = 560;
 const HEADER_BAR = 56;
 /** First-frame guess for the action bar's height, before `onLayout` measures it. */
 const ACTION_BAR_ESTIMATE = 88;
-const NO_INSETS = { top: 0, right: 0, bottom: 0, left: 0 };
 
 export interface ProfileViewActionState {
   /** True once the view has scrolled off the photo: the bar sits on paper, not on the photo. */
@@ -43,10 +42,10 @@ export interface ProfileViewProps {
   /** The sticky action bar's content (say hi + message, plus any error line). */
   renderActions?: (state: ProfileViewActionState) => ReactNode;
   /**
-   * Preview of your own profile (the editor's Preview tab): the action bar at
-   * 40% and untouchable, no report/block, gated content shown with its note,
-   * and laid out inside its container (no safe-area insets of its own; the
-   * hero is as tall as the container rather than the window).
+   * Preview of your own profile (`app/profile-preview.tsx`): the action bar at
+   * 40% and untouchable, no report/block, and gated content shown with its
+   * note. Everything else, the full-screen hero and the safe-area insets
+   * included, is the real profile screen's layout.
    */
   preview?: boolean;
   /** testID prefix for every part, default `profile`. */
@@ -59,18 +58,17 @@ export interface ProfileViewProps {
  * takes over once the photo scrolls away (`03-profile-scrolled.png`), and
  * the sticky action bar. It owns layout and scroll only; the data, the
  * say-hi/message state machine and the report/block sheet stay with the
- * caller (`app/profile/[id].tsx`). Built so the editor's Preview can render
- * it too (`preview`), keeping preview and reality on one component.
+ * caller (`app/profile/[id].tsx`). Your own preview (`app/profile-preview.tsx`)
+ * renders it too (`preview`), keeping preview and reality on one component.
  */
 export function ProfileView({ data, onBack, onOverflow, renderActions, preview = false, testIDPrefix = 'profile' }: ProfileViewProps) {
   const p = testIDPrefix;
-  const safeInsets = useInsets();
-  const insets = preview ? NO_INSETS : safeInsets;
+  const insets = useInsets();
   const screen = useScreenFrame();
   // The hero is exactly as tall as this view: on the profile screen that is
-  // the whole screen (edge to edge, under both system bars); in the
-  // editor's Preview it is the tab's own area. Both come from `onLayout`, so
-  // rotation, a fold opening and split screen resize it. Until the first
+  // the whole screen (edge to edge, under both system bars), as it is on
+  // the preview. It comes from `onLayout`, so rotation, a fold opening and
+  // split screen resize it. Until the first
   // layout, the safe-area frame (the root view's real size) stands in, not
   // the window: on Android the window can leave out the system bars.
   const [measured, setMeasured] = useState<{ width: number; height: number } | null>(null);

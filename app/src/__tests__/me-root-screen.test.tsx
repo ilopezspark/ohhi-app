@@ -100,11 +100,11 @@ describe('MeScreen', () => {
     expect(router.push).toHaveBeenCalledWith('/profile-editor');
   });
 
-  it('navigates to the preview tab from "see how you look on the grid"', async () => {
+  it('pushes the preview screen from "see how you look on the grid"', async () => {
     mockData();
     const { getByTestId } = await render(<MeScreen />);
     await fireEvent.press(getByTestId('me-preview'));
-    expect(router.push).toHaveBeenCalledWith('/profile-editor?tab=preview');
+    expect(router.push).toHaveBeenCalledWith('/profile-preview');
   });
 
   it('navigates to /quick-status from the status row', async () => {

@@ -5,19 +5,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn() },
   useLocalSearchParams: jest.fn(() => ({})),
+  Redirect: ({ href }: { href: string }) => {
+    const { View: RNView } = require('react-native');
+    return <RNView testID="redirect" accessibilityLabel={href} />;
+  },
   useNavigation: jest.fn(() => ({ dispatch: jest.fn() })),
 }));
 jest.mock('expo-router/react-navigation', () => ({ usePreventRemove: jest.fn() }));
 jest.mock('../me/editor/ProfileEditorDraftContext', () => ({ useProfileEditorDraftContext: jest.fn() }));
-// The two tab bodies have their own suites (editor-preview, editor-draft);
-// here they only need to show which tab is up.
+// The edit sections have their own suite (editor-draft); here they only need to show up.
 jest.mock('../me/editor/EditSections', () => {
   const { View: RNView } = require('react-native');
   return { EditSections: () => <RNView testID="stub-edit-sections" /> };
-});
-jest.mock('../me/editor/PreviewCard', () => {
-  const { View: RNView } = require('react-native');
-  return { PreviewCard: () => <RNView testID="stub-preview-card" /> };
 });
 jest.mock('../api/client', () => ({ supabase: {} }));
 jest.mock('../api/profile', () => ({ getStatusLine: jest.fn(), updateProfile: jest.fn() }));
@@ -25,6 +24,7 @@ jest.mock('../api/profile', () => ({ getStatusLine: jest.fn(), updateProfile: je
 import { router, useLocalSearchParams } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useProfileEditorDraftContext } from '../me/editor/ProfileEditorDraftContext';
+import { getPreviewDraft } from '../me/editor/previewDraft';
 import { getStatusLine, updateProfile } from '../api/profile';
 import ProfileEditorScreen from '../app/profile-editor/index';
 import EditStatusScreen from '../app/profile-editor/status';
@@ -81,21 +81,36 @@ describe('ProfileEditorScreen', () => {
     expect(getByText('izaac')).toBeTruthy();
   });
 
-  it('?tab=preview opens straight onto preview', async () => {
+  it('has no preview tab: one edit screen with a preview action', async () => {
+    mockDraft();
+    const { findByTestId, queryByTestId } = await render(<ProfileEditorScreen />);
+    await findByTestId('stub-edit-sections');
+    await findByTestId('profile-editor-preview');
+    expect(queryByTestId('profile-editor-tab-preview')).toBeNull();
+    expect(queryByTestId('profile-editor-tab-edit')).toBeNull();
+  });
+
+  it('preview pushes the preview screen and hands it the draft, unsaved edits included', async () => {
+    const state = mockDraft({
+      dirty: true,
+      draft: { statusLine: 'not saved yet', goals: [], tagIds: [], placeLine: '', usualPlaces: [], prompts: [], about: EMPTY_ABOUT },
+    });
+    const { findByTestId } = await render(<ProfileEditorScreen />);
+    await fireEvent.press(await findByTestId('profile-editor-preview'));
+    expect(router.push).toHaveBeenCalledWith('/profile-preview?from=editor');
+    expect(getPreviewDraft()?.draft.statusLine).toBe('not saved yet');
+    expect(getPreviewDraft()?.firstName).toBe(state.firstName);
+    // opening the preview is not leaving: no discard prompt, no close
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(router.back).not.toHaveBeenCalled();
+  });
+
+  it('an old ?tab=preview link redirects to the preview screen', async () => {
     mockDraft();
     (useLocalSearchParams as jest.Mock).mockReturnValue({ tab: 'preview' });
     const { findByTestId, queryByTestId } = await render(<ProfileEditorScreen />);
-    await findByTestId('stub-preview-card');
+    expect((await findByTestId('redirect')).props.accessibilityLabel).toBe('/profile-preview');
     expect(queryByTestId('stub-edit-sections')).toBeNull();
-  });
-
-  it('switches tabs', async () => {
-    mockDraft();
-    const { findByTestId } = await render(<ProfileEditorScreen />);
-    await fireEvent.press(await findByTestId('profile-editor-tab-preview'));
-    await findByTestId('stub-preview-card');
-    await fireEvent.press(await findByTestId('profile-editor-tab-edit'));
-    await findByTestId('stub-edit-sections');
   });
 
   it('cancel with nothing changed just closes', async () => {

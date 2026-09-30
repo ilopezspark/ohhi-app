@@ -113,7 +113,7 @@ export default function MeScreen() {
           testID="me-preview"
           label="see how you look on the grid"
           icon={<EyeIcon size={16} color={colors.ink} />}
-          onPress={() => router.push('/profile-editor?tab=preview' as never)}
+          onPress={() => router.push('/profile-preview' as never)}
         />
 
         <View style={styles.section}>

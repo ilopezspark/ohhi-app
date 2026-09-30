@@ -255,8 +255,8 @@ describe('ProfileView — photo cards', () => {
   });
 });
 
-describe('ProfileView — preview is laid out inside its container', () => {
-  it('has no safe-area inset of its own', async () => {
+describe('ProfileView — preview', () => {
+  it('has no back or report/block when none is given', async () => {
     const screen = await renderView(MAYA, { preview: true, onBack: undefined, onOverflow: undefined });
     expect(screen.queryByTestId('profile-back')).toBeNull();
     expect(screen.queryByTestId('profile-overflow-trigger')).toBeNull();
