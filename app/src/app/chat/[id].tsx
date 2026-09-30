@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1322,7 +1322,14 @@ const styles = StyleSheet.create({
   shareBubbleWrapper: { paddingHorizontal: spacing.mdLg, paddingVertical: 3 },
   shareBubbleWrapperMine: { alignItems: 'flex-end' },
   shareBubbleWrapperTheirs: { alignItems: 'flex-start' },
-  emptyBox: { paddingTop: spacing.huge * 2, paddingHorizontal: spacing.xxl, transform: [{ scaleY: -1 }] },
+  // Undo the `inverted` list's transform so the empty state reads upright.
+  // VirtualizedList flips both axes on Android (`scale: -1`) and only the
+  // vertical one elsewhere (`scaleY: -1`); mirror that exactly.
+  emptyBox: {
+    paddingTop: spacing.huge * 2,
+    paddingHorizontal: spacing.xxl,
+    transform: Platform.OS === 'android' ? [{ scale: -1 }] : [{ scaleY: -1 }],
+  },
   empty: { textAlign: 'center' },
   pickActions: { gap: spacing.smMd },
 });
