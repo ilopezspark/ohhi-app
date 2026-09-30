@@ -6,6 +6,7 @@ import { useMemo } from 'react';
 import { tabBarBadgeStyle, tabBarScreenOptionsFor, TabBarIcon } from '../../ui/TabBar';
 import { useHeaderInsets } from '../../ui/useHeaderInsets';
 import { TagsChangedNotice } from '../../notices/TagsChangedNotice';
+import { ProfileMovedNotice } from '../../notices/ProfileMovedNotice';
 
 /**
  * All four tabs (`docs/app-social-plan.md`, architecture plan §2's screen
@@ -38,8 +39,9 @@ export default function TabsLayout() {
   const bottomInset = useHeaderInsets().bottom;
   const screenOptions = useMemo(() => tabBarScreenOptionsFor(bottomInset), [bottomInset]);
 
-  // The one-time tags notice (migration 0018) sits over the tabs, so it
-  // only ever shows to an active user and never blocks anything.
+  // The one-time tags notice (migration 0018) and profile-moved notice (0023)
+  // sit over the tabs, so they only ever show to an active user and never
+  // block anything. The tags one goes first; the other follows once it is gone.
   return (
     <>
     <Tabs screenOptions={screenOptions} screenListeners={{ focus: () => refreshBadges(queryClient) }}>
@@ -80,6 +82,7 @@ export default function TabsLayout() {
       />
     </Tabs>
     <TagsChangedNotice />
+    <ProfileMovedNotice />
     </>
   );
 }

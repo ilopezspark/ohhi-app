@@ -162,7 +162,7 @@ export default function IdentityScreen() {
         a bit about you
       </Text>
       <Text variant="helper">
-        all optional. off your profile unless you turn it on — and never used to sort the grid.
+        all optional, and never used to sort the grid. the switch below decides who sees this: everyone on your campus, or only you. you can change it later, card by card, in the profile editor.
       </Text>
 
       <View style={{ gap: spacing.smMd }}>
@@ -221,7 +221,7 @@ export default function IdentityScreen() {
 
       <Banner
         title="the rest lives in more about me"
-        message="who you're into, safer-sex stuff, kinks — a private section you share one person at a time from a chat. never on the grid, never on your profile. you can fill it in later from me."
+        message="who you're into is part of your identity card, so it follows the same setting. safer sex and the rest of your private card stay private, shared one person at a time from a chat. you can fill it in later from me."
         testID="identity-more-about-me-banner"
       />
 
