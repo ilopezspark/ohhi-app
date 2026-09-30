@@ -16,7 +16,13 @@ jest.mock('../api/tags', () => ({
   setMyTags: jest.fn(),
   suggestTag: jest.fn(),
 }));
-jest.mock('../api/about', () => ({ getMyAbout: jest.fn(), setMyAbout: jest.fn(), listPrograms: jest.fn() }));
+jest.mock('../api/about', () => ({
+  ...jest.requireActual('../api/about'),
+  getMyAbout: jest.fn(),
+  setMyAbout: jest.fn(),
+  listPrograms: jest.fn(),
+  suggestProgram: jest.fn(),
+}));
 jest.mock('../api/notices', () => ({ listUnseenNotices: jest.fn(), dismissNotice: jest.fn() }));
 jest.mock('../me/editor/ProfileEditorDraftContext', () => ({ useProfileEditorDraftContext: jest.fn() }));
 
@@ -150,8 +156,9 @@ describe('/profile-editor/school-and-work', () => {
     await fireEvent.press(screen.getByTestId('editor-school-work-major'));
     await fireEvent.press(screen.getByTestId('editor-school-work-major-sheet-p-nursing'));
     await fireEvent.press(screen.getByTestId('editor-school-work-minor'));
-    // the major is not offered as a minor
-    expect(screen.queryByTestId('editor-school-work-minor-sheet-p-nursing')).toBeNull();
+    // the major stays in the minor list, disabled, with a quiet note
+    expect(screen.getByTestId('editor-school-work-minor-sheet-p-nursing').props.accessibilityState).toMatchObject({ disabled: true });
+    expect(screen.getByTestId('editor-school-work-minor-sheet-p-nursing-note')).toHaveTextContent('your major');
     await fireEvent.press(screen.getByTestId('editor-school-work-minor-sheet-p-art'));
     await fireEvent.press(screen.getByTestId('editor-school-work-save'));
     expect(state.setAbout).toHaveBeenCalledWith(

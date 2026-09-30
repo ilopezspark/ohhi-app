@@ -2325,6 +2325,51 @@ headers wrapping a button with expanded state. Pure logic: `pickerModel.ts`.
 - Onboarding: the major that used to be picked as a tag is offered in the same place, an
   optional row above the categories on the tag step, from the campus program list.
 
+### The major/minor picker (more programs, search, suggest a program)
+
+Owner's request: more majors and minors (the catalog grows from 9 to 50 with migration 0019,
+decision 95), a search, and a way to suggest a missing one into a moderation queue.
+
+- One picker, `me/editor/ProgramPickerSheet.tsx`, everywhere a program is chosen: the about
+  editor's major and minor (`/profile-editor/school-and-work`) and onboarding's optional major row
+  on the tag step. Both keep the pick in local state until their own save, as before.
+- A tall in-tree `Sheet` (`ui/Sheet.tsx`'s new `tall`): the panel fills the screen below the
+  status bar less a strip of dim (tap to close), capped at 640 wide / 900 tall on wide screens.
+  Chosen over a pushed route because both callers hold the pick in local state (the editor's
+  unsaved draft, onboarding's step), which a route could only get back through params or a store.
+  In-tree rather than a `SheetModal` because it holds text fields: the panel shrinks above the
+  keyboard (`KeyboardSpacer`) and the list has `flex: 1` inside it, so it scrolls on Android and
+  the search field and list stay in sight. Android's back button leaves the form, then the sheet.
+- Search (not focused on open): case-insensitive, anywhere in the label, punctuation and spaces
+  ignored (`pre med`, `premed` and `pre-med` are the same), plus aliases for short labels
+  (`computer` finds `cs`, `biology` finds `bio`). The aliases are data in
+  `me/editor/programAliases.ts`, keyed by label so a label with no entry just matches on its own
+  text; that file is left out of the voice lint on purpose. The result count is shown and
+  announced politely. Pure logic: `me/editor/programPickerModel.ts`.
+- The list: a virtualised `FlatList` of the programs in server order, the current pick checked,
+  rows are buttons with selected/disabled state, a tap picks and closes. The minor picker keeps
+  the chosen major's row, disabled, with a quiet `your major`. `no major` / `no minor for now` /
+  `no minor` at the top (both fields are optional in both places; hidden while searching).
+  Picking a major equal to the minor clears the minor; clearing the major clears the minor
+  (`applyProgramPick`, the server's rule).
+- An empty search: `nothing called "…"` with `suggest it as a major`, prefilled. At the end of the
+  list, always: `don't see yours? suggest a major` (or `minor`).
+- Suggest: a form in the same sheet (60 characters, with a counter) that calls
+  `api/about.ts#suggestProgram(label, kind)` (`suggest_program`). On success it returns to the
+  list with `thanks. we'll take a look.` and `it doesn't change your profile yet. pick the closest
+  one for now.` Refusals show inline with the text kept, never the server's text: the word filter
+  `that text can't be used.`, `that one is already on the list.` (checked here first against the
+  loaded list, with `show it in the list`), `you have a few suggestions waiting already.`; the
+  length rule (1-60 after trimming) is mirrored client-side; anything else is `that didn't work.`
+  (`ProgramSuggestionError.reason` says which).
+- `types/database.ts` has `suggest_program` by hand; `program_suggestions` is not typed (the
+  client never reads or writes it, and `api-owner-filter.test.ts` checks that).
+- Before migration 0019 is applied, the list shows the 9 programs 0018 seeded and `suggest a
+  major` fails with `that didn't work.` (the function does not exist yet); nothing else changes.
+- Tests: `program-picker-model.test.ts` (search, aliases, selection rules, suggestions),
+  `program-picker.test.tsx` (the list, empty state, minor rules, the suggest flow and every
+  refusal, back button, both entry points use the shared picker), `program-suggest-api.test.ts`.
+
 ### Word filter, notice, completion, layout
 
 - Refusals are shown on the field, with the text kept: the editor keeps a per-field

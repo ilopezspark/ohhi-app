@@ -1,7 +1,13 @@
 import { supabase } from './client';
-import { InvalidInputError, mapSupabaseError } from './errors';
-import { friendlyFieldError } from '../profile/fields';
-import { parseAbout, type AboutPatch, type AboutSection } from '../profile/about';
+import { InvalidInputError, mapSupabaseError, WORD_FILTER_LINE } from './errors';
+import { FIELD_ERROR_FALLBACK, friendlyFieldError } from '../profile/fields';
+import {
+  parseAbout,
+  PROGRAM_SUGGESTION_MAX_LENGTH,
+  type AboutPatch,
+  type AboutSection,
+  type ProgramKind,
+} from '../profile/about';
 import type { Database, Json } from '../types/database';
 
 /**
@@ -13,7 +19,11 @@ import type { Database, Json } from '../types/database';
  *
  * `programs` (the major/minor picker) is readable for the caller's own
  * campus only, by RLS; it is a per-campus list, not an owner-scoped table.
+ * One catalog serves both the major and the minor. `suggest_program` queues
+ * a missing one for review; the queue itself is never read or written here.
  */
+
+export { PROGRAM_SUGGESTION_MAX_LENGTH, type ProgramKind };
 
 export type ProgramRow = Pick<Database['public']['Tables']['programs']['Row'], 'id' | 'label' | 'sort_order'>;
 
@@ -51,4 +61,56 @@ export async function listPrograms(): Promise<ProgramRow[]> {
     .order('label', { ascending: true });
   if (error) throw mapSupabaseError(error);
   return data ?? [];
+}
+
+
+/** Why `suggest_program` said no, so the form can offer the right next step (jump to a listed one). */
+export type ProgramSuggestionRefusal = 'filtered' | 'listed' | 'waiting' | 'length' | 'other';
+
+/** The form's line for each refusal: lowercase, never the server's text, never echoing what was typed. */
+export const PROGRAM_SUGGESTION_COPY: Record<ProgramSuggestionRefusal, string> = {
+  filtered: WORD_FILTER_LINE,
+  listed: 'that one is already on the list.',
+  waiting: 'you have a few suggestions waiting already.',
+  length: `keep it between 1 and ${PROGRAM_SUGGESTION_MAX_LENGTH} characters.`,
+  other: FIELD_ERROR_FALLBACK,
+};
+
+/** A refused program suggestion: `message` is the app's copy, `reason` says which refusal it was. */
+export class ProgramSuggestionError extends InvalidInputError {
+  readonly reason: ProgramSuggestionRefusal;
+
+  constructor(reason: ProgramSuggestionRefusal) {
+    super(PROGRAM_SUGGESTION_COPY[reason]);
+    this.name = 'ProgramSuggestionError';
+    this.reason = reason;
+  }
+}
+
+/** `suggest_program`'s `22023` messages. The length refusal's exact wording is the server's, so it is recognised by its subject. */
+function suggestionRefusal(message: string | undefined): ProgramSuggestionRefusal {
+  if (message === "that text can't be used") return 'filtered';
+  if (message === 'that one is already on the list') return 'listed';
+  if (message === 'too many suggestions waiting') return 'waiting';
+  if (message && /blank|empty|character|long|length/i.test(message)) return 'length';
+  return 'other';
+}
+
+/**
+ * `suggest_program(p_label, p_kind)`: queues a missing major or minor for
+ * review. It never changes the profile. The length rule (1-60 after
+ * trimming) is checked here first, so that refusal is not normally reached;
+ * the others come back as a `ProgramSuggestionError`. Not signed in (`42501`)
+ * and anything else follow the usual convention (`mapSupabaseError`).
+ */
+export async function suggestProgram(label: string, kind: ProgramKind): Promise<void> {
+  const trimmed = label.trim();
+  if (trimmed.length === 0 || trimmed.length > PROGRAM_SUGGESTION_MAX_LENGTH) {
+    throw new ProgramSuggestionError('length');
+  }
+  const { error } = await supabase.rpc('suggest_program', { p_label: trimmed, p_kind: kind });
+  if (error) {
+    if ((error as { code?: string }).code === '22023') throw new ProgramSuggestionError(suggestionRefusal(error.message));
+    throw mapSupabaseError(error);
+  }
 }

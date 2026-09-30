@@ -243,7 +243,7 @@ describe('every "my row" query in src/api/ filters explicitly on the owner colum
 
     it('never writes user_tags, user_notices, tags, tag_categories or programs as tables', () => {
       const all = code();
-      for (const table of ['user_tags', 'user_notices', 'tags', 'tag_categories', 'programs', 'tag_suggestions']) {
+      for (const table of ['user_tags', 'user_notices', 'tags', 'tag_categories', 'programs', 'tag_suggestions', 'program_suggestions']) {
         for (const statement of statementsFor(all, table)) {
           expect(statement).not.toMatch(/\.(insert|upsert|update|delete)\(/);
         }
@@ -252,6 +252,7 @@ describe('every "my row" query in src/api/ filters explicitly on the owner colum
 
     it('never touches the suggestion queue as a table', () => {
       expect(code()).not.toMatch(/\.from\(\s*['"]tag_suggestions['"]\s*\)/);
+      expect(code()).not.toMatch(/\.from\(\s*['"]program_suggestions['"]\s*\)/);
     });
 
     it('never reads or writes the about columns on profiles directly', () => {
@@ -262,7 +263,7 @@ describe('every "my row" query in src/api/ filters explicitly on the owner colum
 
     it('uses each 0018 RPC', () => {
       const all = code();
-      for (const rpc of ['tag_catalog', 'set_my_tags', 'suggest_tag', 'my_about', 'set_my_about', 'dismiss_notice']) {
+      for (const rpc of ['tag_catalog', 'set_my_tags', 'suggest_tag', 'my_about', 'set_my_about', 'dismiss_notice', 'suggest_program']) {
         expect(all).toMatch(new RegExp(`\\.rpc\\(\\s*['"]${rpc}['"]`));
       }
     });

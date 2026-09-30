@@ -4,6 +4,7 @@ import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
 import { KeyboardSpacer } from './KeyboardSpacer';
 import { footerBottomPadding, footerKeyboardInset, type BottomBarGaps } from './keyboardInset';
+import { useHeaderInsets } from './useHeaderInsets';
 
 export interface SheetProps {
   children?: ReactNode;
@@ -12,8 +13,23 @@ export interface SheetProps {
   /** `.handle` — the small grab bar at the top. On by default; every one of the 4 sheet screens has it. */
   showHandle?: boolean;
   style?: StyleProp<ViewStyle>;
+  /**
+   * A tall sheet for a long list with a search field (the major/minor
+   * picker): the panel fills the height below the status bar less a strip of
+   * dim (still a tap to dismiss), capped for wide screens, and its children
+   * can use `flex: 1` (a list then scrolls inside it). While the keyboard is
+   * up the panel shrinks from the bottom instead of sliding off the top, so
+   * a search field at its top and the list under it both stay in sight.
+   */
+  tall?: boolean;
   testID?: string;
 }
+
+/** The dim left above a tall sheet, below the status bar: enough to read as a sheet and to tap. */
+const TALL_TOP_GAP = spacing.huge + spacing.lgXl;
+/** A tall sheet's size cap on wide screens (tablets, the web preview). */
+const TALL_MAX_WIDTH = 640;
+const TALL_MAX_HEIGHT = 900;
 
 /**
  * The panel's bottom room, by the shared bar rule (`footerBottomPadding`):
@@ -35,8 +51,9 @@ const SHEET_GAPS: BottomBarGaps = { edge: spacing.xxxl + spacing.xs, aboveInset:
  * indicator / navigation bar (the bottom safe-area inset) and rides up with
  * the keyboard, so a text field inside it stays visible.
  */
-export function Sheet({ children, onDismiss, showHandle = true, style, testID }: SheetProps) {
+export function Sheet({ children, onDismiss, showHandle = true, style, tall = false, testID }: SheetProps) {
   const bottomInset = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
+  const statusBar = useHeaderInsets().statusBar;
   const paddingBottom = footerBottomPadding(bottomInset, SHEET_GAPS);
   return (
     <View style={StyleSheet.absoluteFill} testID={testID ?? 'sheet'} pointerEvents="box-none">
@@ -53,9 +70,9 @@ export function Sheet({ children, onDismiss, showHandle = true, style, testID }:
           only moved once the keyboard had finished opening and kept the
           home-indicator padding on top of the keyboard. While the keyboard
           is up the panel keeps just its own `lgXl` below the content. */}
-      <View style={styles.keyboard} pointerEvents="box-none">
+      <View style={[styles.keyboard, tall && { paddingTop: statusBar + TALL_TOP_GAP }]} pointerEvents="box-none">
         <View
-          style={[styles.sheet, shadows.sheet, { paddingBottom }, style]}
+          style={[styles.sheet, shadows.sheet, { paddingBottom }, tall && styles.tall, style]}
           testID={testID ? `${testID}-panel` : 'sheet-panel'}
         >
           {showHandle ? <View style={styles.handle} /> : null}
@@ -117,6 +134,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     gap: spacing.lg,
   },
+  tall: { flex: 1, width: '100%', maxWidth: TALL_MAX_WIDTH, maxHeight: TALL_MAX_HEIGHT, alignSelf: 'center' },
   handle: {
     width: 40,
     height: 5,

@@ -408,7 +408,11 @@ const SCOPE_FILES: string[] = [
   ...listTsFiles(path.join(SRC, 'app', 'me')),
   ...listTsFiles(path.join(SRC, 'app', 'profile-editor')),
   ...listQuickStatusFiles(path.join(SRC, 'app')),
-  ...listTsFiles(path.join(SRC, 'me')),
+  // `me/editor/programAliases.ts` is left out on purpose: it holds other
+  // spellings of program names for the picker's search (`computer science`
+  // for the catalog's `cs`). Like the program labels it is catalog DATA,
+  // never shown on screen, so the copy rules do not apply to it.
+  ...listTsFiles(path.join(SRC, 'me')).filter((file) => path.basename(file) !== 'programAliases.ts'),
   // Onboarding's photo step: its copy was brought into the voice rules in the
   // 0014 pass. The other onboarding files are not listed yet: they still
   // carry sentence-case copy ("Something went wrong. Please try again.",
@@ -552,6 +556,7 @@ describe('voice rules — real source tree', () => {
         path.join('app', 'profile-editor', 'school-and-work.tsx'),
         path.join('profile', 'about.ts'),
         path.join('me', 'editor', 'ProgramPickerSheet.tsx'),
+        path.join('me', 'editor', 'programPickerModel.ts'),
         path.join('api', 'tags.ts'),
         path.join('api', 'about.ts'),
         path.join('api', 'notices.ts'),
@@ -563,6 +568,12 @@ describe('voice rules — real source tree', () => {
     const source = fs.readFileSync(file, 'utf8');
     const violations = checkSource(source);
     expect(violations).toEqual([]);
+  });
+
+  it('leaves the program alias data out of the sweep, on purpose', () => {
+    const relative = SCOPE_FILES.map((f) => path.relative(SRC, f));
+    expect(relative).not.toContain(path.join('me', 'editor', 'programAliases.ts'));
+    expect(fs.existsSync(path.join(SRC, 'me', 'editor', 'programAliases.ts'))).toBe(true);
   });
 
   it('the scanner degrades to an empty list rather than crashing for a directory that does not exist', () => {

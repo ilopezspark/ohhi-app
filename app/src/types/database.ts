@@ -1864,6 +1864,10 @@ export type Database = {
       }
       set_my_tags: { Args: { p_tag_ids: string[] }; Returns: string[] }
       set_my_usual_places: { Args: { p_places: string[] }; Returns: string[] }
+      suggest_program: {
+        Args: { p_kind: string; p_label: string }
+        Returns: undefined
+      }
       suggest_tag: {
         Args: { p_category?: string | null; p_label: string }
         Returns: undefined

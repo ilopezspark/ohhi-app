@@ -81,11 +81,11 @@ describe('keyboard handling has one mechanism', () => {
 });
 
 /** A text field, directly or through a shared field component. */
-const HAS_FIELD = /<(TextInput|Input|CardTextInput|PlaceLineField|TagPicker|MessageSheet|SuggestTagSheet)\b/;
+const HAS_FIELD = /<(TextInput|Input|CardTextInput|PlaceLineField|TagPicker|MessageSheet|SuggestTagSheet|ProgramPickerSheet)\b/;
 
 /** The shared keyboard pieces (or frames built on them). */
 const KEYBOARD_AWARE =
-  /<(KeyboardScrollView|KeyboardSpacer|OnboardingScreen|FieldEditorFrame|StatusEditor|TagPicker|Sheet|MessageSheet|SuggestTagSheet)\b/;
+  /<(KeyboardScrollView|KeyboardSpacer|OnboardingScreen|FieldEditorFrame|StatusEditor|TagPicker|Sheet|MessageSheet|SuggestTagSheet|ProgramPickerSheet)\b/;
 
 /** Frames and components that screens lean on, and the piece each uses itself. */
 const SHARED: Record<string, RegExp> = {
@@ -96,6 +96,8 @@ const SHARED: Record<string, RegExp> = {
   'ui/Sheet.tsx': /<KeyboardSpacer\b/,
   'card/MessageSheet.tsx': /<Sheet\b/,
   'tags/SuggestTagSheet.tsx': /<Sheet\b/,
+  // The major/minor picker: a tall in-tree `Sheet` (search field and suggestion form).
+  'me/editor/ProgramPickerSheet.tsx': /<Sheet\b/,
 };
 
 const routes = files
@@ -117,6 +119,8 @@ describe('every screen with a text field handles the keyboard', () => {
         'interests.tsx',
         'settings/report/[id].tsx',
         'settings/albums/[id]/edit.tsx',
+        'profile-editor/school-and-work.tsx',
+        '(onboarding)/tags.tsx',
       ])
     );
   });

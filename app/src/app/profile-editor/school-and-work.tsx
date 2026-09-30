@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { listPrograms } from '../../api/about';
 import { FieldEditorFrame } from '../../me/editor/FieldEditorFrame';
 import { ProgramPickerSheet } from '../../me/editor/ProgramPickerSheet';
+import { applyProgramPick } from '../../me/editor/programPickerModel';
 import { useProfileEditorDraftContext } from '../../me/editor/ProfileEditorDraftContext';
 import { useDiscardGuard } from '../../me/editor/useDiscardGuard';
 import { queryKeys } from '../../me/queryKeys';
@@ -78,20 +79,15 @@ export default function SchoolAndWorkScreen() {
         sheet ? (
           <ProgramPickerSheet
             testID={`editor-school-work-${sheet}-sheet`}
-            title={sheet === 'major' ? 'your major' : 'your minor'}
+            kind={sheet}
             programs={programs}
             selectedId={(sheet === 'major' ? about.major?.id : about.minor?.id) ?? null}
-            excludeId={sheet === 'minor' ? (about.major?.id ?? null) : null}
+            majorId={about.major?.id ?? null}
             clearLabel={sheet === 'major' ? 'no major' : 'no minor'}
             onPick={(program) => {
-              if (sheet === 'major') {
-                // A cleared major takes the minor with it; a major equal to
-                // the minor clears the minor (the server does the same).
-                const keepMinor = program && about.minor && about.minor.id !== program.id ? about.minor : null;
-                update({ major: program, minor: keepMinor });
-              } else {
-                update({ minor: program });
-              }
+              // A cleared major takes the minor with it; a major equal to
+              // the minor clears the minor (the server does the same).
+              update(applyProgramPick(sheet, program, about));
               setSheet(null);
             }}
             onDismiss={() => setSheet(null)}

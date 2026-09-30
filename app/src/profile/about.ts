@@ -26,6 +26,12 @@ export interface ProgramRef {
   label: string;
 }
 
+/** The two things a program is picked as. One catalog serves both (`public.programs`). */
+export type ProgramKind = 'major' | 'minor';
+
+/** Longest program suggestion `suggest_program` accepts: 1-60 characters after trimming. */
+export const PROGRAM_SUGGESTION_MAX_LENGTH = 60;
+
 export interface AboutSection {
   major: ProgramRef | null;
   minor: ProgramRef | null;

@@ -161,7 +161,7 @@ export default function TagsScreen() {
       {majorOpen ? (
         <ProgramPickerSheet
           testID="tags-major-sheet"
-          title="your major"
+          kind="major"
           programs={programs}
           selectedId={major?.id ?? null}
           clearLabel="no major for now"
