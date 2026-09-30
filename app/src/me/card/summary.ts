@@ -1,56 +1,75 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '../../api/client';
-import { getIdentity } from '../../api/identity';
-import { getMyCard } from '../../api/identityWrite';
-import { mapSupabaseError } from '../../api/errors';
-import { currentUserId } from '../../api/session';
-import { CARD_FIELDS } from '../../settings/vocab';
+import { getMyIdentity } from '../../api/identity';
+import { isAudienceCard, type Audience, type IdentityCard } from '../../profile/fields';
+import { CARD_SECTIONS, IDENTITY_CARD_ORDER } from '../../settings/vocab';
+import { cardDraftFrom, cardFillCount, type OwnIdentityCards } from '../editor/identityCardDraft';
 import { queryKeys } from '../queryKeys';
+import { AUDIENCE_LABELS, IDENTITY_CARD_LABELS } from './fieldLabels';
+import { sectionHasContent, useMyCard } from './myCard';
 
 /**
- * `N of 4 filled in` for the editor's `private card` row and the Me tab's
- * `shared with N people` context (the count itself is separate, from
- * `sharedWith.ts` — this is only the fill count). A group counts as filled
- * once it has at least one entry; `getMyCard()` returning `null` (never
- * written yet, decision 24's ambiguous-404) is zero filled, not an error.
+ * `N of 9 filled in` for the editor's `private card` row: a section counts
+ * once it holds something. Reads the owner's v2 card (`myCard.ts`, all nine
+ * sections; a never-written card is all empty, not an error). Display copy
+ * only: the private card carries no completion weight.
  */
-export function usePrivateCardSummary(): { filled: number; total: 4 } {
-  const query = useQuery({ queryKey: queryKeys.me.card, queryFn: getMyCard });
-  const card = query.data;
-  const filled = card ? CARD_FIELDS.filter((field) => card[field].length > 0).length : 0;
-  return { filled, total: 4 };
+export function usePrivateCardSummary(): { filled: number; total: number } {
+  const card = useMyCard().data;
+  const filled = CARD_SECTIONS.filter((section) => sectionHasContent(card, section)).length;
+  return { filled, total: CARD_SECTIONS.length };
 }
 
-interface AboutSummaryData {
-  isPublic: boolean;
+/**
+ * The owner's five public cards and their audiences (`GET /identity/:me`),
+ * under `queryKeys.me.about` (the key that held pronouns and orientation
+ * before the restructure). The editor's section list and the five card
+ * editors share this one entry, and a card editor's save invalidates it.
+ */
+export const myIdentityQuery = { queryKey: queryKeys.me.about, queryFn: getMyIdentity } as const;
+
+export interface IdentityCardSummary {
+  card: IdentityCard;
+  label: string;
+  /** Filled rows (a weight is part of its parent's row), or picks for "before you message me". */
   filled: number;
+  total: number;
+  /** Who sees the card; `null` for "before you message me", which is always everyone once filled. */
+  audience: Audience | null;
+  /** The row's subtitle: the count, then the audience word as the small secondary. */
+  subtitle: string;
 }
 
 /**
- * `hidden` / `shown on your profile` subtitle for the editor's `about you`
- * row. `getIdentity` (decision 24) collapses "never written"/"not visible to
- * me" into the same `null`, which is fine here — the owner call always
- * resolves to the real value or `null` for "nothing set yet", never a
- * refusal. `is_public` isn't part of `getIdentity`'s response shape (that
- * function also serves the profile-card read of *other* people's identity,
- * which has no business reporting their own visibility toggle back), so it's
- * read directly off the owner-granted `user_identity` columns — the same
- * split `app/settings/identity.tsx` already uses.
+ * One summary per public card, in the brief's order. Display copy only: none
+ * of these fields carries completion weight (reconcile C8), so nothing here
+ * feeds `completion.ts` or nudges anyone to fill a card in.
  */
-async function fetchAboutSummary(): Promise<AboutSummaryData> {
-  const uid = await currentUserId();
-  const [identity, metaResult] = await Promise.all([
-    getIdentity(uid),
-    supabase.from('user_identity').select('is_public').eq('user_id', uid).maybeSingle(),
-  ]);
-  if (metaResult.error) throw mapSupabaseError(metaResult.error);
-
-  const filled = (identity?.pronouns ? 1 : 0) + (identity && identity.orientation.length > 0 ? 1 : 0);
-  return { isPublic: metaResult.data?.is_public ?? false, filled };
+export function identityCardSummaries(identity: OwnIdentityCards): IdentityCardSummary[] {
+  return IDENTITY_CARD_ORDER.map((card) => {
+    const draft = cardDraftFrom(identity, card);
+    if (!isAudienceCard(card)) {
+      const picks = Object.values(draft.values).reduce<number>(
+        (sum, value) => sum + (Array.isArray(value) ? value.length : value ? 1 : 0),
+        0
+      );
+      const subtitle = picks === 0 ? 'nothing picked yet' : `${picks} picked · ${AUDIENCE_LABELS.everyone}`;
+      return { card, label: IDENTITY_CARD_LABELS[card], filled: picks, total: picks, audience: null, subtitle };
+    }
+    const { filled, total } = cardFillCount(card, draft.values);
+    const audience = draft.audience ?? 'everyone';
+    return {
+      card,
+      label: IDENTITY_CARD_LABELS[card],
+      filled,
+      total,
+      audience,
+      subtitle: `${filled} of ${total} filled in · ${AUDIENCE_LABELS[audience]}`,
+    };
+  });
 }
 
-/** `filled` is 0-2 (pronouns set, orientation non-empty) — the editor's `about you` row has no completion weight (brief's completion table), this is display copy only, never fed to `completion.ts`. */
-export function useAboutSummary(): { isPublic: boolean; filled: number } {
-  const query = useQuery({ queryKey: queryKeys.me.about, queryFn: fetchAboutSummary });
-  return { isPublic: query.data?.isPublic ?? false, filled: query.data?.filled ?? 0 };
+/** The section list's rows: `null` while loading or when the read failed (the rows then show no subtitle). */
+export function useIdentityCardSummaries(): IdentityCardSummary[] | null {
+  const query = useQuery(myIdentityQuery);
+  return query.data ? identityCardSummaries(query.data) : null;
 }

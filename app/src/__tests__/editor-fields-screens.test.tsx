@@ -15,8 +15,8 @@ jest.mock('../me/editor/useMyPhotos', () => ({
   useMyPhotos: () => ({ photos: [], urls: {}, isLoading: false, isLoaded: true, refetch: jest.fn(), invalidate: jest.fn() }),
 }));
 jest.mock('../me/card/summary', () => ({
-  usePrivateCardSummary: () => ({ filled: 0, total: 4 }),
-  useAboutSummary: () => ({ isPublic: false, filled: 0 }),
+  usePrivateCardSummary: () => ({ filled: 0, total: 9 }),
+  useIdentityCardSummaries: () => null,
 }));
 
 import { router } from 'expo-router';
@@ -380,7 +380,7 @@ describe('EditSections — the three new rows', () => {
     expect(screen.getByTestId('editor-tags-change')).toHaveTextContent('pick interests');
   });
 
-  it('about you: `school and work` (with a summary) sits above interests, separate from pronouns and orientation', async () => {
+  it('about you: `school and work` (with a summary) sits above interests, separate from the identity card', async () => {
     (useProfileEditorDraftContext as jest.Mock).mockReturnValue({
       ...draftState(
         {},
@@ -399,7 +399,7 @@ describe('EditSections — the three new rows', () => {
     const screen = await render(<EditSections />);
     expect(screen.getByTestId('editor-school-work-row')).toHaveTextContent(/school and work/);
     expect(screen.getByTestId('editor-school-work-row')).toHaveTextContent(/business · graduating spring 2028 · retail/);
-    expect(screen.getByTestId('editor-about-row')).toHaveTextContent(/pronouns and orientation/);
+    expect(screen.getByTestId('editor-card-identity-row')).toHaveTextContent(/identity/);
     // no completion weight, no nag
     expect(screen.queryByTestId('editor-section-about-weight')).toBeNull();
     expect(screen.queryByTestId('editor-section-about-dot')).toBeNull();
@@ -411,7 +411,7 @@ describe('EditSections — the three new rows', () => {
     expect(order).toBe(true);
 
     await fireEvent.press(screen.getByTestId('editor-school-work-row'));
-    await fireEvent.press(screen.getByTestId('editor-about-row'));
+    await fireEvent.press(screen.getByTestId('editor-card-identity-row'));
     expect((router.push as jest.Mock).mock.calls.map((c) => c[0])).toEqual(['/profile-editor/school-and-work', '/profile-editor/about']);
   });
 

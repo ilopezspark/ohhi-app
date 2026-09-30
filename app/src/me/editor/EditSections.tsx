@@ -9,7 +9,9 @@ import { sectionWeight, TAGS_COMPLETE_AT, type ProfileCompletionInput } from '..
 import { PLACE_LINE_HOURS, PROMPTS_MAX } from '../../profile/fields';
 import { GOAL_LABELS, OFFERED_GOAL_OPTIONS } from '../../profile/goalLabels';
 import { colors, radii, spacing } from '../../theme/tokens';
-import { usePrivateCardSummary, useAboutSummary } from '../card/summary';
+import { IDENTITY_CARD_ROWS } from '../card/fieldLabels';
+import { useIdentityCardSummaries, usePrivateCardSummary } from '../card/summary';
+import { IDENTITY_CARD_ROUTES } from './identityCardDraft';
 import { useProfileEditorDraftContext } from './ProfileEditorDraftContext';
 import { useMyPhotos } from './useMyPhotos';
 import type { UserGoal } from './useProfileEditorDraft';
@@ -345,17 +347,19 @@ function TagsSection() {
 
 /**
  * `about you` (migration 0018, and the owner's note that there was no
- * place to add a major, graduating year or work): two rows, each named for
- * what it holds. `school and work` opens the about editor and shows a
- * summary of what is set; `pronouns and orientation` is the existing
- * opt-in screen (`/profile-editor/about`). It sits high on the tab, right
- * after `here for`, and the about card it feeds sits above `the basics` on
- * the profile. No completion weight and no signal dot: optional, never
- * nagged.
+ * place to add a major, graduating year or work), then the profile
+ * restructure's five public cards (reconcile.md phase 4c), in the order
+ * they render on the profile: about, identity, background, lifestyle,
+ * when i'm around, before you message me. `school and work` opens the about
+ * editor and shows a summary of what is set; each card row opens that card's
+ * editor and shows how many of its rows are filled, then who sees it (the
+ * card's audience; "before you message me" is always everyone once filled).
+ * It sits high on the tab, right after `here for`. No completion weight and
+ * no signal dot on any of it: optional, never nagged (C8).
  */
 function AboutSection() {
   const draftState = useProfileEditorDraftContext();
-  const { isPublic } = useAboutSummary();
+  const cards = useIdentityCardSummaries();
   const summary = aboutSummary(draftState.draft.about);
 
   return (
@@ -369,13 +373,16 @@ function AboutSection() {
           accessory={{ kind: 'chevron' }}
           onPress={() => router.push('/profile-editor/school-and-work' as never)}
         />
-        <SettingsRow
-          testID="editor-about-row"
-          title="pronouns and orientation"
-          subtitle={isPublic ? 'shown on your profile' : 'hidden'}
-          accessory={{ kind: 'chevron' }}
-          onPress={() => router.push('/profile-editor/about' as never)}
-        />
+        {IDENTITY_CARD_ROWS.map(({ card, label }) => (
+          <SettingsRow
+            key={card}
+            testID={`editor-card-${card}-row`}
+            title={label}
+            subtitle={cards?.find((row) => row.card === card)?.subtitle}
+            accessory={{ kind: 'chevron' }}
+            onPress={() => router.push(IDENTITY_CARD_ROUTES[card] as never)}
+          />
+        ))}
       </RowCard>
       <FieldError field="about" />
     </View>
@@ -415,8 +422,9 @@ function PrivateCardSection() {
  * Reads/writes the shared draft (`ProfileEditorDraftContext`) for status,
  * "here for", interests, the about section and the 0015 fields; photos
  * apply immediately (not draft — see `profile-editor/photos.tsx`);
- * pronouns/private card are navigation rows into their own screens, their
- * subtitles sourced from `me/card/summary.ts`'s two hooks.
+ * the five public cards and the private card are navigation rows into their
+ * own screens (they save on their own), their subtitles sourced from
+ * `me/card/summary.ts`.
  */
 export function EditSections() {
   return (

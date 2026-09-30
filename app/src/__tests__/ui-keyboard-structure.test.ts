@@ -80,8 +80,13 @@ describe('keyboard handling has one mechanism', () => {
   });
 });
 
-/** A text field, directly or through a shared field component. */
-const HAS_FIELD = /<(TextInput|DigitBox|Input|CardTextInput|PlaceLineField|TagPicker|MessageSheet|SuggestTagSheet|ProgramPickerSheet)\b/;
+/**
+ * A text field, directly or through a shared field component.
+ * `IdentityCardFields` (the public-card editors' body) renders a "write your
+ * own" `Input` through `me/editor/FieldPicker.tsx`.
+ */
+const HAS_FIELD =
+  /<(TextInput|DigitBox|Input|CardTextInput|PlaceLineField|TagPicker|MessageSheet|SuggestTagSheet|ProgramPickerSheet|IdentityCardFields)\b/;
 
 /** The shared keyboard pieces (or frames built on them). */
 const KEYBOARD_AWARE =

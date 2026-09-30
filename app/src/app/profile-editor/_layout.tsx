@@ -19,6 +19,13 @@ import { ProfileEditorDraftProvider } from '../../me/editor/ProfileEditorDraftCo
  * name="..."/>` options: `index`/`photos`/`status` (this build) and
  * `private-card`/`about` (the other agent's) all want the same plain,
  * headerless push, so there's nothing to enumerate.
+ *
+ * The profile restructure's five public-card editors (phase 4c) are plain
+ * file routes here too, pushed from the section list's `about you` rows
+ * (`me/editor/identityCardDraft.ts#IDENTITY_CARD_ROUTES`): `about`
+ * (identity), `background`, `lifestyle`, `around` (when i'm around) and
+ * `before-you-message`. They save through `PUT /identity` on their own, not
+ * through the shared draft.
  */
 export default function ProfileEditorLayout() {
   return (

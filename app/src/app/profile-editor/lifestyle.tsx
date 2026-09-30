@@ -9,26 +9,20 @@ import {
 import { useIdentityCardEditor } from '../../me/editor/useIdentityCardEditor';
 import { KeyboardScrollView, ScreenHeader } from '../../ui';
 
-const TEST_ID = 'editor-card-identity';
+const TEST_ID = 'editor-card-lifestyle';
 
 /**
- * `/profile-editor/about`: the "identity" public card's editor
- * (`docs/design/profile-restructure/reconcile.md` phase 4c): pronouns,
- * orientation, interested in and relationship. The route keeps its old path
- * (it was the pronouns and orientation screen), so existing links land here.
- *
- * The old "show on my profile" switch is gone: the card's "who sees this"
- * row (everyone / after a hi is answered / only me, ruling 1) replaces it.
+ * `/profile-editor/lifestyle`: the "lifestyle" public card's editor
+ * (`docs/design/profile-restructure/reconcile.md` phase 4c): drinking, smoking, 420 and kids, all single picks.
  * Saves on its own through `PUT /identity`, a partial patch of this card only
- * (`me/editor/useIdentityCardEditor.ts`), never the v1 `is_public` body.
- * No completion weight (C8).
+ * (`me/editor/useIdentityCardEditor.ts`). No completion weight (C8).
  */
-export default function IdentityCardEditorScreen() {
-  const editor = useIdentityCardEditor('identity');
+export default function LifestyleEditorScreen() {
+  const editor = useIdentityCardEditor('lifestyle');
   return (
     <View style={cardEditorStyles.screen} testID={TEST_ID}>
       <ScreenHeader
-        title={IDENTITY_CARD_LABELS.identity}
+        title={IDENTITY_CARD_LABELS.lifestyle}
         titleSize={CARD_EDITOR_TITLE_SIZE}
         onBack={editor.requestClose}
         backTestID={`${TEST_ID}-back`}

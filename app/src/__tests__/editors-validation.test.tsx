@@ -1,9 +1,12 @@
 import { render, fireEvent } from '@testing-library/react-native';
 import { ChipPicker } from '../settings/ChipPicker';
+import { IDENTITY_FIELD_SPECS, isSingleField, normalizeTypedEntry } from '../profile/fields';
 import {
   CARD_CHIPS,
   CARD_CHIP_MAX_LENGTH,
   CARD_MAX_ITEMS,
+  CHIP_MAX_LENGTH,
+  IDENTITY_FIELDS,
   ORIENTATION_CHIPS,
   ORIENTATION_CHIP_MAX_LENGTH,
   ORIENTATION_MAX_ITEMS,
@@ -105,5 +108,46 @@ describe('ChipPicker enforces maxItems', () => {
     await fireEvent.press(getByTestId(`card-kinks-${CARD_CHIPS.kinks[0]}`));
 
     expect(onChange).toHaveBeenCalledWith([CARD_CHIPS.kinks[0]]);
+  });
+});
+
+/**
+ * Payload v2 (profile restructure, phase 4c): the public-card editors take
+ * single vs multi, the total cap and the "write your own" allowance from
+ * `IDENTITY_FIELD_SPECS`, so the specs themselves must hold together.
+ */
+describe('public-card field specs (payload v2)', () => {
+  it('single fields are exactly the non-multiple specs, and every option fits a chip', () => {
+    for (const field of IDENTITY_FIELDS) {
+      const spec = IDENTITY_FIELD_SPECS[field];
+      expect({ field, single: isSingleField(field) }).toEqual({ field, single: !spec.multiple });
+      for (const option of spec.options) expect(option.length).toBeLessThanOrEqual(CHIP_MAX_LENGTH);
+    }
+  });
+
+  it('write your own only on pronouns (16), orientation (24) and languages (24), each within its total cap', () => {
+    const typed = IDENTITY_FIELDS.filter((field) => {
+      const spec = IDENTITY_FIELD_SPECS[field];
+      return spec.multiple && spec.typed !== null;
+    });
+    expect(typed).toEqual(['pronouns', 'orientation', 'languages']);
+    for (const field of typed) {
+      const spec = IDENTITY_FIELD_SPECS[field];
+      if (!spec.multiple || !spec.typed) continue;
+      expect(spec.maxItems === null || spec.typed.maxCount <= spec.maxItems).toBe(true);
+    }
+    expect(IDENTITY_FIELD_SPECS.pronouns.multiple && IDENTITY_FIELD_SPECS.pronouns.typed?.maxLength).toBe(16);
+    expect(IDENTITY_FIELD_SPECS.orientation.multiple && IDENTITY_FIELD_SPECS.orientation.typed?.maxLength).toBe(24);
+    expect(IDENTITY_FIELD_SPECS.languages.multiple && IDENTITY_FIELD_SPECS.languages.typed?.maxLength).toBe(24);
+  });
+
+  it('normalizeTypedEntry refuses what the editor refuses before sending', () => {
+    const spec = IDENTITY_FIELD_SPECS.pronouns;
+    expect(normalizeTypedEntry('  ey/em ', spec, [])).toMatchObject({ ok: true, value: 'ey/em', listed: false });
+    expect(normalizeTypedEntry('He/Him', spec, [])).toMatchObject({ ok: true, value: 'he/him', listed: true });
+    expect(normalizeTypedEntry('x'.repeat(17), spec, [])).toMatchObject({ ok: false, rejection: 'too_long' });
+    expect(normalizeTypedEntry('ze/zir', spec, ['ey/em'])).toMatchObject({ ok: false, rejection: 'too_many' });
+    expect(normalizeTypedEntry('men', IDENTITY_FIELD_SPECS.interested_in, [])).toMatchObject({ ok: true, listed: true });
+    expect(normalizeTypedEntry('robots', IDENTITY_FIELD_SPECS.interested_in, [])).toMatchObject({ ok: false, rejection: 'not_listed' });
   });
 });
