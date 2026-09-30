@@ -45,6 +45,11 @@
 -- rather than after; and the messages trigger list now includes 0021's insert-only
 -- verified_adults_only trigger. Plan unchanged.
 
+-- Amended by migration 0024 (reply_to_profile): messages gains two more reply references
+-- (reply_to_user_prompt_id, reply_to_user_photo_id), so the three section A shape checks that
+-- list every reply% column, every messages_reply% foreign key and the client insert columns now
+-- expect them too. No 0017 behaviour changed. Plan unchanged.
+
 create extension if not exists pgtap with schema public;
 
 -- =============================================================================
@@ -387,21 +392,24 @@ begin
     (select string_agg(a.attname || ':' || format_type(a.atttypid, a.atttypmod) || ':' || (not a.attnotnull)::text, ',' order by a.attname collate "C")
        from pg_attribute a
       where a.attrelid = 'public.messages'::regclass and a.attname like 'reply%' and not a.attisdropped),
-    'reply_kind:text:true,reply_to_album_photo_id:uuid:true,reply_to_message_id:uuid:true',
+    -- (amended by migration 0024: its two profile references are expected too)
+    'reply_kind:text:true,reply_to_album_photo_id:uuid:true,reply_to_message_id:uuid:true,reply_to_user_photo_id:uuid:true,reply_to_user_prompt_id:uuid:true',
     'messages has three nullable reply columns') into v_line; out := out || v_line || E'\n';
 
   select is(
     (select string_agg(c.conname || ':' || c.confrelid::regclass::text || ':' || c.confdeltype::text, ',' order by c.conname collate "C")
        from pg_constraint c
       where c.conrelid = 'public.messages'::regclass and c.contype = 'f' and c.conname like 'messages_reply%'),
-    'messages_reply_to_album_photo_id_fkey:album_photos:n,messages_reply_to_message_id_fkey:messages:n',
+    -- (amended by migration 0024)
+    'messages_reply_to_album_photo_id_fkey:album_photos:n,messages_reply_to_message_id_fkey:messages:n,messages_reply_to_user_photo_id_fkey:user_photos:n,messages_reply_to_user_prompt_id_fkey:user_prompts:n',
     'both reply references are foreign keys with on delete set null') into v_line; out := out || v_line || E'\n';
 
   select is(
     (select string_agg(column_name, ',' order by column_name collate "C")
        from information_schema.column_privileges
       where table_schema = 'public' and table_name = 'messages' and grantee = 'authenticated' and privilege_type = 'INSERT'),
-    'body,conversation_id,id,media_bytes,media_duration_ms,media_height,media_kind,media_path,media_poster_path,media_width,reply_to_album_photo_id,reply_to_message_id,sender_id,view_limit',
+    -- (amended by migration 0024)
+    'body,conversation_id,id,media_bytes,media_duration_ms,media_height,media_kind,media_path,media_poster_path,media_width,reply_to_album_photo_id,reply_to_message_id,reply_to_user_photo_id,reply_to_user_prompt_id,sender_id,view_limit',
     'the client insert surface is 0010''s column list plus the two reply references (not reply_kind, not views_used)') into v_line; out := out || v_line || E'\n';
 
   select ok(
