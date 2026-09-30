@@ -1,14 +1,18 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ComponentProps } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   createAlbum,
+  listAlbumSummaries,
   listMyAlbums,
   listSharedWithMeAlbums,
+  signedAlbumPhotoUrls,
   type AlbumRow,
+  type AlbumSummary,
   type SharedAlbum,
 } from '../../../api/albums';
+import { albumCountLabel } from '../../../albums/albumCopy';
 import { listSharesForSubject } from '../../../api/shares';
 import { mapSupabaseError } from '../../../api/errors';
 import { tintForPhoto } from '../../../photos/tint';
@@ -39,11 +43,14 @@ const NAME_MAX_LENGTH = 60;
  * (`settings/albums/[id]/edit.tsx`), the only place an album is a gallery
  * (the owner's ruling, 2026-09-29).
  *
- * Deviation: each cover collage is 4 tinted placeholders (`tintForPhoto`,
- * seeded off the album id) rather than the album's real first 4 photos —
- * fetching + signing each album's own photos would be a second N-query
- * layer on top of the share-count fetch this pass already added, so it's
- * deferred rather than piled on here.
+ * Covers (the owner's ruling, 2026-09-30: "albums should be the first
+ * picture as the cover blurred"): each album's first item by `created_at`,
+ * blurred, with its name and count over it (`AlbumCover`), mine and the
+ * ones shared with me alike. A video that came first stands in with its
+ * poster. One read for every album on the page (`listAlbumSummaries`) and
+ * one signing call for their covers; an empty album, or one whose cover
+ * hasn't signed, keeps the tinted tile (`tintForPhoto`, seeded off the
+ * album id).
  */
 export default function AlbumsListScreen() {
   const [newName, setNewName] = useState('');
@@ -56,6 +63,24 @@ export default function AlbumsListScreen() {
   });
 
   const albumIds = (albums ?? []).map((a) => a.id).join(',');
+
+  const summaryIds = [...(albums ?? []).map((a) => a.id), ...(shared ?? []).map((s) => s.album.id)];
+  const summaryKey = [...summaryIds].sort().join(',');
+  const { data: summaries, refetch: refetchSummaries } = useQuery({
+    queryKey: ['album_summaries', summaryKey],
+    queryFn: () => listAlbumSummaries(summaryIds),
+    enabled: summaryIds.length > 0,
+  });
+  const coverPaths = Object.values(summaries ?? {})
+    .map((summary) => summary.coverPath)
+    .filter((path): path is string => !!path);
+  const coverKey = [...coverPaths].sort().join('|');
+  const { data: coverUrls } = useQuery({
+    queryKey: ['album_cover_urls', coverKey],
+    queryFn: () => signedAlbumPhotoUrls(coverPaths),
+    enabled: coverPaths.length > 0,
+    staleTime: 45_000,
+  });
   const { data: shareCounts, refetch: refetchShareCounts } = useQuery({
     queryKey: ['my_album_share_counts', albumIds],
     queryFn: async () => {
@@ -79,7 +104,8 @@ export default function AlbumsListScreen() {
       void refetchAlbums();
       void refetchShared();
       void refetchShareCounts();
-    }, [refetchAlbums, refetchShared, refetchShareCounts])
+      void refetchSummaries();
+    }, [refetchAlbums, refetchShared, refetchShareCounts, refetchSummaries])
   );
 
   const createMutation = useMutation({
@@ -152,14 +178,8 @@ export default function AlbumsListScreen() {
               >
                 <AlbumCover
                   testID={`albums-cover-${album.id}`}
-                  tiles={Array.from({ length: 4 }, (_, i) => ({ tint: tintForPhoto(album.id, i) }))}
+                  {...coverProps(album, summaries?.[album.id], coverUrls)}
                 />
-                <View style={styles.tileMeta}>
-                  <Text variant="rowLabel" numberOfLines={1} style={styles.tileName}>
-                    {album.name}
-                  </Text>
-                  <Text variant="captionMuted">{`${album.photo_count} photo${album.photo_count === 1 ? '' : 's'}`}</Text>
-                </View>
                 <Text variant="helper" style={styles.tileShared}>
                   {shareLabel(album)}
                 </Text>
@@ -194,9 +214,15 @@ export default function AlbumsListScreen() {
             <Text variant="captionMuted" style={styles.sectionLabel}>
               shared with me
             </Text>
-            {(shared ?? []).map((item: SharedAlbum) => (
-              <SharedAlbumRow key={item.share_id} item={item} />
-            ))}
+            <View style={styles.grid}>
+              {(shared ?? []).map((item: SharedAlbum) => (
+                <SharedAlbumTile
+                  key={item.share_id}
+                  item={item}
+                  cover={coverProps(item.album, summaries?.[item.album.id], coverUrls)}
+                />
+              ))}
+            </View>
           </View>
         ) : null}
 
@@ -212,12 +238,30 @@ export default function AlbumsListScreen() {
   );
 }
 
+type CoverProps = ComponentProps<typeof AlbumCover>;
+
 /**
- * One album someone shared with me: its name and whose it is (lowercase,
- * `ui/displayName`). Tapping opens it as a story. The owner's name is the
- * same cached read the story's header makes (`['album-owner', id]`).
+ * What an album's cover shows: its first item's still, signed, blurred
+ * (`AlbumCover`), with the name and count over it. Counts come from the
+ * items read for the covers (photos and the video apart); until those
+ * arrive, the album row's own `photo_count`.
  */
-function SharedAlbumRow({ item }: { item: SharedAlbum }) {
+function coverProps(album: AlbumRow, summary: AlbumSummary | undefined, urls: Record<string, string> | undefined): CoverProps {
+  return {
+    coverUri: summary?.coverPath ? urls?.[summary.coverPath] ?? null : null,
+    tiles: Array.from({ length: 4 }, (_, i) => ({ tint: tintForPhoto(album.id, i) })),
+    name: album.name,
+    countLabel: summary ? albumCountLabel(summary.photos, summary.videos) : albumCountLabel(album.photo_count, 0),
+  };
+}
+
+/**
+ * One album someone shared with me: its cover (as mine are) and whose it is
+ * (lowercase, `ui/displayName`). Tapping opens it as a story. The owner's
+ * name is the same cached read the story's header makes
+ * (`['album-owner', id]`).
+ */
+function SharedAlbumTile({ item, cover }: { item: SharedAlbum; cover: CoverProps }) {
   const ownerId = item.album.owner_id;
   const { data: owner } = useQuery({
     queryKey: ['album-owner', ownerId],
@@ -231,12 +275,12 @@ function SharedAlbumRow({ item }: { item: SharedAlbum }) {
       testID={`albums-shared-item-${item.album.id}`}
       accessibilityRole="button"
       accessibilityLabel={name ? `open ${item.album.name}, from ${name}` : `open ${item.album.name}`}
-      style={styles.sharedRow}
+      style={[styles.tile, styles.tileOpen]}
       onPress={() => router.push(`/settings/albums/${item.album.id}` as never)}
     >
-      <Text variant="rowLabel">{item.album.name}</Text>
+      <AlbumCover testID={`albums-shared-cover-${item.album.id}`} {...cover} />
       {name ? (
-        <Text variant="captionMuted" testID={`albums-shared-owner-${item.album.id}`}>
+        <Text variant="helper" style={styles.tileShared} testID={`albums-shared-owner-${item.album.id}`}>
           {`from ${name}`}
         </Text>
       ) : null}
@@ -267,9 +311,7 @@ const styles = StyleSheet.create({
   },
   editText: { lineHeight: 12 },
   pressed: { opacity: 0.6 },
-  tileMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  tileName: { flex: 1 },
-  tileShared: { fontSize: 12, marginTop: -spacing.xs },
+  tileShared: { fontSize: 12 },
   newTile: {
     width: '47%',
     aspectRatio: 1,
@@ -282,6 +324,5 @@ const styles = StyleSheet.create({
     gap: spacing.smMd,
   },
   sectionLabel: { color: colors.subtle, marginBottom: spacing.xs },
-  sharedRow: { paddingVertical: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.line, gap: 2 },
   rulesBanner: { backgroundColor: colors.tint, borderRadius: radii.lg, padding: spacing.lgXl, gap: spacing.xs },
 });

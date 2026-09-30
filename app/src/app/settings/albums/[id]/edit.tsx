@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { me } from '../../../../api/me';
 import {
   addAlbumPhoto,
+  addAlbumVideo,
   deleteAlbum,
   getAlbum,
   listAlbumPhotos,
@@ -15,12 +16,31 @@ import {
   type AlbumPhotoRow,
   type AlbumRow,
 } from '../../../../api/albums';
+import {
+  albumHasVideo,
+  albumSignPaths,
+  albumStoryItems,
+  formatVideoDuration,
+  isAlbumVideo,
+} from '../../../../albums/albumMedia';
+import { batchNoticeLines, planAlbumBatch, runAlbumBatch, type PickedMedia } from '../../../../albums/addBatch';
+import { CHAT_MEDIA_PICK_OPTIONS } from '../../../../chat/videoPrep';
+import { PlayIcon } from '../../../../chat/mediaIcons';
 import { listSharesForSubject, listShareCandidates, revokeShare, shareAlbum, type ShareCandidate, type ShareRow } from '../../../../api/shares';
 import { isUnavailableError, mapSupabaseError } from '../../../../api/errors';
 import { leaveScreen, useGoneLatch, useLeaveWhenGone, useOnAppActive } from '../../../../query/gone';
 import { StoryViewer, type StoryPhoto } from '../../../../albums/StoryViewer';
 import { useAlbumOwner } from '../../../../albums/useAlbumOwner';
-import { REMOVE_PHOTO_CONFIRM, REMOVE_PHOTO_LABEL } from '../../../../albums/albumCopy';
+import {
+  ADD_PHOTOS_LABEL,
+  addingProgressLine,
+  ALBUM_HOLDS_NOTE,
+  VIDEO_SLOT_TAKEN_NOTE,
+  REMOVE_PHOTO_CONFIRM,
+  REMOVE_PHOTO_LABEL,
+  REMOVE_VIDEO_CONFIRM,
+  REMOVE_VIDEO_LABEL,
+} from '../../../../albums/albumCopy';
 import { ConfirmButton } from '../../../../settings/ConfirmButton';
 import { ScreenHeader, Sheet, Text } from '../../../../ui';
 import { KeyboardSpacer } from '../../../../ui/KeyboardSpacer';
@@ -42,6 +62,16 @@ const NAME_MAX_LENGTH = 60;
  * share and stop sharing, delete the album. Tapping a thumbnail opens that
  * photo in the story, over this screen, with `remove this photo` in its `…`
  * (asking first too).
+ *
+ * Adding (the owner's ruling, 2026-09-30: "when adding photos they can add
+ * multiple at a time, note that albums are for pictures and one video
+ * only"): `add photos` opens the library with several picks allowed, videos
+ * included only while the album has no video. The picks upload one at a
+ * time (`albums/addBatch.ts`) with an `adding 2 of 5` line; a pick that
+ * fails is named afterwards and the rest still go in; extra videos are
+ * refused before anything uploads. The video shows in the grid as its
+ * poster with a play badge and its length, and removing it takes the row,
+ * then the video and its poster.
  *
  * Owner only. Anyone else who lands here (a stale link) is sent to the
  * album's story instead, which is what they can see.
@@ -69,6 +99,10 @@ export default function AlbumEditScreen() {
   const [confirmRemove, setConfirmRemove] = useState<AlbumPhotoRow | null>(null);
   /** The story over this screen: the photo it opened at, or `null` when closed. */
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  /** While a batch of picks uploads: which one of how many. */
+  const [adding, setAdding] = useState<{ current: number; total: number } | null>(null);
+  /** After a batch: what didn't go in, and why. */
+  const [addNotice, setAddNotice] = useState<string[]>([]);
   const queryClient = useQueryClient();
   const { gone, latch } = useGoneLatch();
   const hadAlbum = useRef(false);
@@ -96,7 +130,7 @@ export default function AlbumEditScreen() {
         return;
       }
 
-      const paths = photoRows.map((p) => p.storage_path);
+      const paths = albumSignPaths(photoRows);
       if (paths.length > 0) setPhotoUrls(await signedAlbumPhotoUrls(paths));
       const [candidateRows, shareRows] = await Promise.all([listShareCandidates(), listSharesForSubject('album', albumId)]);
       setCandidates(candidateRows);
@@ -124,16 +158,14 @@ export default function AlbumEditScreen() {
 
   /** Signed URLs last 60 seconds: the story calls this when a photo fails to load. */
   const refreshUrls = useCallback(async () => {
-    const paths = photos.map((p) => p.storage_path);
+    const paths = albumSignPaths(photos);
     if (paths.length === 0) return;
     const urls = await signedAlbumPhotoUrls(paths);
     setPhotoUrls((prev) => ({ ...prev, ...urls }));
   }, [photos]);
 
-  const storyPhotos = useMemo<StoryPhoto[]>(
-    () => photos.map((p) => ({ id: p.id, uri: photoUrls[p.storage_path] ?? null })),
-    [photos, photoUrls]
-  );
+  const storyPhotos = useMemo<StoryPhoto[]>(() => albumStoryItems(photos, photoUrls), [photos, photoUrls]);
+  const hasVideo = albumHasVideo(photos);
 
   useFocusEffect(
     useCallback(() => {
@@ -174,21 +206,12 @@ export default function AlbumEditScreen() {
     onError: (error: unknown) => setActionError(mapSupabaseError(error).message),
   });
 
-  const addPhotoMutation = useMutation({
-    mutationFn: (asset: { uri: string; width: number; height: number }) =>
-      addAlbumPhoto({ albumId, uri: asset.uri, width: asset.width, height: asset.height }),
-    onSuccess: (photo) => {
-      setPhotos((prev) => [...prev, photo]);
-      refreshElsewhere();
-      void signedAlbumPhotoUrls([photo.storage_path]).then((urls) =>
-        setPhotoUrls((prev) => ({ ...prev, ...urls }))
-      );
-    },
-    onError: (error: unknown) => setActionError(mapSupabaseError(error).message),
-  });
-
   const removePhotoMutation = useMutation({
-    mutationFn: (photo: { id: string; storage_path: string }) => removeAlbumPhoto(photo.id, photo.storage_path),
+    // The row, then its objects: a video takes its poster with it.
+    mutationFn: (photo: AlbumPhotoRow) =>
+      isAlbumVideo(photo)
+        ? removeAlbumPhoto(photo.id, photo.storage_path, photo.media_poster_path)
+        : removeAlbumPhoto(photo.id, photo.storage_path),
     onSuccess: (_void, photo) => {
       setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
       refreshElsewhere();
@@ -214,17 +237,61 @@ export default function AlbumEditScreen() {
     onError: (error: unknown) => setActionError(mapSupabaseError(error).message),
   });
 
-  async function pickAndAddPhoto() {
+  /**
+   * Several picks at once, uploaded one after another. Videos are offered
+   * only while the album has none; the picker can't limit how many videos
+   * are picked, so any beyond the one are refused before anything uploads
+   * (`planAlbumBatch`). A failed pick is named afterwards; the rest go in.
+   */
+  async function pickAndAdd() {
+    if (adding) return;
     setActionError(null);
+    setAddNotice([]);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setActionError('allow photo library access to add a photo.');
+      setActionError('allow photo library access to add photos.');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    addPhotoMutation.mutate({ uri: asset.uri, width: asset.width, height: asset.height });
+    const videoTaken = albumHasVideo(photos);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      // Chat's video settings (the 30 s cap, iOS's H.264 export) for the one video.
+      ...CHAT_MEDIA_PICK_OPTIONS,
+      mediaTypes: videoTaken ? ['images'] : ['images', 'videos'],
+      allowsMultipleSelection: true,
+      orderedSelection: true,
+    });
+    if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+    const plan = planAlbumBatch(result.assets, videoTaken);
+    if (plan.items.length === 0) {
+      setAddNotice(batchNoticeLines(plan, null));
+      return;
+    }
+
+    setAdding({ current: 1, total: plan.items.length });
+    let outcome: Awaited<ReturnType<typeof runAlbumBatch<AlbumPhotoRow>>> | null = null;
+    try {
+      outcome = await runAlbumBatch<AlbumPhotoRow>(plan.items, {
+        addPhoto: (asset: PickedMedia) =>
+          addAlbumPhoto({ albumId, uri: asset.uri, width: asset.width, height: asset.height }),
+        addVideo: (asset: PickedMedia) =>
+          addAlbumVideo({
+            albumId,
+            uri: asset.uri,
+            width: asset.width,
+            height: asset.height,
+            durationMs: asset.duration,
+            bytes: asset.fileSize,
+          }),
+        onProgress: (current, total) => setAdding({ current, total }),
+        onAdded: (row) => setPhotos((prev) => (prev.some((p) => p.id === row.id) ? prev : [...prev, row])),
+      });
+    } finally {
+      setAdding(null);
+    }
+    setAddNotice(batchNoticeLines(plan, outcome));
+    refreshElsewhere();
+    await load();
   }
 
   const back = useCallback(() => leaveScreen('/settings/albums'), []);
@@ -255,6 +322,14 @@ export default function AlbumEditScreen() {
       </View>
     );
   }
+
+  const removeConfirm = confirmRemove && isAlbumVideo(confirmRemove) ? REMOVE_VIDEO_CONFIRM : REMOVE_PHOTO_CONFIRM;
+  const removeFromStory = (photo: StoryPhoto | null) => {
+    const row = photos.find((p) => p.id === photo?.id);
+    if (!row) return;
+    setActionError(null);
+    removePhotoMutation.mutate(row);
+  };
 
   const activeShares = shares.filter((s) => !s.revoked_at);
   const sharedUserIds = new Set(activeShares.map((s) => s.viewer_id));
@@ -293,37 +368,77 @@ export default function AlbumEditScreen() {
               </Text>
             ) : null}
 
-            <Pressable testID="album-add-photo" accessibilityRole="button" style={styles.secondaryButton} onPress={pickAndAddPhoto}>
-              {addPhotoMutation.isPending ? (
-                <ActivityIndicator color={colors.signal} />
+            <Pressable
+              testID="album-add-photo"
+              accessibilityRole="button"
+              accessibilityLabel={adding ? addingProgressLine(adding.current, adding.total) : ADD_PHOTOS_LABEL}
+              accessibilityState={{ busy: !!adding, disabled: !!adding }}
+              disabled={!!adding}
+              style={styles.secondaryButton}
+              onPress={pickAndAdd}
+            >
+              {adding ? (
+                <View style={styles.progressRow}>
+                  <ActivityIndicator color={colors.signal} size="small" />
+                  <Text variant="rowLabel" color={colors.signal} testID="album-add-progress">
+                    {addingProgressLine(adding.current, adding.total)}
+                  </Text>
+                </View>
               ) : (
                 <Text variant="rowLabel" color={colors.signal}>
-                  add photo
+                  {ADD_PHOTOS_LABEL}
                 </Text>
               )}
             </Pressable>
+            <Text variant="helper" testID="album-holds-note">
+              {hasVideo ? VIDEO_SLOT_TAKEN_NOTE : ALBUM_HOLDS_NOTE}
+            </Text>
+            {addNotice.length > 0 ? (
+              <View testID="album-add-notice" style={styles.noticeLines}>
+                {addNotice.map((line) => (
+                  <Text key={line} variant="helper" color={colors.danger}>
+                    {line}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
           </View>
         }
         renderItem={({ item, index }) => {
-          const url = photoUrls[item.storage_path];
+          const video = isAlbumVideo(item);
+          // The video shows as its poster; the grid never plays it.
+          const url = video ? (item.media_poster_path ? photoUrls[item.media_poster_path] : undefined) : photoUrls[item.storage_path];
+          const noun = video ? 'video' : 'photo';
           return (
             <View style={styles.photoCell} testID={`album-photo-${item.id}`}>
               <Pressable
                 testID={`album-photo-open-${item.id}`}
                 accessibilityRole="button"
-                accessibilityLabel={`open photo ${index + 1} of ${photos.length}`}
+                accessibilityLabel={`open ${noun} ${index + 1} of ${photos.length}`}
                 style={styles.photoOpen}
                 onPress={() => {
                   setActionError(null);
                   setViewerIndex(index);
                 }}
               >
-                {url ? <Image source={{ uri: url }} style={styles.photoImage} /> : <View style={styles.photoPlaceholder} />}
+                {url ? (
+                  <Image source={{ uri: url }} style={styles.photoImage} testID={`album-photo-image-${item.id}`} />
+                ) : (
+                  <View style={styles.photoPlaceholder} />
+                )}
+                {video ? (
+                  <View style={styles.videoBadge} pointerEvents="none" testID={`album-video-badge-${item.id}`}>
+                    <PlayIcon size={12} color={colors.onDark} />
+                    <Text variant="micro" color={colors.onDark} testID={`album-video-duration-${item.id}`}>
+                      {formatVideoDuration(item.media_duration_ms)}
+                    </Text>
+                  </View>
+                ) : null}
               </Pressable>
               <Pressable
                 testID={`album-photo-remove-${item.id}`}
                 accessibilityRole="button"
-                accessibilityLabel={`remove photo ${index + 1}`}
+                accessibilityLabel={`remove ${noun} ${index + 1}`}
                 style={styles.removeButton}
                 hitSlop={6}
                 onPress={() => setConfirmRemove(item)}
@@ -394,9 +509,9 @@ export default function AlbumEditScreen() {
       {confirmRemove ? (
         <Sheet testID="album-remove-confirm" onDismiss={() => setConfirmRemove(null)}>
           <Text variant="title" style={styles.confirmTitle}>
-            {REMOVE_PHOTO_CONFIRM.title}
+            {removeConfirm.title}
           </Text>
-          {REMOVE_PHOTO_CONFIRM.body ? <Text variant="helper">{REMOVE_PHOTO_CONFIRM.body}</Text> : null}
+          {removeConfirm.body ? <Text variant="helper">{removeConfirm.body}</Text> : null}
           <Pressable
             testID="album-remove-confirm-yes"
             accessibilityRole="button"
@@ -409,7 +524,7 @@ export default function AlbumEditScreen() {
             }}
           >
             <Text variant="rowLabel" color={colors.danger}>
-              {REMOVE_PHOTO_CONFIRM.confirmLabel}
+              {removeConfirm.confirmLabel}
             </Text>
           </Pressable>
           <Pressable
@@ -418,7 +533,7 @@ export default function AlbumEditScreen() {
             style={styles.sheetRow}
             onPress={() => setConfirmRemove(null)}
           >
-            <Text variant="rowLabel">{REMOVE_PHOTO_CONFIRM.cancelLabel}</Text>
+            <Text variant="rowLabel">{removeConfirm.cancelLabel}</Text>
           </Pressable>
         </Sheet>
       ) : null}
@@ -448,13 +563,18 @@ export default function AlbumEditScreen() {
                 label: REMOVE_PHOTO_LABEL,
                 destructive: true,
                 needsPhoto: true,
+                kinds: ['photo'],
                 confirm: REMOVE_PHOTO_CONFIRM,
-                onPress: (photo) => {
-                  const row = photos.find((p) => p.id === photo?.id);
-                  if (!row) return;
-                  setActionError(null);
-                  removePhotoMutation.mutate(row);
-                },
+                onPress: removeFromStory,
+              },
+              {
+                key: 'remove-video',
+                label: REMOVE_VIDEO_LABEL,
+                destructive: true,
+                needsPhoto: true,
+                kinds: ['video'],
+                confirm: REMOVE_VIDEO_CONFIRM,
+                onPress: removeFromStory,
               },
             ]}
           />
@@ -494,6 +614,20 @@ const styles = StyleSheet.create({
   photoOpen: { width: '100%', height: '100%' },
   photoImage: { width: '100%', height: '100%', borderRadius: radii.sm / 2 },
   photoPlaceholder: { width: '100%', height: '100%', borderRadius: radii.sm / 2, backgroundColor: colors.tint },
+  videoBadge: {
+    position: 'absolute',
+    left: 4,
+    bottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.overlay,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.smMd,
+    paddingVertical: 2,
+  },
+  progressRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.smMd },
+  noticeLines: { gap: spacing.xs },
   removeButton: {
     position: 'absolute',
     top: 4,

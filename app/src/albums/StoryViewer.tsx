@@ -30,6 +30,7 @@ import { colors, radii, spacing } from '../theme/tokens';
 const REPLY_GAPS: BottomBarGaps = { edge: spacing.smMd, aboveInset: spacing.smMd };
 import { useStoryTimer } from './useStoryTimer';
 import { useSystemPauses } from './useSystemPauses';
+import { StoryVideo } from './StoryVideo';
 import { StoryHeader, type StoryOwner } from './StoryHeader';
 import { StoryReplyBar, type StoryReply } from './StoryReplyBar';
 import {
@@ -50,10 +51,25 @@ import {
 export type { StoryOwner } from './StoryHeader';
 export type { StoryReply } from './StoryReplyBar';
 
+export type StoryItemKind = 'photo' | 'video';
+
+/** One item of the story: a photo, or the album's one video (migration 0025). */
 export interface StoryPhoto {
   id: string;
-  /** A signed URL, or `null` while it is being signed or when signing failed (see `resolving`). */
+  /** A signed URL (the photo, or the video itself), or `null` while it is being signed or when signing failed (see `resolving`). */
   uri: string | null;
+  /** `photo` when left out. */
+  kind?: StoryItemKind;
+  /** Video only: its poster's signed URL, shown until the video can play and as the wide-screen backdrop. */
+  posterUri?: string | null;
+  /** Video only: its length. The story's timer runs this long for it instead of the photo interval. */
+  durationMs?: number | null;
+}
+
+/** How long the story stays on `item`: a video's own length, otherwise the photo interval. */
+export function storyItemDuration(item: StoryPhoto | undefined, photoDurationMs: number): number {
+  if (item?.kind === 'video' && typeof item.durationMs === 'number' && item.durationMs > 0) return item.durationMs;
+  return photoDurationMs;
 }
 
 /** Asks before an action runs (removing a photo is permanent). */
@@ -71,6 +87,8 @@ export interface StoryAction {
   destructive?: boolean;
   /** Needs a photo on screen (acts on it). Without this the row is offered even on an empty album. */
   needsPhoto?: boolean;
+  /** Only offered while an item of one of these kinds is on screen (`remove this video` for the video). */
+  kinds?: StoryItemKind[];
   /** Ask first, in a second sheet, before `onPress` runs. */
   confirm?: StoryConfirm;
   /** The photo on screen, or `null` on an empty album. */
@@ -133,6 +151,11 @@ export interface StoryViewerProps {
  *   the app is in the background and while `paused` is set. With a screen
  *   reader or reduced motion on it never moves by itself
  *   (`useSystemPauses`).
+ * - **The one video** (migration 0025, `kind: 'video'`): its poster shows
+ *   until the player is ready (`StoryVideo`, the same `expo-video` player
+ *   chat uses), then it plays while the timer runs and pauses whenever the
+ *   timer is held. Its clock is the video's own stored length instead of
+ *   the photo interval. Actions can be limited to one kind (`kinds`).
  * - **Taps.** Left third goes back (and starts that photo again; on the first
  *   photo it restarts it), right two thirds go forward at once. A
  *   horizontal drag moves one photo and a downward drag closes; a drag never
@@ -241,6 +264,10 @@ export function StoryViewer({
   }, []);
 
   const uri = photo ? pinned.current[photo.id] ?? photo.uri : null;
+  const isVideo = photo?.kind === 'video';
+  /** What a video shows until it plays, and what the wide-screen backdrop blurs: its poster. */
+  const posterUri = isVideo ? photo?.posterUri ?? null : null;
+  const stillUri = isVideo ? posterUri : uri;
   const imageKey = photo && uri ? `${photo.id}|${attempt}|${uri}` : null;
   const photoState: 'none' | 'loading' | 'loaded' | 'failed' = !photo
     ? 'none'
@@ -298,7 +325,9 @@ export function StoryViewer({
   }, [runRetry]);
 
   // Prefetch the next photo so it is on screen (and its clock running) at once.
-  const nextUri = photos[index + 1]?.uri ?? null;
+  // For the video, its poster: the player loads the video itself.
+  const next = photos[index + 1];
+  const nextUri = (next?.kind === 'video' ? next.posterUri : next?.uri) ?? null;
   useEffect(() => {
     if (!nextUri) return;
     try {
@@ -343,7 +372,8 @@ export function StoryViewer({
     external: paused,
   });
   const progress = useStoryTimer({
-    duration: photoDurationMs,
+    // The video waits out its own length; a photo gets the interval.
+    duration: storyItemDuration(photo, photoDurationMs),
     running,
     resetKey: `${photo?.id ?? 'none'}|${index}|${restarts}`,
     onDone: goForward,
@@ -360,7 +390,10 @@ export function StoryViewer({
     }
   }, [count, onClose]);
 
-  const availableActions = (actions ?? []).filter((action) => !action.needsPhoto || !!photo);
+  const availableActions = (actions ?? []).filter(
+    (action) =>
+      (!action.needsPhoto || !!photo) && (!action.kinds || (!!photo && action.kinds.includes(photo.kind ?? 'photo')))
+  );
   const hasActions = availableActions.length > 0;
 
   const closeSheets = useCallback((): boolean => {
@@ -516,17 +549,47 @@ export function StoryViewer({
     >
       <StatusBar style="light" />
 
-      {wide && uri ? (
+      {wide && stillUri ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="none" testID={`${p}-backdrop`}>
-          <Image source={{ uri }} style={styles.fill} resizeMode="cover" blurRadius={40} accessible={false} />
+          <Image
+            testID={`${p}-backdrop-image`}
+            source={{ uri: stillUri }}
+            style={styles.fill}
+            resizeMode="cover"
+            blurRadius={40}
+            accessible={false}
+          />
           <View style={[StyleSheet.absoluteFill, styles.backdropDim]} />
         </View>
       ) : null}
 
       <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateY: dragY }] }]}>
-        {/* The photo, filling its column. */}
+        {/* The photo (or the video over its poster), filling its column. */}
         <View style={[styles.column, columnStyle]} pointerEvents="none" testID={`${p}-column`}>
-          {photo && imageKey && uri && !retrying ? (
+          {photo && isVideo ? (
+            <>
+              {posterUri ? (
+                <Image
+                  testID={`${p}-poster-${photo.id}`}
+                  source={{ uri: posterUri }}
+                  style={styles.fill}
+                  resizeMode="cover"
+                  accessible={false}
+                />
+              ) : null}
+              {imageKey && uri && !retrying ? (
+                <StoryVideo
+                  key={imageKey}
+                  testID={`${p}-video-${photo.id}`}
+                  uri={uri}
+                  playing={running}
+                  restartKey={restarts}
+                  onReady={handleLoad}
+                  onError={handleError}
+                />
+              ) : null}
+            </>
+          ) : photo && imageKey && uri && !retrying ? (
             <Image
               key={imageKey}
               testID={`${p}-photo-${photo.id}`}
@@ -585,7 +648,7 @@ export function StoryViewer({
           {!loading && photoState === 'failed' ? (
             <View style={styles.center} pointerEvents="box-none" testID={`${p}-failed`}>
               <Text variant="body" color={colors.onDark} style={styles.centerText}>
-                this photo didn&apos;t load.
+                {isVideo ? "this video didn't load." : "this photo didn't load."}
               </Text>
               <Pressable
                 testID={`${p}-retry`}

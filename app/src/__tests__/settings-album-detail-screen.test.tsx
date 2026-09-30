@@ -23,6 +23,14 @@ jest.mock('expo-screen-capture', () => ({
   preventScreenCaptureAsync: jest.fn(() => Promise.resolve()),
   allowScreenCaptureAsync: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('expo-video', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    useVideoPlayer: (source: unknown) => ({ source, status: 'loading', play: jest.fn(), pause: jest.fn() }),
+    VideoView: (props: { testID?: string }) => React.createElement(View, { testID: props.testID }),
+  };
+});
 jest.mock('../api/client', () => ({ supabase: {}, SUPABASE_URL: 'https://example.test' }));
 jest.mock('../api/me', () => ({ me: jest.fn() }));
 jest.mock('../api/albumOwner', () => ({ getAlbumOwner: jest.fn(), findConversationIdWith: jest.fn() }));
@@ -133,6 +141,37 @@ describe('my album', () => {
       expect(screen.getByTestId('album-viewer-stage').props.accessibilityLabel).toBe('photo 2 of 2')
     );
     expect(screen.getByTestId('album-viewer-photo-p3')).toBeTruthy();
+  });
+
+  it('the video plays in the story from its signed URL over its poster, and removing it takes the row, the video and its poster', async () => {
+    const clip = {
+      ...photo('v1'),
+      storage_path: `${ME}/${ALBUM}/v1.mp4`,
+      media_kind: 'video',
+      media_poster_path: `${ME}/${ALBUM}/v1-poster.jpg`,
+      media_duration_ms: 12_400,
+    };
+    (listAlbumPhotos as jest.Mock).mockResolvedValue([clip, photo('p2')]);
+    (removeAlbumPhoto as jest.Mock).mockResolvedValue(undefined);
+    const screen = await renderScreen();
+
+    expect(await screen.findByTestId('album-viewer-video-v1')).toBeTruthy();
+    expect(screen.getByTestId('album-viewer-poster-v1').props.source).toEqual({
+      uri: `https://example.test/${ME}/${ALBUM}/v1-poster.jpg?token=1`,
+    });
+    expect(signedAlbumPhotoUrls).toHaveBeenCalledWith(
+      expect.arrayContaining([`${ME}/${ALBUM}/v1.mp4`, `${ME}/${ALBUM}/v1-poster.jpg`])
+    );
+
+    await fireEvent.press(await screen.findByTestId('album-viewer-more'));
+    expect(screen.queryByTestId('album-viewer-action-remove')).toBeNull();
+    await fireEvent.press(screen.getByTestId('album-viewer-action-remove-video'));
+    expect(screen.getByTestId('album-viewer-confirm')).toHaveTextContent(/remove this video\?/);
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('album-viewer-confirm-yes'));
+    });
+    expect(removeAlbumPhoto).toHaveBeenCalledWith('v1', `${ME}/${ALBUM}/v1.mp4`, `${ME}/${ALBUM}/v1-poster.jpg`);
+    await waitFor(() => expect(screen.getByTestId('album-viewer-photo-p2')).toBeTruthy());
   });
 
   it('keep it leaves the photo alone', async () => {

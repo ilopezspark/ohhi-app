@@ -16,7 +16,11 @@ import {
   REMOVE_PHOTO_CONFIRM,
   REMOVE_PHOTO_FAILED,
   REMOVE_PHOTO_LABEL,
+  REMOVE_VIDEO_CONFIRM,
+  REMOVE_VIDEO_FAILED,
+  REMOVE_VIDEO_LABEL,
 } from '../../../albums/albumCopy';
+import { albumSignPaths, albumStoryItems, isAlbumVideo } from '../../../albums/albumMedia';
 import { Text } from '../../../ui';
 import { XIcon } from '../../../ui/icons';
 import { colors, spacing } from '../../../theme/tokens';
@@ -31,7 +35,11 @@ import { colors, spacing } from '../../../theme/tokens';
  * - **My album**: the story with my own face and name on top and no reply
  *   bar. Its `…` offers `edit album` (the management grid,
  *   `/settings/albums/[id]/edit`) and `remove this photo`, which asks first.
- *   An empty album offers `add photos`, which opens the grid too.
+ *   An empty album offers `add photos`, which opens the grid too. On the
+ *   album's one video (migration 0025) the `…` offers `remove this video`
+ *   instead, which takes the row, then the video and its poster.
+ * - Items are signed with the video's poster (`albums/albumMedia.ts`), and
+ *   the video plays in the story for its own length.
  * - **Shared with me**: the owner's face and name on top (tapping them opens
  *   their profile) and, when I have a conversation with them that I may
  *   write to, the reply bar (`albums/useStoryReply.ts`, looked up from the
@@ -94,7 +102,8 @@ export default function AlbumStoryScreen() {
     '/settings/albums'
   );
 
-  const paths = useMemo(() => (photos ?? []).map((p) => p.storage_path), [photos]);
+  // Each item's object, and the video's poster.
+  const paths = useMemo(() => albumSignPaths(photos ?? []), [photos]);
   const pathsKey = useMemo(() => [...paths].sort().join('|'), [paths]);
   const {
     data: photoUrls,
@@ -108,10 +117,7 @@ export default function AlbumStoryScreen() {
     refetchInterval: 45_000,
   });
 
-  const storyPhotos = useMemo<StoryPhoto[]>(
-    () => (photos ?? []).map((p) => ({ id: p.id, uri: photoUrls?.[p.storage_path] ?? null })),
-    [photos, photoUrls]
-  );
+  const storyPhotos = useMemo<StoryPhoto[]>(() => albumStoryItems(photos ?? [], photoUrls), [photos, photoUrls]);
 
   const ownerId = album?.owner_id ?? null;
   const owner = useAlbumOwner(gone ? null : ownerId);
@@ -119,7 +125,11 @@ export default function AlbumStoryScreen() {
   const reply = useStoryReply({ ownerId, viewerId: meId, enabled: !gone && !!album && !isOwner });
 
   const removeMutation = useMutation({
-    mutationFn: (row: AlbumPhotoRow) => removeAlbumPhoto(row.id, row.storage_path),
+    // A video takes its poster with it.
+    mutationFn: (row: AlbumPhotoRow) =>
+      isAlbumVideo(row)
+        ? removeAlbumPhoto(row.id, row.storage_path, row.media_poster_path)
+        : removeAlbumPhoto(row.id, row.storage_path),
     onSuccess: (_void, row) => {
       queryClient.setQueryData<AlbumPhotoRow[]>(['album-story-photos', albumId], (current) =>
         current?.filter((p) => p.id !== row.id)
@@ -128,7 +138,7 @@ export default function AlbumStoryScreen() {
         void queryClient.invalidateQueries({ queryKey: key });
       }
     },
-    onError: () => setNotice(REMOVE_PHOTO_FAILED),
+    onError: (_error, row) => setNotice(isAlbumVideo(row) ? REMOVE_VIDEO_FAILED : REMOVE_PHOTO_FAILED),
   });
   const removePhoto = removeMutation.mutate;
 
@@ -141,6 +151,12 @@ export default function AlbumStoryScreen() {
 
   const actions = useMemo<StoryAction[] | undefined>(() => {
     if (!isOwner) return undefined;
+    const remove = (photo: StoryPhoto | null) => {
+      const row = (photos ?? []).find((p) => p.id === photo?.id);
+      if (!row) return;
+      setNotice(null);
+      removePhoto(row);
+    };
     return [
       { key: 'edit', label: EDIT_ALBUM_LABEL, onPress: openEdit },
       {
@@ -148,13 +164,18 @@ export default function AlbumStoryScreen() {
         label: REMOVE_PHOTO_LABEL,
         destructive: true,
         needsPhoto: true,
+        kinds: ['photo'],
         confirm: REMOVE_PHOTO_CONFIRM,
-        onPress: (photo) => {
-          const row = (photos ?? []).find((p) => p.id === photo?.id);
-          if (!row) return;
-          setNotice(null);
-          removePhoto(row);
-        },
+        onPress: remove,
+      },
+      {
+        key: 'remove-video',
+        label: REMOVE_VIDEO_LABEL,
+        destructive: true,
+        needsPhoto: true,
+        kinds: ['video'],
+        confirm: REMOVE_VIDEO_CONFIRM,
+        onPress: remove,
       },
     ];
   }, [isOwner, openEdit, photos, removePhoto]);

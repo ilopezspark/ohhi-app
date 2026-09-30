@@ -19,18 +19,36 @@ export type Database = {
           album_id: string
           created_at: string
           id: string
+          media_bytes: number | null
+          media_duration_ms: number | null
+          media_height: number | null
+          media_kind: Database["public"]["Enums"]["album_media_kind"]
+          media_poster_path: string | null
+          media_width: number | null
           storage_path: string
         }
         Insert: {
           album_id: string
           created_at?: string
           id?: string
+          media_bytes?: number | null
+          media_duration_ms?: number | null
+          media_height?: number | null
+          media_kind?: Database["public"]["Enums"]["album_media_kind"]
+          media_poster_path?: string | null
+          media_width?: number | null
           storage_path: string
         }
         Update: {
           album_id?: string
           created_at?: string
           id?: string
+          media_bytes?: number | null
+          media_duration_ms?: number | null
+          media_height?: number | null
+          media_kind?: Database["public"]["Enums"]["album_media_kind"]
+          media_poster_path?: string | null
+          media_width?: number | null
           storage_path?: string
         }
         Relationships: [
@@ -2564,6 +2582,7 @@ export type Database = {
       }
     }
     Enums: {
+      album_media_kind: "photo" | "video"
       campus_status: "live" | "coming_soon" | "waitlist"
       campus_type: "commuter" | "residential"
       consent_kind: "terms" | "privacy" | "biometric"
@@ -2784,6 +2803,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      album_media_kind: ["photo", "video"],
       campus_status: ["live", "coming_soon", "waitlist"],
       campus_type: ["commuter", "residential"],
       consent_kind: ["terms", "privacy", "biometric"],
