@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
-import { router, useNavigation } from 'expo-router';
+import { useNavigation } from 'expo-router';
+import { FALLBACK, goBack } from '../../routing/goBack';
 import { usePreventRemove, type NavigationAction } from 'expo-router/react-navigation';
 
 export interface DiscardGuard {
@@ -28,7 +29,7 @@ export function useDiscardGuard(dirty: boolean): DiscardGuard {
   useEffect(() => {
     if (!exit) return;
     if (exit.action) navigation.dispatch(exit.action);
-    else router.back();
+    else goBack(FALLBACK.editor);
   }, [exit, navigation]);
 
   function confirmDiscard(action: NavigationAction | null) {

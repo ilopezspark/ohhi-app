@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { FALLBACK, goBack } from '../../../routing/goBack';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { me } from '../../../api/me';
 import { REPORT_CATEGORIES, REPORT_NOTE_MAX_LENGTH, submitReport, type ReportCategory } from '../../../api/reports';
@@ -73,7 +74,7 @@ export default function ReportScreen() {
   if (meQuery.data?.status !== 'active') {
     return (
       <View style={styles.safe}>
-        <ScreenHeader onBack={() => router.back()} backTestID="report-back" />
+        <ScreenHeader onBack={() => goBack(FALLBACK.chats)} backTestID="report-back" />
         <View style={styles.center} testID="report-hidden">
           <Text variant="body" color={colors.muted} style={styles.centerText}>
             Reporting isn&apos;t available right now.
@@ -86,12 +87,12 @@ export default function ReportScreen() {
   if (submitted) {
     return (
       <View style={styles.safe}>
-        <ScreenHeader onBack={() => router.back()} backTestID="report-back" />
+        <ScreenHeader onBack={() => goBack(FALLBACK.chats)} backTestID="report-back" />
         <View style={styles.center} testID="report-thanks">
           <Text variant="titleLg" style={styles.centerText}>
             Thanks — we&apos;ll review this.
           </Text>
-          <Button testID="report-done" label="Done" onPress={() => router.back()} fullWidth={false} />
+          <Button testID="report-done" label="Done" onPress={() => goBack(FALLBACK.chats)} fullWidth={false} />
         </View>
       </View>
     );
@@ -106,7 +107,7 @@ export default function ReportScreen() {
     // keyboard (`ui/KeyboardScrollView`, on react-native-keyboard-controller;
     // edge-to-edge Android no longer resizes the window for the keyboard).
     <View style={styles.safe}>
-      <ScreenHeader onBack={() => router.back()} backTestID="report-back" />
+      <ScreenHeader onBack={() => goBack(FALLBACK.chats)} backTestID="report-back" />
       <KeyboardScrollView contentContainerStyle={styles.container} testID="report-screen">
         <Text variant="titleLg">Report this profile</Text>
 
@@ -161,7 +162,7 @@ export default function ReportScreen() {
           variant="rowLabel"
           color={colors.muted}
           style={styles.cancel}
-          onPress={() => (mutation.isPending ? undefined : router.back())}
+          onPress={() => (mutation.isPending ? undefined : goBack(FALLBACK.chats))}
         >
           Cancel
         </Text>

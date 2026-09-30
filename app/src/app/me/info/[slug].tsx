@@ -1,5 +1,6 @@
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { FALLBACK, goBack } from '../../../routing/goBack';
+import { useLocalSearchParams } from 'expo-router';
 import { ScreenHeader, Text, useHeaderInsets } from '../../../ui';
 import { footerBottomPadding } from '../../../ui/keyboardInset';
 import { colors, spacing } from '../../../theme/tokens';
@@ -21,7 +22,7 @@ export default function InfoScreen() {
 
   return (
     <View style={styles.safe}>
-      <ScreenHeader title={link?.title ?? 'coming soon'} titleSize={22} onBack={() => router.back()} />
+      <ScreenHeader title={link?.title ?? 'coming soon'} titleSize={22} onBack={() => goBack(FALLBACK.me)} />
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.huge }) }]} testID="info-screen">
         <Text variant="body" color={colors.muted} testID="info-body">
           this page is not written yet. check back soon — for now, reach out if you have a question.

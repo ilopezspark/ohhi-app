@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { FALLBACK, goBack } from '../../../routing/goBack';
 import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -71,7 +72,7 @@ export default function BlockScreen() {
 
   return (
     <View style={styles.safe}>
-      <ScreenHeader onBack={() => router.back()} backTestID="block-back" />
+      <ScreenHeader onBack={() => goBack(FALLBACK.chats)} backTestID="block-back" />
       <View style={styles.container} testID="block-screen">
         <Text variant="titleLg">{`Block ${displayName}?`}</Text>
         <Text variant="body" color={colors.muted}>
@@ -89,7 +90,7 @@ export default function BlockScreen() {
             label="Cancel"
             variant="ghost"
             disabled={mutation.isPending}
-            onPress={() => router.back()}
+            onPress={() => goBack(FALLBACK.chats)}
           />
         </View>
       </View>

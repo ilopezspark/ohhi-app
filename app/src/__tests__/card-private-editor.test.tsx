@@ -3,7 +3,7 @@ import { fireEvent, render, waitFor, within } from '@testing-library/react-nativ
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn() },
+  router: { push: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true) },
 }));
 jest.mock('../api/identity', () => ({ getCard: jest.fn() }));
 jest.mock('../api/identityWrite', () => ({ putCard: jest.fn() }));

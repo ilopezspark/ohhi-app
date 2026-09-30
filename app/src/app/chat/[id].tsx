@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { FALLBACK, goBack } from '../../routing/goBack';
 import * as ImagePicker from 'expo-image-picker';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getConversation, type ConversationListItem } from '../../api/conversations';
@@ -1057,7 +1058,7 @@ export default function ChatThreadScreen() {
     // `KeyboardSpacer` at the bottom lifts the composer onto the keyboard.
     <View style={styles.container} testID="thread-screen">
       <ScreenHeader
-        onBack={() => router.back()}
+        onBack={() => goBack(FALLBACK.chats)}
         backTestID="thread-back"
         containerStyle={styles.header}
         center={

@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 // the latest one so a test can simulate coming back to the screen.
 let mockFocusCallback: (() => void) | null = null;
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn() },
+  router: { push: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true) },
   useFocusEffect: (cb: () => void) => {
     const { useEffect } = jest.requireActual('react');
     useEffect(() => {

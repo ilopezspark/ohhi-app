@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
+import { FALLBACK, goBack } from '../../routing/goBack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { me as fetchMe } from '../../api/me';
 import { ScreenHeader, Text, VerificationPill, useHeaderInsets } from '../../ui';
@@ -32,7 +33,7 @@ export default function VerificationScreen() {
 
   return (
     <View style={styles.safe}>
-      <ScreenHeader title="verification" titleSize={26} onBack={() => router.back()} />
+      <ScreenHeader title="verification" titleSize={26} onBack={() => goBack(FALLBACK.me)} />
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.huge }) }]}
         testID="verification-screen"

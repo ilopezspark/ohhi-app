@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
+import { FALLBACK, goBack } from '../routing/goBack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getUserTags, listTagCatalog, minTagsToSave, setMyTags } from '../api/tags';
 import { InvalidInputError } from '../api/errors';
@@ -34,8 +34,7 @@ export default function InterestsScreen() {
   }, [tagsQuery.data, selected]);
 
   function close() {
-    if (router.canGoBack()) router.back();
-    else router.replace('/grid' as never);
+    goBack(FALLBACK.tabs);
   }
 
   async function save() {

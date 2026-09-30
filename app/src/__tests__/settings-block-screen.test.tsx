@@ -3,10 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mockPush = jest.fn();
 const mockBack = jest.fn();
+const mockCanGoBack = jest.fn(() => true);
 const mockReplace = jest.fn();
 
 jest.mock('expo-router', () => ({
-  router: { push: (...a: unknown[]) => mockPush(...a), back: (...a: unknown[]) => mockBack(...a), replace: (...a: unknown[]) => mockReplace(...a) },
+  router: { push: (...a: unknown[]) => mockPush(...a), back: (...a: unknown[]) => mockBack(...a), replace: (...a: unknown[]) => mockReplace(...a), canGoBack: () => mockCanGoBack() },
   useLocalSearchParams: () => ({ id: 'target-1', context: 'profile' }),
 }));
 
@@ -95,5 +96,15 @@ describe('BlockScreen', () => {
 
     expect(blockUser).not.toHaveBeenCalled();
     expect(mockBack).toHaveBeenCalled();
+  });
+
+  it('cancel falls back to the chats tab when there is no history (reload, deep link)', async () => {
+    mockCanGoBack.mockReturnValueOnce(false);
+    const { getByTestId } = await renderScreen();
+
+    await fireEvent.press(getByTestId('block-cancel'));
+
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith('/(tabs)/chats');
   });
 });

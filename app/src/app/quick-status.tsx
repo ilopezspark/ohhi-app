@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
+import { FALLBACK, goBack } from '../routing/goBack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getStatusLine, updateProfile } from '../api/profile';
 import { getMyProfileFields, setMyPlaceLine } from '../api/profileFields';
@@ -80,7 +80,7 @@ export default function QuickStatusScreen() {
       setError(fieldErrorMessage(placeResult.reason));
       return;
     }
-    router.back();
+    goBack(FALLBACK.me);
   }
 
   const placeField = fields ? (
@@ -108,7 +108,7 @@ export default function QuickStatusScreen() {
       initialValue={statusQuery.data ?? ''}
       saving={saving}
       error={error}
-      onCancel={() => router.back()}
+      onCancel={() => goBack(FALLBACK.me)}
       onSave={handleSave}
       extra={placeField}
     />

@@ -1,5 +1,5 @@
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
+import { FALLBACK, goBack } from '../../routing/goBack';
 import { ScreenHeader, Text, useHeaderInsets } from '../../ui';
 import { footerBottomPadding } from '../../ui/keyboardInset';
 import { colors, spacing } from '../../theme/tokens';
@@ -16,7 +16,7 @@ export default function ReportHelpScreen() {
   const bottomInset = useHeaderInsets().bottom;
   return (
     <View style={styles.safe}>
-      <ScreenHeader title="report someone" titleSize={24} onBack={() => router.back()} />
+      <ScreenHeader title="report someone" titleSize={24} onBack={() => goBack(FALLBACK.me)} />
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.huge }) }]} testID="report-help-screen">
         <Text variant="body" color={colors.muted}>
           there is no list to pick someone from here. open their profile or your chat with them,

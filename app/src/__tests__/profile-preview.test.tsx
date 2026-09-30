@@ -3,7 +3,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn(), replace: jest.fn() },
+  router: { push: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true), replace: jest.fn() },
   useLocalSearchParams: jest.fn(() => ({})),
 }));
 jest.mock('../me/editor/useProfileEditorDraft', () => ({ useProfileEditorDraft: jest.fn() }));
@@ -200,11 +200,19 @@ describe('ProfilePreviewScreen', () => {
     expect(screen.getByTestId('profile-preview-tier-pill')).toHaveTextContent('nearby');
   });
 
-  it('back is a plain router.back(), from the photo button', async () => {
+  it('back goes back when there is history, from the photo button', async () => {
     const screen = await renderPreview();
     await fireEvent.press(screen.getByTestId('profile-preview-back'));
     expect(router.back).toHaveBeenCalledTimes(1);
     expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('back goes to the Me tab when there is no history (reload, deep link)', async () => {
+    (router.canGoBack as jest.Mock).mockReturnValueOnce(false);
+    const screen = await renderPreview();
+    await fireEvent.press(screen.getByTestId('profile-preview-back'));
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledWith('/(tabs)/settings');
   });
 
   it('has the real screen chrome: a back button and no edit controls or tab bar', async () => {

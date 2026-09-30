@@ -1,7 +1,7 @@
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-jest.mock('expo-router', () => ({ router: { back: jest.fn(), push: jest.fn() } }));
+jest.mock('expo-router', () => ({ router: { replace: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true), push: jest.fn() } }));
 jest.mock('../api/client', () => ({ supabase: {} }));
 jest.mock('../api/profile', () => ({ getStatusLine: jest.fn(), updateProfile: jest.fn() }));
 jest.mock('../api/profileFields', () => ({ getMyProfileFields: jest.fn(), setMyPlaceLine: jest.fn() }));
@@ -101,4 +101,13 @@ describe('QuickStatus — the place line next to the status', () => {
     await fireEvent.press(screen.getByTestId('quick-status-editor-save'));
     await waitFor(() => expect(router.back).toHaveBeenCalled());
   });
+
+  it('cancel goes to the Me tab when there is no history (reload, deep link)', async () => {
+    (router.canGoBack as jest.Mock).mockReturnValueOnce(false);
+    const screen = await renderScreen();
+    await fireEvent.press(await screen.findByTestId('quick-status-editor-cancel'));
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledWith('/(tabs)/settings');
+  });
+
 });

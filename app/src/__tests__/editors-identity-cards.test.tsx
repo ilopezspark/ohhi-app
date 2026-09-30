@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn() },
+  router: { push: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true) },
   useNavigation: () => ({ dispatch: jest.fn() }),
 }));
 jest.mock('expo-router/react-navigation', () => ({ usePreventRemove: jest.fn() }));

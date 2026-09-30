@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn() },
+  router: { push: jest.fn(), replace: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true) },
   useNavigation: () => ({ dispatch: jest.fn() }),
 }));
 jest.mock('expo-router/react-navigation', () => ({ usePreventRemove: jest.fn() }));
@@ -434,4 +434,14 @@ describe('EditSections — the three new rows', () => {
     expect(screen.getByTestId('editor-field-error-about')).toHaveTextContent("that text can't be used.");
     expect(screen.queryByTestId('editor-field-error-prompts')).toBeNull();
   });
+
+  it('cancel goes to the editor when there is no history (reload, deep link)', async () => {
+    (router.canGoBack as jest.Mock).mockReturnValueOnce(false);
+    (useProfileEditorDraftContext as jest.Mock).mockReturnValue(draftState());
+    const screen = await render(<EditPlaceScreen />);
+    await fireEvent.press(screen.getByTestId('editor-place-cancel'));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/profile-editor'));
+    expect(router.back).not.toHaveBeenCalled();
+  });
+
 });

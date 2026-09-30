@@ -1,6 +1,6 @@
 import { useState } from 'react';
+import { FALLBACK, goBack } from '../../routing/goBack';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listBlockedUsers, unblockUser } from '../../api/blocks';
 import { mapSupabaseError } from '../../api/errors';
@@ -40,7 +40,7 @@ export default function BlockedScreen() {
 
   return (
     <View style={styles.safe}>
-      <ScreenHeader title="blocked" titleSize={26} onBack={() => router.back()} />
+      <ScreenHeader title="blocked" titleSize={26} onBack={() => goBack(FALLBACK.me)} />
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.huge }) }]} testID="blocked-screen">
         {isLoading ? (
           <View style={styles.center} testID="blocked-loading">

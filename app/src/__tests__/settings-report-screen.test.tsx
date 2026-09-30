@@ -2,9 +2,11 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mockBack = jest.fn();
+const mockReplace = jest.fn();
+const mockCanGoBack = jest.fn(() => true);
 
 jest.mock('expo-router', () => ({
-  router: { back: (...a: unknown[]) => mockBack(...a) },
+  router: { back: (...a: unknown[]) => mockBack(...a), replace: (...a: unknown[]) => mockReplace(...a), canGoBack: () => mockCanGoBack() },
   useLocalSearchParams: () => ({ id: 'target-1', context: 'chat', conversationId: 'conv-1' }),
 }));
 
@@ -92,5 +94,19 @@ describe('ReportScreen', () => {
     await fireEvent.press(getByTestId('report-submit'));
 
     await waitFor(() => expect(getByTestId('report-thanks')).toBeTruthy());
+  });
+
+  it('back goes back when there is history, and to the chats tab when there is none', async () => {
+    const { getByTestId } = await renderScreen();
+    await waitFor(() => expect(getByTestId('report-screen')).toBeTruthy());
+
+    await fireEvent.press(getByTestId('report-back'));
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    mockCanGoBack.mockReturnValueOnce(false);
+    await fireEvent.press(getByTestId('report-back'));
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith('/(tabs)/chats');
   });
 });

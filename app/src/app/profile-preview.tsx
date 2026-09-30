@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { FALLBACK, goBack } from '../routing/goBack';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { getMyIdentity } from '../api/identity';
 import { CtaButton } from '../card/CtaButton';
@@ -23,7 +24,7 @@ import { colors, spacing } from '../theme/tokens';
  * gated content is shown with its note.
  *
  * It is a plain push from Me's "see how you look on the grid" pill and from
- * the editor's `preview` action, and back is a plain `router.back()`, so the
+ * the editor's `preview` action, and back is `goBack` (the Me tab when there is no history), so the
  * person returns to whichever of the two they came from.
  *
  * Data (`me/editor/previewData.ts`): the saved profile
@@ -57,7 +58,7 @@ export default function ProfilePreviewScreen() {
   if (!source) {
     return (
       <View style={styles.plain} testID="profile-preview-screen">
-        <ScreenHeader testID="profile-preview-header" onBack={() => router.back()} />
+        <ScreenHeader testID="profile-preview-header" onBack={() => goBack(FALLBACK.me)} />
         {saved.loading ? (
           <View style={styles.center} testID="profile-preview-loading">
             <ActivityIndicator size="large" color={colors.ink} />
@@ -99,7 +100,7 @@ export default function ProfilePreviewScreen() {
       <ProfileView
         data={data}
         preview
-        onBack={() => router.back()}
+        onBack={() => goBack(FALLBACK.me)}
         testIDPrefix="profile-preview"
         renderActions={({ onPaper }) => (
           <CtaButton

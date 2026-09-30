@@ -14,8 +14,10 @@ const THEM = 'bbbbbbbb-0000-4000-8000-000000000002';
 
 const mockUseLocalSearchParams = jest.fn();
 const mockRouterBack = jest.fn();
+const mockRouterReplace = jest.fn();
+const mockCanGoBack = jest.fn(() => true);
 jest.mock('expo-router', () => ({
-  router: { back: (...args: unknown[]) => mockRouterBack(...args), push: jest.fn() },
+  router: { back: (...args: unknown[]) => mockRouterBack(...args), replace: (...args: unknown[]) => mockRouterReplace(...args), canGoBack: () => mockCanGoBack(), push: jest.fn() },
   useLocalSearchParams: (...args: unknown[]) => mockUseLocalSearchParams(...args),
 }));
 
@@ -309,5 +311,19 @@ describe('viewer — reply (migration 0017, decision 93)', () => {
       fireEvent.press(screen.getByTestId('chat-media-viewer-reply-send'));
     });
     expect(await screen.findByTestId('chat-media-viewer-reply-failed')).toHaveTextContent("that didn't send. try again.");
+  });
+
+  it('back goes to the chats tab when there is no history (reload, deep link)', async () => {
+    (getMessageMedia as jest.Mock).mockResolvedValue(message());
+    (signedChatMediaUrls as jest.Mock).mockResolvedValue({ [`${CONV}/m1.jpg`]: 'https://signed/m1.jpg' });
+    const { screen } = await renderScreen();
+
+    await fireEvent.press(await screen.findByTestId('chat-media-viewer-back'));
+    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+
+    mockCanGoBack.mockReturnValueOnce(false);
+    await fireEvent.press(screen.getByTestId('chat-media-viewer-back'));
+    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+    expect(mockRouterReplace).toHaveBeenCalledWith('/(tabs)/chats');
   });
 });

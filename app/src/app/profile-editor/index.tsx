@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Redirect, router, useLocalSearchParams, useNavigation } from 'expo-router';
+import { FALLBACK, goBack } from '../../routing/goBack';
 import { usePreventRemove, type NavigationAction } from 'expo-router/react-navigation';
 import { EditSections } from '../../me/editor/EditSections';
 import { useProfileEditorDraftContext } from '../../me/editor/ProfileEditorDraftContext';
@@ -51,7 +52,7 @@ export default function ProfileEditorScreen() {
   useEffect(() => {
     if (!exit) return;
     if (exit.action) navigation.dispatch(exit.action);
-    else router.back();
+    else goBack(FALLBACK.me);
   }, [exit, navigation]);
 
   /** `action` is the blocked navigation to replay (a swipe-down, a hardware back); `null` means a plain back. */

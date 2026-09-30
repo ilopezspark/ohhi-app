@@ -3,7 +3,7 @@ import { StyleSheet } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 jest.mock('expo-router', () => ({
-  router: { back: jest.fn(), push: jest.fn() },
+  router: { replace: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true), push: jest.fn() },
   useLocalSearchParams: () => ({ slug: 'privacy' }),
 }));
 
@@ -31,5 +31,18 @@ describe.each([
     expect(strip.paddingHorizontal).toBe(16);
     await fireEvent.press(screen.getByLabelText('Back'));
     expect(router.back).toHaveBeenCalled();
+  });
+
+  it('goes to the Me tab when there is no history (reload, deep link)', async () => {
+    (router.canGoBack as jest.Mock).mockReturnValueOnce(false);
+    const screen = await render(
+      <SafeAreaInsetsContext.Provider value={{ top: 30, bottom: 20, left: 0, right: 0 }}>
+        <Screen />
+      </SafeAreaInsetsContext.Provider>
+    );
+    (router.back as jest.Mock).mockClear();
+    await fireEvent.press(screen.getByLabelText('Back'));
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledWith('/(tabs)/settings');
   });
 });

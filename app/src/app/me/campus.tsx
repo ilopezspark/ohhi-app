@@ -1,5 +1,5 @@
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
+import { FALLBACK, goBack } from '../../routing/goBack';
 import { useQuery } from '@tanstack/react-query';
 import { me as fetchMe } from '../../api/me';
 import { ScreenHeader, RowCard, SettingsRow, Text, useHeaderInsets } from '../../ui';
@@ -31,7 +31,7 @@ export default function CampusScreen() {
 
   return (
     <View style={styles.safe}>
-      <ScreenHeader title="my campus" titleSize={26} onBack={() => router.back()} />
+      <ScreenHeader title="my campus" titleSize={26} onBack={() => goBack(FALLBACK.me)} />
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.huge }) }]} testID="campus-screen">
         {loading ? (
           <View style={styles.center} testID="campus-loading">

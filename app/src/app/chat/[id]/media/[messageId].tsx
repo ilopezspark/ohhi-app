@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import { FALLBACK, goBack } from '../../../../routing/goBack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ScreenCapture from 'expo-screen-capture';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -173,7 +174,7 @@ export default function ChatMediaViewerScreen() {
         accessibilityRole="button"
         accessibilityLabel="Back"
         testID="chat-media-viewer-back"
-        onPress={() => router.back()}
+        onPress={() => goBack(FALLBACK.chats)}
         style={({ pressed }) => [
           styles.back,
           { top: insets.top, left: insets.gutter },

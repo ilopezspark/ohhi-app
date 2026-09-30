@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { FALLBACK, goBack } from '../../routing/goBack';
 import { StatusEditor } from '../../me/editor/StatusEditor';
 import { useProfileEditorDraftContext } from '../../me/editor/ProfileEditorDraftContext';
 
@@ -16,10 +16,10 @@ export default function EditStatusScreen() {
       testID="editor-status-editor"
       initialValue={draftState.draft.statusLine}
       error={draftState.fieldErrors.statusLine ?? null}
-      onCancel={() => router.back()}
+      onCancel={() => goBack(FALLBACK.editor)}
       onSave={(value) => {
         draftState.setStatusLine(value);
-        router.back();
+        goBack(FALLBACK.editor);
       }}
     />
   );

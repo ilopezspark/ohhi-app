@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { FALLBACK, goBack } from '../../routing/goBack';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -76,7 +77,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.safe} testID="settings-screen">
-      <ScreenHeader title="settings" titleSize={28} onBack={() => router.back()} />
+      <ScreenHeader title="settings" titleSize={28} onBack={() => goBack(FALLBACK.me)} />
       <ScrollView
         // log out / delete and the footer lines end clear of the home
         // indicator / navigation bar (the shared bar rule).

@@ -958,6 +958,15 @@ describe('thread — layout', () => {
     expect(screen.getByTestId('thread-overflow')).toBeTruthy();
   });
 
+  it('back goes to the chats tab when there is no history (reload, deep link, after a hi back)', async () => {
+    const screen = await renderWithInsets(40, 24);
+    await screen.findByTestId('thread-header-profile');
+    (router.canGoBack as jest.Mock).mockReturnValueOnce(false);
+    await fireEvent.press(screen.getByTestId('thread-back'));
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledWith('/(tabs)/chats');
+  });
+
   it('opens the more menu under the heading, not at a fixed offset', async () => {
     const screen = await renderWithInsets(40, 24);
     await fireEvent.press(await screen.findByTestId('thread-overflow'));
