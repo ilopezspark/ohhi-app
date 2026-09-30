@@ -10,7 +10,7 @@ import { CARD_FIELD_LABELS } from '../../me/card/fieldLabels';
 import { hardNosAtCap, normalizeTypedHardNo, type HardNoRejection } from '../../me/card/hardNos';
 import {
   CARD_CHIPS,
-  CARD_CHIP_MAX_LENGTH,
+  HARD_NO_MAX_LENGTH,
   CARD_MAX_ITEMS,
   SAFER_SEX_TESTED_MONTHS,
   SAFER_SEX_TESTED_PATTERN,
@@ -30,7 +30,7 @@ const HARD_NO_FIELD_GAP = 112;
 function hardNoErrorCopy(rejection: HardNoRejection | undefined): string {
   switch (rejection) {
     case 'too_long':
-      return `keep it under ${CARD_CHIP_MAX_LENGTH} characters.`;
+      return `keep it under ${HARD_NO_MAX_LENGTH} characters.`;
     case 'duplicate':
       return 'you already have that one.';
     case 'control_char':
@@ -278,11 +278,11 @@ export default function EditPrivateCardScreen() {
                     setHardNoDraft(text);
                     setHardNoError(null);
                   }}
-                  maxLength={CARD_CHIP_MAX_LENGTH}
+                  maxLength={HARD_NO_MAX_LENGTH}
                   placeholder="type your own"
                   autoFocus
                   onSubmitEditing={submitHardNo}
-                  helper={hardNoError ? undefined : `${hardNoDraft.length}/${CARD_CHIP_MAX_LENGTH}`}
+                  helper={hardNoError ? undefined : `${hardNoDraft.length}/${HARD_NO_MAX_LENGTH}`}
                 />
                 {hardNoError ? (
                   <Text variant="helper" color={colors.danger} testID="private-card-editor-hard-nos-error">

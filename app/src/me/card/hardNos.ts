@@ -1,59 +1,47 @@
-import { CARD_CHIPS, CARD_CHIP_MAX_LENGTH, CARD_MAX_ITEMS } from '../../settings/vocab';
+import { HARD_NO_MAX_LENGTH, HARD_NO_MAX_TYPED, HARD_NO_OPTIONS } from '../../settings/vocab';
+import { CARD_SECTION_SPECS, normalizeTypedEntry, typedEntries, type TypedEntryRejection } from '../../profile/fields';
 
 /**
- * Client-side mirror of `supabase/functions/identity/validate.ts`'s
- * `hardNosArray` (ruling 4) — trims, collapses internal whitespace runs to a
- * single space, rejects control characters, caps length, and de-duplicates
- * case-insensitively against both the fixed suggestions and the caller's own
- * other typed entries, canonicalizing to the fixed suggestion's own spelling
- * when it's a case-insensitive match. The server stays authoritative (this
- * is an affordance, same convention as `chat/rules.ts`'s composer mirror) —
- * it lets the "+ add your own" field reject an entry before a PUT round trip
- * rather than after.
+ * Hard nos, payload v2 (reconcile C6 / D8): the 20 fixed chips are uncapped,
+ * at most `HARD_NO_MAX_TYPED` (5) typed entries of at most
+ * `HARD_NO_MAX_LENGTH` (60) characters. Client-side mirror of the identity
+ * function's rule (`validate.ts#validateField`): trims, collapses whitespace
+ * runs, rejects control characters, canonicalises a case-insensitive match
+ * of a fixed chip to its own spelling (a fixed chip never counts as typed)
+ * and refuses case-insensitive duplicates. The server stays authoritative
+ * and also runs the word filter, which only it can.
+ *
+ * Hard nos render last on every card view, with privacy after them in the
+ * boundaries group (`me/card/fieldLabels.ts#CARD_SECTION_ROWS`).
  */
 
-// eslint-disable-next-line no-control-regex -- matching validate.ts's own control-char check verbatim.
-const CONTROL_CHAR_RE = /[\u0000-\u001F\u007F]/;
+export { HARD_NO_MAX_LENGTH, HARD_NO_MAX_TYPED, HARD_NO_OPTIONS };
 
-export type HardNoRejection = 'empty' | 'too_long' | 'control_char' | 'duplicate';
+export type HardNoRejection = TypedEntryRejection;
 
 export interface HardNoResult {
   ok: boolean;
-  /** The trimmed/whitespace-collapsed/canonicalized value — present whether or not `ok`, so the caller can still show what was typed. */
+  /** The trimmed/whitespace-collapsed/canonicalised value, present whether or not `ok`, so the caller can still show what was typed. */
   value: string;
   rejection?: HardNoRejection;
 }
 
-/** True once `existing` already holds `CARD_MAX_ITEMS` entries — the "+ add your own" chip should hide/disable past this. */
+/** The typed hard nos in a list (the ones that are not fixed chips). */
+export function typedHardNos(existing: readonly string[]): string[] {
+  return typedEntries(existing, HARD_NO_OPTIONS);
+}
+
+/** True once `existing` holds `HARD_NO_MAX_TYPED` typed entries: the "+ write your own" chip hides past this. Fixed chips never count. */
 export function hardNosAtCap(existing: readonly string[]): boolean {
-  return existing.length >= CARD_MAX_ITEMS;
+  return typedHardNos(existing).length >= HARD_NO_MAX_TYPED;
 }
 
 /**
- * Validates and canonicalizes one typed hard-no against the current group.
- * Does not itself check the item-count cap — call `hardNosAtCap` first (the
- * editor screen needs that check before it even shows the input, not only at
- * submit time).
+ * Validates and canonicalises one typed hard no against the current list.
+ * Also refuses a sixth typed entry (`too_many`); call `hardNosAtCap` first to
+ * decide whether to show the input at all.
  */
 export function normalizeTypedHardNo(raw: string, existing: readonly string[]): HardNoResult {
-  if (CONTROL_CHAR_RE.test(raw)) {
-    return { ok: false, value: raw, rejection: 'control_char' };
-  }
-
-  const trimmed = raw.trim().replace(/ {2,}/g, ' ');
-  if (trimmed.length === 0) {
-    return { ok: false, value: trimmed, rejection: 'empty' };
-  }
-  if (trimmed.length > CARD_CHIP_MAX_LENGTH) {
-    return { ok: false, value: trimmed, rejection: 'too_long' };
-  }
-
-  const key = trimmed.toLowerCase();
-  const canonical = CARD_CHIPS.hard_nos.find((fixed) => fixed.toLowerCase() === key) ?? trimmed;
-  const isDuplicate = existing.some((item) => item.toLowerCase() === key);
-  if (isDuplicate) {
-    return { ok: false, value: canonical, rejection: 'duplicate' };
-  }
-
-  return { ok: true, value: canonical };
+  const result = normalizeTypedEntry(raw, CARD_SECTION_SPECS.hard_nos, existing);
+  return result.ok ? { ok: true, value: result.value } : { ok: false, value: result.value, rejection: result.rejection };
 }

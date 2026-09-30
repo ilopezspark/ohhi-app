@@ -784,6 +784,7 @@ export type Database = {
       }
       shares: {
         Row: {
+          card_sections: string[]
           created_at: string
           id: string
           owner_id: string
@@ -793,6 +794,7 @@ export type Database = {
           viewer_id: string
         }
         Insert: {
+          card_sections?: string[]
           created_at?: string
           id?: string
           owner_id: string
@@ -802,6 +804,7 @@ export type Database = {
           viewer_id: string
         }
         Update: {
+          card_sections?: string[]
           created_at?: string
           id?: string
           owner_id?: string
@@ -945,29 +948,44 @@ export type Database = {
       }
       user_identity: {
         Row: {
+          around_audience: Database["public"]["Enums"]["profile_audience"]
+          background_audience: Database["public"]["Enums"]["profile_audience"]
           created_at: string
           fields_filled: number
+          identity_audience: Database["public"]["Enums"]["profile_audience"]
           is_public: boolean
           key_version: number
+          lifestyle_audience: Database["public"]["Enums"]["profile_audience"]
           payload_ciphertext: string | null
+          payload_version: number
           updated_at: string
           user_id: string
         }
         Insert: {
+          around_audience?: Database["public"]["Enums"]["profile_audience"]
+          background_audience?: Database["public"]["Enums"]["profile_audience"]
           created_at?: string
           fields_filled?: number
+          identity_audience?: Database["public"]["Enums"]["profile_audience"]
           is_public?: boolean
           key_version?: number
+          lifestyle_audience?: Database["public"]["Enums"]["profile_audience"]
           payload_ciphertext?: string | null
+          payload_version?: number
           updated_at?: string
           user_id: string
         }
         Update: {
+          around_audience?: Database["public"]["Enums"]["profile_audience"]
+          background_audience?: Database["public"]["Enums"]["profile_audience"]
           created_at?: string
           fields_filled?: number
+          identity_audience?: Database["public"]["Enums"]["profile_audience"]
           is_public?: boolean
           key_version?: number
+          lifestyle_audience?: Database["public"]["Enums"]["profile_audience"]
           payload_ciphertext?: string | null
+          payload_version?: number
           updated_at?: string
           user_id?: string
         }
@@ -1102,6 +1120,7 @@ export type Database = {
           fields_filled: number
           key_version: number
           payload_ciphertext: string | null
+          payload_version: number
           updated_at: string
           user_id: string
         }
@@ -1110,6 +1129,7 @@ export type Database = {
           fields_filled?: number
           key_version?: number
           payload_ciphertext?: string | null
+          payload_version?: number
           updated_at?: string
           user_id: string
         }
@@ -1118,6 +1138,7 @@ export type Database = {
           fields_filled?: number
           key_version?: number
           payload_ciphertext?: string | null
+          payload_version?: number
           updated_at?: string
           user_id?: string
         }
@@ -1855,6 +1876,25 @@ export type Database = {
         }[]
       }
       request_waitlist: { Args: { p_email: string }; Returns: undefined }
+      reshare_private_card: {
+        Args: { p_sections: string[]; p_viewer: string }
+        Returns: {
+          card_sections: string[]
+          created_at: string
+          id: string
+          owner_id: string
+          revoked_at: string | null
+          subject_id: string
+          subject_type: Database["public"]["Enums"]["share_subject_type"]
+          viewer_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "shares"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       set_here_now: { Args: { p_on: boolean }; Returns: undefined }
       set_my_about: { Args: { p_about: Json }; Returns: Json }
       set_my_place_line: { Args: { p_line: string }; Returns: string }
@@ -2507,6 +2547,7 @@ export type Database = {
       opened_via: "hi_back" | "first_message"
       photo_moderation_state: "pending" | "ok" | "removed"
       presence_tier: "on_campus" | "nearby" | "county" | "away"
+      profile_audience: "everyone" | "after_hi" | "only_me"
       report_category:
         | "fake_profile"
         | "harassment"
@@ -2728,6 +2769,7 @@ export const Constants = {
       opened_via: ["hi_back", "first_message"],
       photo_moderation_state: ["pending", "ok", "removed"],
       presence_tier: ["on_campus", "nearby", "county", "away"],
+      profile_audience: ["everyone", "after_hi", "only_me"],
       report_category: [
         "fake_profile",
         "harassment",

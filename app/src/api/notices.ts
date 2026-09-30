@@ -6,9 +6,13 @@ import type { Json } from '../types/database';
 /**
  * One-time notices (migration 0018, `docs/design/tags-about/contract.md`
  * §6): `user_notices` is owner-only to select with no client writes; a
- * notice is marked seen only through `dismiss_notice(id)`. The only kind so
- * far is `tags_changed`, written once by 0018's data step.
+ * notice is marked seen only through `dismiss_notice(id)`. Kinds:
+ * `tags_changed` (0018's data step) and `profile_moved` (migration 0023,
+ * written by the identity function's v2 backfill). Unknown kinds are skipped.
  */
+
+/** The `user_notices.kind` values this build understands (the column's check constraint, 0023). */
+export type NoticeKind = 'tags_changed' | 'profile_moved';
 
 export interface TagsChangedNotice {
   id: string;
@@ -19,16 +23,56 @@ export interface TagsChangedNotice {
   major: string | null;
 }
 
-export type Notice = TagsChangedNotice;
+/**
+ * The profile restructure's notice (reconcile C7, brief §4): some of what
+ * the person had filled in moved to their public profile, was held back, or
+ * was removed. The payload names **fields only**, never values (the values
+ * are special-category data and live only in the encrypted payloads); the
+ * sheet reads the values through the owner's `GET /identity`.
+ */
+export interface ProfileMovedNotice {
+  id: string;
+  kind: 'profile_moved';
+  /** v2 field names newly on the public profile, from the old private card (e.g. `interested_in`). */
+  moved: string[];
+  /** v2 field names where a value was kept out (e.g. a pronoun over 16 characters, `interested_in`, `hard_nos` past 5 typed). Payload key `held_back`. */
+  heldBack: string[];
+  /** v1 field names where a value had no v2 home (e.g. `kinks`). */
+  removed: string[];
+}
+
+export type Notice = TagsChangedNotice | ProfileMovedNotice;
+
+export function isTagsChangedNotice(notice: Notice): notice is TagsChangedNotice {
+  return notice.kind === 'tags_changed';
+}
+
+export function isProfileMovedNotice(notice: Notice): notice is ProfileMovedNotice {
+  return notice.kind === 'profile_moved';
+}
+
+function nonEmptyStrings(value: Json | undefined): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+}
 
 function parseNotice(row: { id: string; kind: string; payload: Json }): Notice | null {
-  if (row.kind !== 'tags_changed') return null;
   const payload = row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload) ? row.payload : {};
-  const dropped = Array.isArray(payload.dropped)
-    ? payload.dropped.filter((label): label is string => typeof label === 'string' && label.trim().length > 0)
-    : [];
-  const major = typeof payload.major === 'string' && payload.major.trim().length > 0 ? payload.major : null;
-  return { id: row.id, kind: 'tags_changed', dropped, major };
+  if (row.kind === 'tags_changed') {
+    const major = typeof payload.major === 'string' && payload.major.trim().length > 0 ? payload.major : null;
+    return { id: row.id, kind: 'tags_changed', dropped: nonEmptyStrings(payload.dropped), major };
+  }
+  if (row.kind === 'profile_moved') {
+    return {
+      id: row.id,
+      kind: 'profile_moved',
+      moved: nonEmptyStrings(payload.moved),
+      heldBack: nonEmptyStrings(payload.held_back),
+      removed: nonEmptyStrings(payload.removed),
+    };
+  }
+  return null;
 }
 
 /**

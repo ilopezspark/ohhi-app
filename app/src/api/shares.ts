@@ -2,9 +2,21 @@ import { supabase } from './client';
 import { mapSupabaseError } from './errors';
 import { currentUserId } from './session';
 import type { Database } from '../types/database';
+import { readGatedSections, type GatedSection } from '../profile/fields';
 
+/**
+ * A share row. `card_sections` (migration 0023, ruling 6) lists the gated
+ * private-card sections the sender ticked (`safer_sex`, `dynamics`,
+ * `practices`); always `[]` for an album. Immutable: changing the ticks means
+ * a new share (`shareCard`). Read it through `shareCardSections`.
+ */
 export type ShareRow = Database['public']['Tables']['shares']['Row'];
 export type ShareSubjectType = Database['public']['Enums']['share_subject_type'];
+
+/** The ticked gated sections of a share, narrowed and in group order (unknown names dropped). */
+export function shareCardSections(share: Pick<ShareRow, 'card_sections'>): GatedSection[] {
+  return readGatedSections(share.card_sections);
+}
 
 export interface ShareCandidate {
   userId: string;
@@ -62,7 +74,33 @@ export async function shareAlbum(albumId: string, viewerId: string): Promise<Sha
   return insertShare('album', albumId, viewerId);
 }
 
-/** Share the private card. `subject_id` must equal the owner's own id (enforced by `enforce_share_rules()`). */
+/**
+ * Share the private card with `viewerId`, with the gated sections ticked on
+ * this share (ruling 6): the standard group and the boundaries always go
+ * with it and are never listed. Goes through `reshare_private_card(p_viewer,
+ * p_sections)` (migration 0023), which revokes the caller's active card share
+ * to that person (if any) and inserts the new one in one transaction, so the
+ * recipient never sees a gap and a refusal leaves the old share as it was.
+ * Works as a first share too. Every share rule runs (mutual conversation,
+ * blocks, visibility, verified adults); a refusal maps to the usual generic
+ * error.
+ */
+export async function shareCard(viewerId: string, sections: readonly GatedSection[]): Promise<ShareRow> {
+  const { data, error } = await supabase.rpc('reshare_private_card', {
+    p_viewer: viewerId,
+    p_sections: readGatedSections(sections),
+  });
+  if (error) throw mapSupabaseError(error);
+  return data as ShareRow;
+}
+
+/**
+ * Share the private card with no gated sections ticked (a plain insert;
+ * `card_sections` defaults to `[]`). `subject_id` must equal the owner's own
+ * id (enforced by `enforce_share_rules()`).
+ * @deprecated Prefer `shareCard(viewerId, sections)`, which also replaces an
+ * existing share without a gap.
+ */
 export async function sharePrivateCard(viewerId: string): Promise<ShareRow> {
   const {
     data: { user },

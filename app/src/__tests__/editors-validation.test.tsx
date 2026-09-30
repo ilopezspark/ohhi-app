@@ -32,11 +32,11 @@ describe('vocab limits (decision 20/21)', () => {
     }
   });
 
-  it('caps match decision 20/21 exactly: orientation <= 3, card fields <= 8 items of <= 40 chars', () => {
+  it('caps: orientation <= 3 and a typed pronoun <= 16 (payload v2, reconcile C6); the v1 card screens keep 8 items of <= 40 chars', () => {
     expect(ORIENTATION_MAX_ITEMS).toBe(3);
+    expect(PRONOUN_MAX_LENGTH).toBe(16);
     expect(CARD_MAX_ITEMS).toBe(8);
     expect(CARD_CHIP_MAX_LENGTH).toBe(40);
-    expect(PRONOUN_MAX_LENGTH).toBe(40);
   });
 });
 

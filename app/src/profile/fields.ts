@@ -1,5 +1,10 @@
 import { InvalidInputError, WORD_FILTER_LINE } from '../api/errors';
 
+// The restructured profile's fields, cards, audiences and private-card
+// sections (payload v2): types, specs and readers, one import point with the
+// 0015 fields below. See `profile/identityFields.ts`.
+export * from './identityFields';
+
 /**
  * Migration 0015's profile fields (`docs/design/profile-redesign/brief.md`,
  * decision 91): the place line, usual places ("around campus") and prompt

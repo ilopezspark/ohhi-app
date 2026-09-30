@@ -12,7 +12,7 @@ jest.mock('../api/client', () => ({
 }));
 
 import { getMyAbout, listPrograms, setMyAbout } from '../api/about';
-import { dismissNotice, listUnseenNotices } from '../api/notices';
+import { dismissNotice, isProfileMovedNotice, isTagsChangedNotice, listUnseenNotices } from '../api/notices';
 import { updateProfile } from '../api/profile';
 import { InvalidInputError, mapSupabaseError, RefusedError, UnknownError } from '../api/errors';
 import { EMPTY_ABOUT } from '../profile/about';
@@ -93,6 +93,26 @@ describe('notices API', () => {
     expect(mockChain.is).toHaveBeenCalledWith('seen_at', null);
     expect(mockChain.order).toHaveBeenCalledWith('created_at', { ascending: true });
     expect(notices).toEqual([{ id: 'n1', kind: 'tags_changed', dropped: ['gym', 'library'], major: 'nursing' }]);
+  });
+
+  it('parses profile_moved (migration 0023): field names only, held_back as heldBack, junk dropped', async () => {
+    chain(
+      {
+        data: [
+          { id: 'n3', kind: 'profile_moved', payload: { moved: ['interested_in'], held_back: ['pronouns', ''], removed: ['kinks', 3] } },
+          { id: 'n4', kind: 'profile_moved', payload: null },
+        ],
+        error: null,
+      },
+      'order'
+    );
+    const notices = await listUnseenNotices();
+    expect(notices).toEqual([
+      { id: 'n3', kind: 'profile_moved', moved: ['interested_in'], heldBack: ['pronouns'], removed: ['kinks'] },
+      { id: 'n4', kind: 'profile_moved', moved: [], heldBack: [], removed: [] },
+    ]);
+    expect(notices.filter(isProfileMovedNotice)).toHaveLength(2);
+    expect(notices.filter(isTagsChangedNotice)).toHaveLength(0);
   });
 
   it('dismiss_notice returns whether it was newly seen', async () => {

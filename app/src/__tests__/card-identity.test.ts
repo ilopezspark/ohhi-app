@@ -28,7 +28,8 @@ describe('getIdentity', () => {
     expect(globalThis.fetch).toHaveBeenCalledWith(`https://example.test/functions/v1/identity/${USER_ID}`, {
       headers: { Authorization: 'Bearer jwt-token' },
     });
-    expect(result).toEqual({ pronouns: 'she/her', orientation: ['bi'] });
+    // v2 shape; the transitional v1 keys still come through for pre-v2 screens.
+    expect(result).toMatchObject({ user_id: USER_ID, pronouns: 'she/her', orientation: ['bi'], is_public: true });
   });
 
   it('returns null on 404 — never surfaced as an error, indistinguishable from every other refusal', async () => {
@@ -54,6 +55,6 @@ describe('getIdentity', () => {
 
     const result = await getIdentity(USER_ID);
 
-    expect(result).toEqual({ pronouns: null, orientation: [] });
+    expect(result).toMatchObject({ pronouns: null, orientation: [], cards: {} });
   });
 });

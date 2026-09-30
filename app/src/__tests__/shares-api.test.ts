@@ -1,4 +1,5 @@
 const mockGetUser = jest.fn();
+const mockRpc = jest.fn();
 const mockSingle = jest.fn();
 const mockInsertSelect = jest.fn((..._args: unknown[]) => ({ single: mockSingle }));
 const mockInsert = jest.fn((..._args: unknown[]) => ({ select: mockInsertSelect }));
@@ -35,10 +36,19 @@ jest.mock('../api/client', () => ({
   supabase: {
     auth: { getUser: (...args: unknown[]) => mockGetUser(...args) },
     from: (table: string) => mockFrom(table),
+    rpc: (...args: unknown[]) => mockRpc(...args),
   },
 }));
 
-import { listSharesForSubject, revokeShare, shareAlbum, sharePrivateCard, listShareCandidates } from '../api/shares';
+import {
+  listSharesForSubject,
+  revokeShare,
+  shareAlbum,
+  shareCard,
+  shareCardSections,
+  sharePrivateCard,
+  listShareCandidates,
+} from '../api/shares';
 
 const ME = '11111111-1111-4111-8111-111111111111';
 const VIEWER = '22222222-2222-4222-8222-222222222222';
@@ -83,6 +93,35 @@ describe('sharePrivateCard', () => {
   it('maps a 42501 (blocked/not-mutual refusal) to the generic error', async () => {
     mockSingle.mockResolvedValue({ data: null, error: { code: '42501', message: 'not allowed' } });
     await expect(sharePrivateCard(VIEWER)).rejects.toThrow("That didn't work.");
+  });
+});
+
+describe('shareCard (reshare_private_card, migration 0023)', () => {
+  it('calls the RPC with the viewer and the ticked gated sections, in group order', async () => {
+    const row = { id: SHARE_ID, card_sections: ['safer_sex', 'practices'] };
+    mockRpc.mockResolvedValue({ data: row, error: null });
+
+    const share = await shareCard(VIEWER, ['practices', 'safer_sex']);
+
+    expect(mockRpc).toHaveBeenCalledWith('reshare_private_card', { p_viewer: VIEWER, p_sections: ['safer_sex', 'practices'] });
+    expect(share).toEqual(row);
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('sends an empty list when nothing gated is ticked (standard + boundaries only)', async () => {
+    mockRpc.mockResolvedValue({ data: { id: SHARE_ID, card_sections: [] }, error: null });
+    await shareCard(VIEWER, []);
+    expect(mockRpc).toHaveBeenCalledWith('reshare_private_card', { p_viewer: VIEWER, p_sections: [] });
+  });
+
+  it('maps a 42501 refusal to the generic error', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { code: '42501', message: 'not allowed' } });
+    await expect(shareCard(VIEWER, ['dynamics'])).rejects.toThrow("That didn't work.");
+  });
+
+  it('shareCardSections narrows a row to known gated names in group order', () => {
+    expect(shareCardSections({ card_sections: ['practices', 'hosting', 'safer_sex'] })).toEqual(['safer_sex', 'practices']);
+    expect(shareCardSections({ card_sections: [] })).toEqual([]);
   });
 });
 

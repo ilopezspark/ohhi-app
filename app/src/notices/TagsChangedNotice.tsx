@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { dismissNotice, listUnseenNotices, type TagsChangedNotice as Notice } from '../api/notices';
+import { dismissNotice, listUnseenNotices, type Notice as AnyNotice, type TagsChangedNotice as Notice } from '../api/notices';
 import { queryKeys } from '../me/queryKeys';
 import { Button, SheetModal, Text } from '../ui';
 import { colors, spacing } from '../theme/tokens';
@@ -42,7 +42,9 @@ export function TagsChangedNotice() {
     staleTime: Infinity,
   });
 
-  const notice = (query.data ?? []).find((item) => item.kind === 'tags_changed' && !hidden.has(item.id));
+  const notice = (query.data ?? []).find(
+    (item: AnyNotice): item is Notice => item.kind === 'tags_changed' && !hidden.has(item.id)
+  );
   if (!notice) return null;
 
   function close(then?: () => void) {

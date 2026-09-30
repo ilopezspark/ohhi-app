@@ -1,8 +1,8 @@
-import { hardNosAtCap, normalizeTypedHardNo } from '../me/card/hardNos';
+import { hardNosAtCap, normalizeTypedHardNo, typedHardNos } from '../me/card/hardNos';
 import { relativeSentLabel } from '../me/card/relativeTime';
-import { CARD_CHIP_MAX_LENGTH, CARD_MAX_ITEMS } from '../settings/vocab';
+import { HARD_NO_MAX_LENGTH, HARD_NO_MAX_TYPED, HARD_NO_OPTIONS } from '../settings/vocab';
 
-describe('normalizeTypedHardNo (client-side mirror of validate.ts#hardNosArray)', () => {
+describe('normalizeTypedHardNo (client-side mirror of the identity function, payload v2)', () => {
   it('trims and collapses internal whitespace runs', () => {
     const result = normalizeTypedHardNo('  no   pics   after 10  ', []);
     expect(result.ok).toBe(true);
@@ -15,14 +15,14 @@ describe('normalizeTypedHardNo (client-side mirror of validate.ts#hardNosArray)'
     expect(result.rejection).toBe('empty');
   });
 
-  it(`rejects an entry over ${CARD_CHIP_MAX_LENGTH} characters`, () => {
-    const result = normalizeTypedHardNo('x'.repeat(CARD_CHIP_MAX_LENGTH + 1), []);
+  it(`rejects an entry over ${HARD_NO_MAX_LENGTH} characters`, () => {
+    const result = normalizeTypedHardNo('x'.repeat(HARD_NO_MAX_LENGTH + 1), []);
     expect(result.ok).toBe(false);
     expect(result.rejection).toBe('too_long');
   });
 
-  it(`accepts an entry at exactly ${CARD_CHIP_MAX_LENGTH} characters`, () => {
-    const result = normalizeTypedHardNo('x'.repeat(CARD_CHIP_MAX_LENGTH), []);
+  it(`accepts an entry at exactly ${HARD_NO_MAX_LENGTH} characters`, () => {
+    const result = normalizeTypedHardNo('x'.repeat(HARD_NO_MAX_LENGTH), []);
     expect(result.ok).toBe(true);
   });
 
@@ -38,26 +38,35 @@ describe('normalizeTypedHardNo (client-side mirror of validate.ts#hardNosArray)'
     expect(result.rejection).toBe('duplicate');
   });
 
-  it('canonicalizes a case-insensitive match of a fixed suggestion to its own spelling', () => {
+  it('canonicalizes a case-insensitive match of a fixed chip to its own spelling', () => {
     const result = normalizeTypedHardNo('NO SUBSTANCES', []);
     expect(result.ok).toBe(true);
     expect(result.value).toBe('no substances');
   });
 
-  it('rejects a duplicate of a fixed suggestion (case-insensitive) the same as a typed duplicate', () => {
+  it('rejects a duplicate of a fixed chip (case-insensitive) the same as a typed duplicate', () => {
     const result = normalizeTypedHardNo('no substances', ['no substances']);
     expect(result.ok).toBe(false);
     expect(result.rejection).toBe('duplicate');
   });
+
+  it(`refuses a typed entry past ${HARD_NO_MAX_TYPED} typed, but still takes a fixed chip`, () => {
+    const typed = Array.from({ length: HARD_NO_MAX_TYPED }, (_, i) => `custom ${i}`);
+    expect(normalizeTypedHardNo('one more', typed).rejection).toBe('too_many');
+    expect(normalizeTypedHardNo('No Calls', typed)).toEqual({ ok: true, value: 'no calls' });
+  });
 });
 
-describe('hardNosAtCap', () => {
-  it(`is false under ${CARD_MAX_ITEMS} items`, () => {
-    expect(hardNosAtCap(Array.from({ length: CARD_MAX_ITEMS - 1 }, (_, i) => `x${i}`))).toBe(false);
+describe('hardNosAtCap / typedHardNos', () => {
+  it('counts only typed entries: every fixed chip may be picked (uncapped)', () => {
+    expect(typedHardNos([...HARD_NO_OPTIONS, 'mine'])).toEqual(['mine']);
+    expect(hardNosAtCap([...HARD_NO_OPTIONS])).toBe(false);
   });
 
-  it(`is true at exactly ${CARD_MAX_ITEMS} items`, () => {
-    expect(hardNosAtCap(Array.from({ length: CARD_MAX_ITEMS }, (_, i) => `x${i}`))).toBe(true);
+  it(`is false under ${HARD_NO_MAX_TYPED} typed entries and true at exactly ${HARD_NO_MAX_TYPED}`, () => {
+    const typed = (n: number) => Array.from({ length: n }, (_, i) => `x${i}`);
+    expect(hardNosAtCap(typed(HARD_NO_MAX_TYPED - 1))).toBe(false);
+    expect(hardNosAtCap(typed(HARD_NO_MAX_TYPED))).toBe(true);
   });
 });
 

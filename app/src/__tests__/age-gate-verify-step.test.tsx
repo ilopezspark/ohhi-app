@@ -101,7 +101,7 @@ describe('the verify step, not started (row 10)', () => {
     expect(screen.getByTestId('verify-body')).toHaveTextContent(/government-issued photo id/);
     expect(screen.getByTestId('verify-small-print')).toHaveTextContent(VERIFY_SMALL_PRINT);
     expect(screen.queryByText(/student id/i)).toBeNull();
-    expect(screen.getByTestId('onboarding-progress').props.accessibilityLabel).toBe('step 3 of 9');
+    expect(screen.getByTestId('onboarding-progress').props.accessibilityLabel).toBe('step 3 of 10');
   });
 
   it('opens Persona through the one integration, then moves on to goals whatever the state is', async () => {

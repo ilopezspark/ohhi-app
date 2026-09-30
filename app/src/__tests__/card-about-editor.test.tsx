@@ -20,7 +20,7 @@ import { currentUserId } from '../api/session';
 import { getIdentity } from '../api/identity';
 import { putIdentity } from '../api/identityWrite';
 import AboutYouEditorScreen from '../app/profile-editor/about';
-import { ORIENTATION_CHIPS, ORIENTATION_MAX_ITEMS, PRONOUN_OPTIONS } from '../settings/vocab';
+import { ORIENTATION_CHIPS, ORIENTATION_MAX_ITEMS, PRONOUN_MAX_LENGTH, PRONOUN_OPTIONS } from '../settings/vocab';
 
 function renderScreen() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -57,11 +57,11 @@ describe('AboutYouEditorScreen', () => {
     expect((await findByTestId('about-editor-orientation-bi')).props.accessibilityState.checked).toBe(true);
   });
 
-  it('caps the free-text pronoun alternative at 40 characters with inline copy', async () => {
+  it(`caps the free-text pronoun alternative at ${PRONOUN_MAX_LENGTH} characters with inline copy (payload v2)`, async () => {
     const { findByTestId, findByText } = await renderScreen();
     const input = await findByTestId('about-editor-pronoun-custom-input');
-    await fireEvent.changeText(input, 'x'.repeat(41));
-    await findByText(/keep it under 40 characters/);
+    await fireEvent.changeText(input, 'x'.repeat(PRONOUN_MAX_LENGTH + 1));
+    await findByText(new RegExp(`keep it under ${PRONOUN_MAX_LENGTH} characters`));
   });
 
   it('limits orientation to 3 selections — a fourth tap is a no-op', async () => {

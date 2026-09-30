@@ -1,115 +1,625 @@
-// Copied from `supabase/functions/identity/validate.ts` (decisions 20-21,
-// 48; vocabulary values per docs/design/me-redesign/brief.md rulings 1, 3, 4,
-// 5, 6 and the `08-edit-private-card.png` artboard). The identity edge
-// function has no `GET .../vocab` route — decision 48 says the editors must
-// render "whatever `validate.ts` exports … never copy baked into the plan
-// docs' examples", so this file is a literal copy of that module's
-// vocabulary constants, kept in sync by `src/__tests__/editors-vocab.test.ts`,
-// which reads both files' source and fails the build the moment they
-// diverge. If `validate.ts` changes, update this file to match and re-run
-// that test — do not edit `validate.ts` from here (it's the other agent's
-// function, owned by the edge-function build).
+// Synced copy of `supabase/functions/identity/vocab.ts` (payload v2; decision
+// 48). The identity function has no `GET .../vocab` route, so the editors
+// render this copy. Everything below the banner is that file, verbatim:
+// same export names, same values, same labels (owner ruling 3: the labels are
+// the owner's content, exempt from the voice rules, and are also the stored
+// values, so they must never be reworded here).
+//
+// `src/__tests__/editors-vocab.test.ts` evaluates the function's file and
+// fails if any export here differs from it, or if either side has an export
+// the other lacks. To re-sync: copy the function's file over everything below
+// the banner, keep this header and the v1 re-export at the bottom.
+//
+// Do NOT import the Deno file at runtime; this copy is what the app bundles.
+// =============================================================================
 
-/** Decision 20 / artboard order: a short fixed pronoun list, plus a free-text opt-out. */
-export const PRONOUN_OPTIONS = ['he/him', 'she/her', 'they/them', 'ask me'] as const;
+// =============================================================================
+// Audiences (ruling 1): who sees each public card
+// =============================================================================
 
-/** One length cap for every chip and for the decision-20 free-text opt-out. */
-export const CHIP_MAX_LENGTH = 40;
+/** `public.profile_audience` (migration 0023), in the editor's order. */
+export const AUDIENCES = ["everyone", "after_hi", "only_me"] as const;
 
-/** Cap on the decision-20 free-text pronoun opt-out. */
-export const PRONOUN_MAX_LENGTH = CHIP_MAX_LENGTH;
-
-/** Cap on an orientation chip. */
-export const ORIENTATION_CHIP_MAX_LENGTH = CHIP_MAX_LENGTH;
+/** A card that has never had its audience set shows to everyone (ruling 1). */
+export const DEFAULT_AUDIENCE = "everyone";
 
 /**
- * Ruling 6 / artboard order: orientation ("i'm") is chips only, up to three,
- * from a fixed list. "single" is deliberately never offered (ruling 6).
+ * The public cards that carry an audience, in render order. "before you
+ * message me" has none: it is always shown to everyone once filled (ruling 1).
  */
-export const ORIENTATION_CHIPS = ['bi', 'straight', 'gay', 'queer', 'asexual', 'rather not say'] as const;
+export const AUDIENCE_CARDS = ["identity", "background", "lifestyle", "around"] as const;
 
+// =============================================================================
+// Shared caps
+// =============================================================================
+
+/** Every chip, fixed or typed, is at most 60 characters. */
+export const CHIP_MAX_LENGTH = 60;
+
+// =============================================================================
+// Public profile, card: identity
+// =============================================================================
+
+/** pronouns (multi) + write your own. */
+export const PRONOUN_OPTIONS = [
+  "he/him",
+  "she/her",
+  "they/them",
+  "he/they",
+  "she/they",
+  "he/she",
+  "xe/xem",
+  "ze/hir",
+  "fae/faer",
+  "it/its",
+  "any pronouns",
+  "ask me",
+] as const;
+
+/** A typed pronoun is at most 16 characters (brief §2). */
+export const PRONOUN_MAX_LENGTH = 16;
+/** At most one typed pronoun. */
+export const PRONOUN_MAX_TYPED = 1;
+/** At most three pronoun entries in total, fixed and typed together. */
+export const PRONOUN_MAX_ITEMS = 3;
+
+/** orientation (multi) + write your own. */
+export const ORIENTATION_CHIPS = [
+  "straight",
+  "gay",
+  "lesbian",
+  "bi",
+  "pan",
+  "queer",
+  "asexual",
+  "demisexual",
+  "graysexual",
+  "aromantic",
+  "questioning",
+  "still working it out",
+  "rather not say",
+] as const;
+
+/** A typed orientation is at most 24 characters. */
+export const ORIENTATION_CHIP_MAX_LENGTH = 24;
+/** At most one typed orientation. */
+export const ORIENTATION_MAX_TYPED = 1;
+/** At most three orientation entries in total (decision 14, unchanged). */
 export const ORIENTATION_MAX_ITEMS = 3;
 
-export const CARD_FIELDS = ['into', 'safer_sex', 'kinks', 'hard_nos'] as const;
-export type CardField = (typeof CARD_FIELDS)[number];
+/** interested in (multi). Render-only; never used for ordering (brief §6). */
+export const INTERESTED_IN_OPTIONS = [
+  "men",
+  "women",
+  "nonbinary people",
+  "everyone",
+  "still figuring it out",
+  "rather not say",
+] as const;
 
-/** Decision 21 / ruling 4: 0-8 chips per array, each at most 40 characters. */
-export const CARD_MAX_ITEMS = 8;
-export const CARD_CHIP_MAX_LENGTH = CHIP_MAX_LENGTH;
+/** relationship (single). */
+export const RELATIONSHIP_OPTIONS = [
+  "single",
+  "seeing someone",
+  "in a relationship",
+  "open",
+  "ethically non-monogamous",
+  "polyamorous",
+  "married",
+  "separated",
+  "it's complicated",
+  "not looking right now",
+  "rather not say",
+] as const;
 
-/**
- * Fixed per-field allow-lists, matching the redesign artboards (ruling 3
- * keeps `kinks` as-is; ruling 4 makes `hard_nos` accept typed entries in
- * addition to its fixed suggestions below — see `SAFER_SEX_TESTED_PATTERN`
- * and `CARD_FIELD_ENTRY_RULES` for how the two exceptions apply).
- */
-export const CARD_CHIPS: Record<CardField, readonly string[]> = {
-  into: ['men', 'women', 'nonbinary people', 'everyone'],
-  safer_sex: ['condoms', 'on prep', 'on birth control', 'ask me'],
-  kinks: [
-    'vanilla',
-    'light bondage',
-    'roleplay',
-    'toys',
-    'exhibitionism',
-    'voyeurism',
-    'dom',
-    'sub',
-    'switch',
-    'open to discuss',
-  ],
-  /** Fixed suggestions only — ruling 4 lets a card also carry typed entries. */
-  hard_nos: ['no pics unasked', 'no substances', 'nothing off campus'],
-};
+// =============================================================================
+// Public profile, card: background
+// =============================================================================
 
-/** Three-letter lowercase month abbreviations accepted by the `tested` pattern. */
-export const SAFER_SEX_TESTED_MONTHS = [
-  'jan',
-  'feb',
-  'mar',
-  'apr',
-  'may',
-  'jun',
-  'jul',
-  'aug',
-  'sep',
-  'oct',
-  'nov',
-  'dec',
+/** languages (multi) + write your own. */
+export const LANGUAGE_OPTIONS = [
+  "english",
+  "spanish",
+  "polish",
+  "tagalog",
+  "hindi",
+  "urdu",
+  "arabic",
+  "mandarin",
+  "cantonese",
+  "korean",
+  "vietnamese",
+  "russian",
+  "ukrainian",
+  "gujarati",
+  "french",
+  "portuguese",
+  "german",
+  "italian",
+  "asl",
+] as const;
+
+/** A typed language is at most 24 characters. */
+export const LANGUAGE_MAX_LENGTH = 24;
+/** At most three typed languages. */
+export const LANGUAGE_MAX_TYPED = 3;
+/** At most eight languages in total. */
+export const LANGUAGE_MAX_ITEMS = 8;
+
+/** faith (single). */
+export const FAITH_OPTIONS = [
+  "christian",
+  "catholic",
+  "protestant",
+  "orthodox",
+  "muslim",
+  "jewish",
+  "hindu",
+  "buddhist",
+  "sikh",
+  "spiritual not religious",
+  "agnostic",
+  "atheist",
+  "still figuring it out",
+  "rather not say",
+] as const;
+
+/** faith_weight (single). Only valid while `faith` is set. */
+export const FAITH_WEIGHT_OPTIONS = [
+  "central to my life",
+  "important",
+  "somewhat",
+  "not really",
+  "rather not say",
+] as const;
+
+/** politics (single). */
+export const POLITICS_OPTIONS = [
+  "left",
+  "moderate",
+  "right",
+  "libertarian",
+  "apolitical",
+  "not into labels",
+  "rather not say",
+] as const;
+
+/** politics_weight (single). Only valid while `politics` is set. */
+export const POLITICS_WEIGHT_OPTIONS = [
+  "matters a lot to me",
+  "matters some",
+  "doesn't matter much",
+] as const;
+
+// =============================================================================
+// Public profile, card: lifestyle
+// =============================================================================
+
+/** drinking (single). */
+export const DRINKING_OPTIONS = [
+  "i don't drink",
+  "rarely",
+  "socially",
+  "on weekends",
+  "often",
+  "rather not say",
+] as const;
+
+/** smoking (single). */
+export const SMOKING_OPTIONS = [
+  "i don't",
+  "socially",
+  "regularly",
+  "vape only",
+  "trying to quit",
+  "rather not say",
+] as const;
+
+/** 420 (single). Stored under the key `four_twenty`. */
+export const FOUR_TWENTY_OPTIONS = [
+  "i don't",
+  "sometimes",
+  "socially",
+  "regularly",
+  "rather not say",
+] as const;
+
+/** kids (single). */
+export const KIDS_OPTIONS = [
+  "no kids",
+  "i have kids",
+  "want kids someday",
+  "don't want kids",
+  "not sure",
+  "rather not say",
+] as const;
+
+// =============================================================================
+// Public profile, card: when i'm around
+// =============================================================================
+
+/** when i'm free (multi). */
+export const WHEN_FREE_OPTIONS = [
+  "mornings",
+  "afternoons",
+  "evenings",
+  "nights",
+  "weekdays only",
+  "weekends only",
+  "between classes",
+  "after work",
+  "it changes every week",
+] as const;
+
+/** communication (multi). */
+export const COMMUNICATION_OPTIONS = [
+  "texts back fast",
+  "slow replier",
+  "voice notes",
+  "calls over texts",
+  "i go quiet when i'm busy",
+  "i'm direct",
+  "i'll tell you if something's wrong",
+  "i need reassurance sometimes",
+  "i'm bad at starting conversations",
+] as const;
+
+/** At most five communication chips. */
+export const COMMUNICATION_MAX_ITEMS = 5;
+
+// =============================================================================
+// Public profile, card: before you message me (always everyone once filled)
+// =============================================================================
+
+/** photos & content (multi). Requests, not controls (ruling 4). */
+export const PHOTOS_CONTENT_OPTIONS = [
+  "don't send pics unasked",
+  "ask before you send anything",
+  "don't ask me for pics",
+  "don't screenshot",
+  "don't save what i send",
+  "nothing with my face",
+  "nothing that shows where i live",
+] as const;
+
+/** All seven may be chosen. */
+export const PHOTOS_CONTENT_MAX_ITEMS = 7;
+
+// =============================================================================
+// Private card, group: getting closer (`standard`)
+// =============================================================================
+
+/** how i show i like someone (multi). Stored under `shows_interest`. */
+export const SHOWS_INTEREST_OPTIONS = [
+  "texting a lot",
+  "making time",
+  "food",
+  "small gifts",
+  "acts of service",
+  "physical closeness",
+  "remembering details",
+  "saying it straight",
+  "being reliable",
+] as const;
+
+/** pace (single). */
+export const PACE_OPTIONS = [
+  "not looking for anything physical",
+  "slow",
+  "take it as it comes",
+  "following your lead",
+  "i'll say what i want",
+  "i move fast",
+  "ask me",
+] as const;
+
+/** living situation (single). */
+export const LIVING_SITUATION_OPTIONS = [
+  "with family",
+  "with roommates",
+  "alone",
+  "with a partner",
+  "on campus",
+  "moving around right now",
+  "rather not say",
+] as const;
+
+/** hosting (single). */
+export const HOSTING_OPTIONS = [
+  "i can host",
+  "i can't host",
+  "sometimes",
+  "i'd rather go out",
+  "i'd rather meet in public first",
+] as const;
+
+// =============================================================================
+// Private card, group: intimacy (`gated`)
+// =============================================================================
+
+/** safer sex (multi). The dated `tested <mon> '<yy>` chip is retired (D11). */
+export const SAFER_SEX_OPTIONS = [
+  "condoms",
+  "on prep",
+  "on birth control",
+  "other contraception",
+  "tested recently",
+  "happy to get tested",
+  "ask me",
+  "rather not say",
+] as const;
+
+/** dynamics (multi, uncapped within the list). */
+export const DYNAMICS_OPTIONS = [
+  "vanilla",
+  "dominant",
+  "submissive",
+  "switch",
+  "top",
+  "bottom",
+  "versatile",
+  "service top",
+  "service sub",
+  "brat",
+  "brat tamer",
+  "primal",
+  "primal prey",
+  "rope top",
+  "rope bottom",
+  "sadist",
+  "masochist",
+  "exhibitionist",
+  "voyeur",
+  "pleasure dom",
+  "strict",
+  "gentle",
+  "rough",
+  "soft",
+  "still figuring out what i like",
+  "would rather talk about it than pick from a list",
+] as const;
+
+/** The practice picker's sub-headers, in order. Storage is flat (`practices`). */
+export const PRACTICE_GROUP_ORDER = [
+  "sensation",
+  "restraint",
+  "power",
+  "roleplay",
+  "display",
+  "other",
 ] as const;
 
 /**
- * `safer_sex` also accepts `tested <mon> '<yy>` (e.g. "tested apr '26"): a
- * lowercase three-letter month from `SAFER_SEX_TESTED_MONTHS`, a literal
- * space, an apostrophe, and a two-digit year. It is a pattern, not a fixed
- * chip, so it is not listed in `CARD_CHIPS.safer_sex`.
+ * what i'm into (multi, uncapped within the list). Stored flat under
+ * `practices`; this grouping is for the picker only. "toys" is D11's addition.
  */
-export const SAFER_SEX_TESTED_PATTERN = new RegExp(
-  `^tested (${SAFER_SEX_TESTED_MONTHS.join('|')}) '\\d{2}$`
-);
+export const PRACTICE_GROUPS = {
+  sensation: [
+    "impact",
+    "spanking",
+    "flogging",
+    "paddling",
+    "caning",
+    "biting",
+    "scratching",
+    "hair pulling",
+    "pinching",
+    "wax",
+    "ice",
+    "temperature play",
+    "sensory deprivation",
+    "massage",
+    "tickling",
+  ],
+  restraint: [
+    "bondage",
+    "rope",
+    "cuffs",
+    "restraints",
+    "blindfolds",
+    "gags",
+    "collars",
+    "leashes",
+    "being pinned",
+    "furniture",
+  ],
+  power: [
+    "giving orders",
+    "taking orders",
+    "rules",
+    "protocol",
+    "discipline",
+    "punishment",
+    "obedience",
+    "service",
+    "worship",
+    "praise",
+    "degradation",
+    "humiliation",
+    "begging",
+    "edging",
+    "orgasm control",
+    "denial",
+    "chastity",
+    "brat taming",
+    "negotiated scenes",
+  ],
+  roleplay: [
+    "roleplay",
+    "costumes",
+    "uniforms",
+    "strangers",
+    "rivals",
+    "long-distance scenarios",
+    "texting scenarios",
+  ],
+  display: [
+    "exhibitionism",
+    "voyeurism",
+    "being watched",
+    "watching",
+    "mirrors",
+    "photos",
+    "filming",
+    "lingerie",
+    "leather",
+    "latex",
+    "heels",
+  ],
+  other: [
+    "feet",
+    "pet play",
+    "wrestling",
+    "shower or bath",
+    "outdoors",
+    "somewhere we could get caught",
+    "toys",
+    "aftercare is important to me",
+    "i want to talk it through first",
+    "nothing yet, ask me later",
+  ],
+} as const;
+
+// =============================================================================
+// Private card, group: boundaries (`always_attached`)
+// =============================================================================
+
+/** hard nos (multi) + write your own. Fixed chips are uncapped. */
+export const HARD_NO_OPTIONS = [
+  "no pics unasked",
+  "no substances",
+  "no drinking",
+  "nothing off campus",
+  "no meeting the first week",
+  "meet in public first",
+  "daytime only at first",
+  "no calls",
+  "no video",
+  "i don't host",
+  "no going to yours first time",
+  "no picking me up first time",
+  "no smoking around me",
+  "no bringing friends",
+  "no impact",
+  "no marks",
+  "no restraints",
+  "no filming",
+  "no photos",
+  "sober only",
+] as const;
+
+/** A typed hard no is at most 60 characters. */
+export const HARD_NO_MAX_LENGTH = 60;
+/** At most five typed hard nos (fixed chips are uncapped). */
+export const HARD_NO_MAX_TYPED = 5;
+
+/** privacy (multi). */
+export const PRIVACY_OPTIONS = [
+  "don't tell mutual friends",
+  "don't post about us",
+  "don't add me on other apps yet",
+  "don't bring this up on campus",
+  "i'm not out to everyone",
+  "keep this between us",
+] as const;
+
+// =============================================================================
+// Structure: payload keys, public cards, private-card groups
+// =============================================================================
+
+/** The 16 keys of an identity payload v2, in render order. */
+export const IDENTITY_FIELDS = [
+  "pronouns",
+  "orientation",
+  "interested_in",
+  "relationship",
+  "languages",
+  "faith",
+  "faith_weight",
+  "politics",
+  "politics_weight",
+  "drinking",
+  "smoking",
+  "four_twenty",
+  "kids",
+  "when_free",
+  "communication",
+  "photos_content",
+] as const;
+
+/** The public cards in render order (brief §2 "Rendering", after `about`). */
+export const IDENTITY_CARD_ORDER = [
+  "identity",
+  "background",
+  "lifestyle",
+  "around",
+  "before_you_message",
+] as const;
+
+/** Which payload keys each public card renders. */
+export const IDENTITY_CARDS = {
+  identity: ["pronouns", "orientation", "interested_in", "relationship"],
+  background: ["languages", "faith", "faith_weight", "politics", "politics_weight"],
+  lifestyle: ["drinking", "smoking", "four_twenty", "kids"],
+  around: ["when_free", "communication"],
+  before_you_message: ["photos_content"],
+} as const;
+
+/** `faith_weight`/`politics_weight` render as a sub-line under their parent. */
+export const WEIGHT_PARENTS = {
+  faith_weight: "faith",
+  politics_weight: "politics",
+} as const;
+
+/** The 9 keys of a private-card payload v2, in group order. */
+export const CARD_SECTIONS = [
+  "shows_interest",
+  "pace",
+  "living_situation",
+  "hosting",
+  "safer_sex",
+  "dynamics",
+  "practices",
+  "hard_nos",
+  "privacy",
+] as const;
+
+/** Private-card groups in render order. */
+export const CARD_GROUP_ORDER = ["standard", "gated", "always_attached"] as const;
 
 /**
- * Per-field entry rules for the editor: whether the field accepts a typed
- * "+ add your own" entry (only `hard_nos`, ruling 4), and, for `safer_sex`,
- * the `tested <mon> '<yy>` pattern it accepts alongside its fixed chips so
- * the editor can build that chip without duplicating the regex logic.
+ * Share semantics (ruling 6): `standard` is always included in a share,
+ * `always_attached` (boundaries) is always attached, and only `gated`
+ * sections are ticked per share (`shares.card_sections`) and revealed by tap.
  */
-export interface CardFieldEntryRules {
-  /** True only for `hard_nos` — the editor should render a "+ add your own" chip. */
-  readonly typed: boolean;
-  /** Present only for `safer_sex` — an additional pattern-based chip the field accepts. */
-  readonly pattern?: RegExp;
-  /** Human-readable form of `pattern`, for building the "tested" chip's placeholder/label. */
-  readonly patternDescription?: string;
-}
+export const CARD_GROUPS = {
+  standard: ["shows_interest", "pace", "living_situation", "hosting"],
+  gated: ["safer_sex", "dynamics", "practices"],
+  always_attached: ["hard_nos", "privacy"],
+} as const;
 
-export const CARD_FIELD_ENTRY_RULES: Record<CardField, CardFieldEntryRules> = {
-  into: { typed: false },
-  safer_sex: {
-    typed: false,
-    pattern: SAFER_SEX_TESTED_PATTERN,
-    patternDescription: "tested <mon> '<yy>",
-  },
-  kinks: { typed: false },
-  hard_nos: { typed: true },
-};
+/** Fields that hold one value (a string or null) rather than an array. */
+export const SINGLE_FIELDS = [
+  "relationship",
+  "faith",
+  "faith_weight",
+  "politics",
+  "politics_weight",
+  "drinking",
+  "smoking",
+  "four_twenty",
+  "kids",
+  "pace",
+  "living_situation",
+  "hosting",
+] as const;
+
+// =============================================================================
+// App-only: payload v1 compatibility (not part of the function's vocab.ts)
+// =============================================================================
+
+// The v1 private-card constants the pre-restructure screens still import
+// (`profile-editor/private-card.tsx`, `chat/PrivateCardSheet.tsx`,
+// `me/card/PrivateCardView.tsx`, `me/card/summary.ts`). Deprecated: remove
+// with those screens in phase 4d. The sync test ignores these names.
+export * from './vocabV1';

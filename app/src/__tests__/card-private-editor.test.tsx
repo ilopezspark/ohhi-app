@@ -10,7 +10,7 @@ jest.mock('../api/identityWrite', () => ({ getMyCard: jest.fn(), putCard: jest.f
 import { router } from 'expo-router';
 import { getMyCard, putCard } from '../api/identityWrite';
 import EditPrivateCardScreen from '../app/profile-editor/private-card';
-import { CARD_CHIPS, CARD_MAX_ITEMS } from '../settings/vocab';
+import { CARD_CHIPS, CARD_MAX_ITEMS, HARD_NO_MAX_LENGTH } from '../settings/vocab';
 
 const EMPTY_CARD = { into: [], safer_sex: [], kinks: [], hard_nos: [] };
 
@@ -49,15 +49,15 @@ describe('EditPrivateCardScreen', () => {
       await findByTestId('private-card-editor-hard_nos-no early mornings');
     });
 
-    it('rejects an entry over 40 characters with the length copy', async () => {
+    it(`rejects an entry over ${HARD_NO_MAX_LENGTH} characters with the length copy`, async () => {
       (getMyCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
       const { findByTestId } = await renderScreen();
       await fireEvent.press(await findByTestId('private-card-editor-hard-nos-add'));
       const input = await findByTestId('private-card-editor-hard-nos-input-input');
-      await fireEvent.changeText(input, 'x'.repeat(41));
+      await fireEvent.changeText(input, 'x'.repeat(HARD_NO_MAX_LENGTH + 1));
       await fireEvent.press(await findByTestId('private-card-editor-hard-nos-confirm'));
       const error = await findByTestId('private-card-editor-hard-nos-error');
-      expect(error.props.children).toEqual(expect.stringContaining('40 characters'));
+      expect(error.props.children).toEqual(expect.stringContaining(`${HARD_NO_MAX_LENGTH} characters`));
     });
 
     it('rejects a case-insensitive duplicate of a fixed suggestion', async () => {
