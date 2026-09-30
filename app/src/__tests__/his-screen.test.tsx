@@ -130,6 +130,20 @@ describe('HisScreen', () => {
     await waitFor(() => expect(hiBack).toHaveBeenCalledWith('hi-1'));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/chat/conv-9'));
   });
+
+  it('hi back goes straight into the thread, once, and never a second hiBack call', async () => {
+    (listReceivedHis as jest.Mock).mockResolvedValue([hiRow()]);
+    (hiBack as jest.Mock).mockResolvedValue('conv-9');
+
+    const { findByTestId } = await renderScreen();
+    await findByTestId('his-row-hi-1');
+
+    await fireEvent.press(await findByTestId('his-row-hiback-hi-1'));
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledTimes(1));
+    expect(router.push).toHaveBeenCalledWith('/chat/conv-9');
+    expect(hiBack).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("HisScreen — received and sent tabs", () => {

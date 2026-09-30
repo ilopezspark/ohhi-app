@@ -28,13 +28,11 @@
  *    reaches this client. The state stays in the union only because the
  *    database enum still has it; it falls through to the defensive default.
  *
- * One rule here is **stricter than the trigger on purpose**: `awaiting_opener`.
- * After `hi_back()` the conversation exists with the original sender as
- * `opened_by_id` and no messages yet. The trigger would accept a message from
- * the recipient (step 3 only fires for the opener), and `advance_conversation`
- * would flip the thread straight to `open` — but plan §2/§3 say the hi'd-back
- * recipient gets no compose box until the opener has spoken ("Waiting for them
- * to say hi first"). That is a product rule, so it lives here and nowhere else.
+ * The client mirrors the trigger exactly: there is no client-only rule. After
+ * `hi_back()` the conversation exists with the original sender as
+ * `opened_by_id` and no messages yet; the person who answered may write first
+ * (owner ruling, decision 102), because step 3 only fires for the opener and
+ * `advance_conversation` flips the thread to `open` on that message.
  */
 
 export type ConversationState =
@@ -58,7 +56,7 @@ export interface LastMessageRules {
   sender_id: string;
 }
 
-export type ComposerBlockedReason = 'awaiting_opener' | 'awaiting_reply' | 'closed' | 'expired';
+export type ComposerBlockedReason = 'awaiting_reply' | 'closed' | 'expired';
 
 export interface ComposerState {
   canSend: boolean;
@@ -107,9 +105,9 @@ export function composerState(
         return { canSend: true, maxLength: MAX_OPENER_LENGTH, canAttachMedia: false };
       }
 
-      // Recipient. See the `awaiting_opener` note in the file header.
-      if (!openerHasSent) return locked('awaiting_opener');
-      // The reply is what opens the thread, so media is still refused here.
+      // Non-opener: always free to write, whether or not the opener has spoken
+      // (after a hi back they have not, and that is fine). Their message is what
+      // opens the thread, so media is still refused here.
       return { canSend: true, maxLength: MAX_BODY_LENGTH, canAttachMedia: false };
     }
 
@@ -149,7 +147,6 @@ export function composerState(
  * (migration 0014, decision 90).
  */
 export const COMPOSER_LOCKED_COPY: Record<ComposerBlockedReason, string> = {
-  awaiting_opener: 'Waiting for them to say hi first.',
   awaiting_reply: 'Waiting for a reply.',
   closed: 'This conversation is closed.',
   expired: 'This conversation is closed.',

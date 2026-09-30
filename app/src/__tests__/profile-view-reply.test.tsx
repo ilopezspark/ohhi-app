@@ -122,7 +122,12 @@ describe('reply targets (pure)', () => {
       expect(
         profileReplyMode('message', rules({ state: 'awaiting_reply', opened_by_id: THEM }), ME, { sender_id: THEM })
       ).toEqual({ mode: 'thread', maxLength: MAX_BODY_LENGTH });
-      // After a hi back, my first message is still the one message.
+      // I answered their hi and nothing has been said: I may write first.
+      expect(profileReplyMode('message', rules({ state: 'awaiting_reply', opened_by_id: THEM }), ME, null)).toEqual({
+        mode: 'thread',
+        maxLength: MAX_BODY_LENGTH,
+      });
+      // I opened and nothing is sent yet: my first message is still the one message.
       expect(profileReplyMode('message', rules({ state: 'awaiting_reply' }), ME, null)).toEqual({
         mode: 'opener',
         maxLength: MAX_OPENER_LENGTH,
@@ -131,7 +136,6 @@ describe('reply targets (pure)', () => {
 
     it('is nothing for a locked thread', () => {
       expect(profileReplyMode('message', rules({ state: 'awaiting_reply' }), ME, { sender_id: ME })).toBeNull();
-      expect(profileReplyMode('message', rules({ state: 'awaiting_reply', opened_by_id: THEM }), ME, null)).toBeNull();
       expect(profileReplyMode('message', rules({ state: 'expired' }), ME, { sender_id: THEM })).toBeNull();
     });
   });

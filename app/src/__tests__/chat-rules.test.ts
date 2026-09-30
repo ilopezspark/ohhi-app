@@ -64,11 +64,11 @@ describe('composerState — every state x role x last-sender combination', () =>
       {},
     ],
     [
-      'awaiting_reply / recipient / nothing sent -> waiting for the opener (hi_back)',
+      'awaiting_reply / recipient / nothing sent (after hi_back) -> may write first, full length, no media yet',
       'awaiting_reply',
       RECIPIENT,
       null,
-      { canSend: false, reason: 'awaiting_opener', maxLength: MAX_BODY_LENGTH, media: false },
+      { canSend: true, maxLength: MAX_BODY_LENGTH, media: false },
       {},
     ],
     [
@@ -196,8 +196,20 @@ describe('composerState — every state x role x last-sender combination', () =>
   });
 
   it('treats an undefined last message the same as none', () => {
-    expect(composerState(conversation('awaiting_reply'), RECIPIENT).reason).toBe('awaiting_opener');
+    expect(composerState(conversation('awaiting_reply'), RECIPIENT).canSend).toBe(true);
     expect(composerState(conversation('awaiting_reply'), OPENER).canSend).toBe(true);
+  });
+
+  it('lets the person who answered a hi write first, and only the opener stays limited to one message', () => {
+    const afterHiBack = conversation('awaiting_reply');
+    expect(composerState(afterHiBack, RECIPIENT, null)).toEqual({
+      canSend: true,
+      maxLength: MAX_BODY_LENGTH,
+      canAttachMedia: false,
+    });
+    // The opener: one message of at most 240, then locked until a reply.
+    expect(composerState(afterHiBack, OPENER, null).maxLength).toBe(MAX_OPENER_LENGTH);
+    expect(composerState(afterHiBack, OPENER, openerSent)).toMatchObject({ canSend: false, reason: 'awaiting_reply' });
   });
 
   it('never enables media outside an open (or shadow-accepted) thread', () => {

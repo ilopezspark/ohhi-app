@@ -195,16 +195,18 @@ describe('thread — composer gating', () => {
     expect(screen.queryByTestId('composer-input')).toBeNull();
   });
 
-  it('tells the hi’d-back recipient plainly that the opener speaks first', async () => {
+  it('gives the hi’d-back recipient a live composer, without waiting for the opener', async () => {
     (getConversation as jest.Mock).mockResolvedValue(
       conversation({ state: 'awaiting_reply', openedById: THEM })
     );
     (listMessages as jest.Mock).mockResolvedValue({ messages: [], nextCursor: null });
 
     const screen = await renderScreen();
-    expect(await screen.findByTestId('composer-locked-awaiting_opener')).toHaveTextContent(
-      'Waiting for them to say hi first.'
-    );
+    const input = await screen.findByTestId('composer-input');
+    expect(input.props.maxLength).toBe(1000);
+    expect(screen.queryByTestId('composer-locked')).toBeNull();
+    // Media needs an open thread, which their message creates.
+    expect(screen.queryByTestId('composer-attach')).toBeNull();
   });
 
   it('renders an expired thread read-only, with no reason', async () => {

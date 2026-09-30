@@ -540,7 +540,7 @@ security one.
 |---|---|---|---|
 | `awaiting_reply` | opener | no | send, **240** chars, no media |
 | `awaiting_reply` | opener | yes | locked, "Waiting for a reply." |
-| `awaiting_reply` | recipient | no | locked, "Waiting for them to say hi first." |
+| `awaiting_reply` | recipient | no | send, 1000 chars, no media (after a hi back the person who answered writes first; decision 102) |
 | `awaiting_reply` | recipient | yes | send, 1000 chars, no media (the reply is what opens the thread) |
 | `open` | either | — | send, 1000 chars, **media enabled** |
 | `closed_block` | `blocked_by` (the blocker) | — | locked (unreachable: `can_read_conversation` hides the row) |
@@ -549,13 +549,8 @@ security one.
 | `closed_deleted` | either | — | never delivered since migration 0014 (the whole thread vanishes); locked by the defensive default if it ever were |
 | any | non-participant | — | locked (defensive) |
 
-Two deliberate departures from a literal reading of the trigger:
+One deliberate departure from a literal reading of the trigger:
 
-- **`awaiting_opener` is stricter than the server.** After `hi_back()` the thread exists with
-  the original sender as `opened_by_id` and no messages. The trigger would accept a message
-  from the recipient (step 3 only fires for the opener) and `advance_conversation` would flip
-  it straight to `open` — but plan §2/§3 say that side gets no compose box until the opener
-  speaks. Product rule, enforced only here.
 - **Media stays attachable in a shadow-accepted thread.** The trigger and the `chat-media`
   write policy both require `state = 'open'`, so such a send fails. Disabling the button
   would be the tell decision 12 exists to prevent, so the failure surfaces as the same
