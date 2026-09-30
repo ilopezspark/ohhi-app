@@ -14,21 +14,23 @@ jest.mock('expo-router', () => ({
     }, [cb]);
   },
 }));
-jest.mock('../api/identityWrite', () => ({ getMyCard: jest.fn() }));
+jest.mock('../api/identity', () => ({ getCard: jest.fn() }));
 jest.mock('../api/profile', () => ({ getFirstName: jest.fn() }));
 jest.mock('../api/session', () => ({ currentUserId: jest.fn() }));
 jest.mock('../api/shares', () => ({ revokeShare: jest.fn() }));
 jest.mock('../me/card/sharedWith', () => ({ listPrivateCardSharedWith: jest.fn() }));
 
 import { router } from 'expo-router';
-import { getMyCard } from '../api/identityWrite';
+import { getCard } from '../api/identity';
 import { getFirstName } from '../api/profile';
 import { currentUserId } from '../api/session';
 import { revokeShare } from '../api/shares';
 import { listPrivateCardSharedWith } from '../me/card/sharedWith';
 import PrivateCardScreen from '../app/me/private-card';
 
-const EMPTY_CARD = { into: [], safer_sex: [], kinks: [], hard_nos: [] };
+/** `getCard` for the owner: every section (empty here), no covers. */
+const EMPTY_CARD = { user_id: 'me-1', sections: {}, gated: [] };
+const FILLED_CARD = { user_id: 'me-1', sections: { pace: 'slow', safer_sex: ['condoms'], hard_nos: ['no calls'] }, gated: [] };
 
 function renderScreen() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -48,14 +50,14 @@ beforeEach(() => {
 
 describe('PrivateCardScreen', () => {
   it('shows a loading state before the card resolves', async () => {
-    (getMyCard as jest.Mock).mockReturnValue(new Promise(() => {}));
+    (getCard as jest.Mock).mockReturnValue(new Promise(() => {}));
     (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([]);
     const { findByTestId } = await renderScreen();
     await findByTestId('private-card-loading');
   });
 
   it('shows the empty state with an "add to your card" action when nothing is filled in', async () => {
-    (getMyCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
+    (getCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
     (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([]);
     const { findByTestId, queryByTestId } = await renderScreen();
     await findByTestId('private-card-empty');
@@ -65,23 +67,57 @@ describe('PrivateCardScreen', () => {
     expect(router.push).toHaveBeenCalledWith('/profile-editor/private-card');
   });
 
-  it('renders the "how it arrives in a chat" preview through PrivateCardView when something is filled in', async () => {
-    (getMyCard as jest.Mock).mockResolvedValue({ ...EMPTY_CARD, into: ['men'] });
+  it('renders the preview through PrivateCardView when something is filled in', async () => {
+    (getCard as jest.Mock).mockResolvedValue(FILLED_CARD);
     (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([]);
     const { findByTestId, queryByTestId } = await renderScreen();
     await findByTestId('private-card-preview');
     expect(queryByTestId('private-card-empty')).toBeNull();
   });
 
+  it("reads the owner's own card (payload v2) and treats a card never written (404) as empty", async () => {
+    (getCard as jest.Mock).mockResolvedValue(null);
+    (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([]);
+    const { findByTestId } = await renderScreen();
+    await findByTestId('private-card-empty');
+    expect(getCard).toHaveBeenCalledWith('me-1');
+  });
+
+  it('the preview shows every section, grouped, with a caption per group saying what a share includes', async () => {
+    (getCard as jest.Mock).mockResolvedValue(FILLED_CARD);
+    (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([]);
+    const { findByTestId, queryByTestId } = await renderScreen();
+    await findByTestId('private-card-preview-section-pace-slow');
+    // The owner sees intimacy content directly, never a cover.
+    await findByTestId('private-card-preview-section-safer_sex-condoms');
+    expect(queryByTestId(/^private-card-preview-cover-/)).toBeNull();
+    await findByTestId('private-card-preview-caption-standard');
+    await findByTestId('private-card-preview-caption-gated');
+    await findByTestId('private-card-preview-caption-always_attached');
+  });
+
+  it('each person shared with shows the intimacy sections their share ticked', async () => {
+    (getCard as jest.Mock).mockResolvedValue(FILLED_CARD);
+    (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([
+      { shareId: 'share-1', userId: 'u1', firstName: 'maya', sentAt: new Date().toISOString(), sections: ['safer_sex', 'practices'] },
+      { shareId: 'share-2', userId: 'u2', firstName: 'jo', sentAt: new Date().toISOString(), sections: [] },
+    ]);
+    const { findByTestId } = await renderScreen();
+    const withTicks = await findByTestId('private-card-shared-line-share-1');
+    expect(withTicks.props.children).toMatch(/· safer sex, what i'm into$/);
+    const without = await findByTestId('private-card-shared-line-share-2');
+    expect(without.props.children).not.toMatch(/·/);
+  });
+
   it('shows "not shared with anyone." when the shared-with list is empty', async () => {
-    (getMyCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
+    (getCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
     (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([]);
     const { findByTestId } = await renderScreen();
     await findByTestId('private-card-shared-empty');
   });
 
   it('lists each person shared with: avatar, first name, relative time, and a take-back action', async () => {
-    (getMyCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
+    (getCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
     (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([
       { shareId: 'share-1', userId: 'u1', firstName: 'maya', sentAt: '2026-09-25T12:00:00.000Z' },
     ]);
@@ -92,7 +128,7 @@ describe('PrivateCardScreen', () => {
   });
 
   it('take back is optimistic: the row disappears immediately, before revokeShare resolves', async () => {
-    (getMyCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
+    (getCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
     (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([
       { shareId: 'share-1', userId: 'u1', firstName: 'maya', sentAt: '2026-09-25T12:00:00.000Z' },
     ]);
@@ -108,7 +144,7 @@ describe('PrivateCardScreen', () => {
   });
 
   it('rolls back and keeps the row when revokeShare fails', async () => {
-    (getMyCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
+    (getCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
     (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([
       { shareId: 'share-1', userId: 'u1', firstName: 'maya', sentAt: '2026-09-25T12:00:00.000Z' },
     ]);
@@ -123,7 +159,7 @@ describe('PrivateCardScreen', () => {
   });
 
   it('removes the section to "not shared with anyone." after the last person is taken back', async () => {
-    (getMyCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
+    (getCard as jest.Mock).mockResolvedValue(EMPTY_CARD);
     (listPrivateCardSharedWith as jest.Mock)
       .mockResolvedValueOnce([{ shareId: 'share-1', userId: 'u1', firstName: 'maya', sentAt: '2026-09-25T12:00:00.000Z' }])
       // After a successful revoke the screen invalidates and refetches — the server-side list is now empty.
@@ -140,7 +176,7 @@ describe('PrivateCardScreen', () => {
 
 describe('PrivateCardScreen — vanishing (migration 0014, decision 90)', () => {
   it('re-reads "shared with" when the screen is focused again, so someone who vanished just drops off', async () => {
-    (getMyCard as jest.Mock).mockResolvedValue({ ...EMPTY_CARD, into: ['men'] });
+    (getCard as jest.Mock).mockResolvedValue(FILLED_CARD);
     (listPrivateCardSharedWith as jest.Mock).mockResolvedValue([
       { shareId: 's1', userId: 'u1', firstName: 'maya', sentAt: '2026-09-20T10:00:00.000Z' },
     ]);

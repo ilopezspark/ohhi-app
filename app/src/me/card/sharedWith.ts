@@ -1,12 +1,15 @@
 import { supabase } from '../../api/client';
 import { mapSupabaseError } from '../../api/errors';
-import { listSharesForSubject } from '../../api/shares';
+import { listSharesForSubject, shareCardSections } from '../../api/shares';
+import type { GatedSection } from '../../profile/fields';
 
 export interface SharedWithPerson {
   shareId: string;
   userId: string;
   firstName: string | null;
   sentAt: string;
+  /** The intimacy sections ticked on this share (owner ruling 6), in group order. */
+  sections: GatedSection[];
 }
 
 /**
@@ -32,5 +35,6 @@ export async function listPrivateCardSharedWith(ownerId: string): Promise<Shared
     userId: share.viewer_id,
     firstName: profiles?.find((p) => p.id === share.viewer_id)?.first_name ?? null,
     sentAt: share.created_at,
+    sections: shareCardSections(share),
   }));
 }

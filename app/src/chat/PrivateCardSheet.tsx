@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { getSharedPrivateCard } from '../api/identity';
+import { getCard, revealCardSection } from '../api/identity';
 import { PrivateCardView } from '../me/card/PrivateCardView';
-import { CARD_FIELDS } from '../settings/vocab';
+import { hasAnyValue } from '../profile/fields';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
 import { Button, Sheet, Text } from '../ui';
 
@@ -23,15 +23,21 @@ export interface PrivateCardSheetProps {
 }
 
 /**
- * The full private card as its recipient sees it, opened from the card's
- * share bubble in a chat (`chat/ShareBubble.tsx`). Renders through the same
- * `PrivateCardView` the owner's "how it arrives in a chat" preview uses
- * (`/me/private-card`), so what the owner previews is literally what lands.
+ * The private card as its recipient sees it (payload v2), opened from the
+ * card's share bubble in a chat (`chat/ShareBubble.tsx`), through the same
+ * `PrivateCardView` the owner's preview uses (`/me/private-card`).
+ *
+ * `GET /identity/card/:owner` gives the getting-closer group and the
+ * boundaries, plus `gated`: the intimacy sections this share ticked, as names
+ * only. Each shows as a neutral cover, and its content is fetched only when
+ * the recipient taps it (`GatedCover`). Nothing records a reveal.
  *
  * Fetched fresh every time it opens (`staleTime: 0`, not cached across
  * opens): the identity function answers 404 once the owner takes the card
  * back, and that has to win on the next open, not after a cache expiry. It
- * also refetches on app foreground and reconnect while open.
+ * also refetches on app foreground and reconnect while open, and again when a
+ * reveal comes back empty (the share was taken back or re-shared without that
+ * section), so a cover that no longer applies goes.
  *
  * An empty read (on open or on any refetch) is "gone": `onGone` fires once
  * and the sheet renders nothing more. No copy, since the same 404 covers a
@@ -40,7 +46,7 @@ export interface PrivateCardSheetProps {
 export function PrivateCardSheet({ ownerId, ownerName, onDismiss, onGone }: PrivateCardSheetProps) {
   const cardQuery = useQuery({
     queryKey: ['shared-private-card', ownerId],
-    queryFn: () => getSharedPrivateCard(ownerId),
+    queryFn: () => getCard(ownerId),
     staleTime: 0,
     gcTime: 0,
   });
@@ -54,7 +60,7 @@ export function PrivateCardSheet({ ownerId, ownerName, onDismiss, onGone }: Priv
     reported.current = true;
     onGone();
   }, [gone, onGone]);
-  const hasAnything = !!card && CARD_FIELDS.some((field) => card[field].length > 0);
+  const hasAnything = !!card && (hasAnyValue(card.sections) || card.gated.length > 0);
 
   return (
     <Sheet testID="private-card-sheet" onDismiss={onDismiss}>
@@ -70,7 +76,14 @@ export function PrivateCardSheet({ ownerId, ownerName, onDismiss, onGone }: Priv
         <View style={styles.center} testID="private-card-sheet-gone" />
       ) : (
         <ScrollView style={styles.scroll} contentContainerStyle={styles.card}>
-          <PrivateCardView name={ownerName} entries={card} testID="private-card-sheet-card" />
+          <PrivateCardView
+            name={ownerName}
+            sections={card.sections}
+            gated={card.gated}
+            revealSection={(section) => revealCardSection(ownerId, section)}
+            onRevealGone={() => void cardQuery.refetch()}
+            testID="private-card-sheet-card"
+          />
           {hasAnything ? null : (
             <Text variant="body" color={colors.inkSoft} testID="private-card-sheet-empty">
               nothing filled in yet.

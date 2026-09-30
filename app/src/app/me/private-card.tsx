@@ -1,15 +1,17 @@
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getMyCard } from '../../api/identityWrite';
 import { getFirstName } from '../../api/profile';
 import { revokeShare } from '../../api/shares';
 import { mapSupabaseError } from '../../api/errors';
 import { currentUserId } from '../../api/session';
 import { queryKeys } from '../../me/queryKeys';
+import { CARD_SECTION_LABELS } from '../../me/card/fieldLabels';
+import { useMyCard } from '../../me/card/myCard';
 import { PrivateCardView } from '../../me/card/PrivateCardView';
 import { listPrivateCardSharedWith, type SharedWithPerson } from '../../me/card/sharedWith';
 import { relativeSentLabel } from '../../me/card/relativeTime';
+import { hasAnyValue } from '../../profile/fields';
 import { useRefetchOnFocus } from '../../query/gone';
 import { tintForPhoto } from '../../photos/tint';
 import { Avatar, Button, Chip, EmptyState, ScreenHeader, RowCard, SectionLabel, Text, useHeaderInsets } from '../../ui';
@@ -18,12 +20,22 @@ import { LockIcon } from '../../ui/icons';
 import { displayName } from '../../ui/displayName';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 
+/** "sent 3 days ago · safer sex, dynamics": when, plus the intimacy sections that share ticked. */
+function sharedLine(person: SharedWithPerson): string {
+  const sent = relativeSentLabel(person.sentAt);
+  const sections = (person.sections ?? []).map((section) => CARD_SECTION_LABELS[section]);
+  return sections.length > 0 ? `${sent} · ${sections.join(', ')}` : sent;
+}
+
 /**
  * `/me/private-card` (`docs/design/me-redesign/brief.md`'s `PrivateCard`,
- * `02-private-card.png`). Header `edit` pushes the editor as a route inside
- * the profile-editor modal stack (ruling 11:
- * `/profile-editor/private-card`) — this screen itself is a plain push off
- * the Me tab, not modal.
+ * `02-private-card.png`), payload v2. The owner's own card through the same
+ * `PrivateCardView` a recipient's sheet uses, with every section showing and
+ * a caption under each group saying what a share includes (owner ruling 6).
+ * Then who has it, each with the intimacy sections their share ticked, and
+ * `take back`. Header `edit` pushes the editor as a route inside the
+ * profile-editor modal stack (ruling 11: `/profile-editor/private-card`);
+ * this screen itself is a plain push off the Me tab, not modal.
  */
 export default function PrivateCardScreen() {
   // The last line clears the home indicator / navigation bar (the shared
@@ -31,7 +43,7 @@ export default function PrivateCardScreen() {
   const bottomInset = useHeaderInsets().bottom;
   const queryClient = useQueryClient();
 
-  const cardQuery = useQuery({ queryKey: queryKeys.me.card, queryFn: getMyCard });
+  const cardQuery = useMyCard();
   const nameQuery = useQuery({ queryKey: queryKeys.me.profile, queryFn: getFirstName });
   const sharedQuery = useQuery({
     queryKey: queryKeys.me.shares,
@@ -70,8 +82,7 @@ export default function PrivateCardScreen() {
     );
   }
 
-  const card = cardQuery.data ?? { into: [], safer_sex: [], kinks: [], hard_nos: [] };
-  const filled = (['into', 'safer_sex', 'kinks', 'hard_nos'] as const).filter((field) => card[field].length > 0).length;
+  const card = cardQuery.data ?? null;
   const name = nameQuery.data ?? 'you';
   const sharedWith = sharedQuery.data ?? [];
   const revokeError = revokeMutation.isError ? mapSupabaseError(revokeMutation.error).message : null;
@@ -102,7 +113,7 @@ export default function PrivateCardScreen() {
           </Text>
         </View>
 
-        {filled === 0 ? (
+        {!card || !hasAnyValue(card) ? (
           <EmptyState
             testID="private-card-empty"
             style={styles.empty}
@@ -118,9 +129,9 @@ export default function PrivateCardScreen() {
           />
         ) : (
           <>
-            <SectionLabel label="how it arrives in a chat" style={styles.sectionSpacing} />
+            <SectionLabel label="what's on it" style={styles.sectionSpacing} />
             <View style={styles.cardWrap}>
-              <PrivateCardView name={name} entries={card} testID="private-card-preview" />
+              <PrivateCardView name={name} sections={card} showGroupCaptions testID="private-card-preview" />
             </View>
           </>
         )}
@@ -133,8 +144,8 @@ export default function PrivateCardScreen() {
                 <Avatar tint={tintForPhoto(person.userId, 0)} size="md" />
                 <View style={styles.sharedText}>
                   <Text variant="rowLabel">{displayName(person.firstName) || 'someone'}</Text>
-                  <Text variant="micro" color={colors.inkSoft}>
-                    {relativeSentLabel(person.sentAt)}
+                  <Text variant="micro" color={colors.inkSoft} testID={`private-card-shared-line-${person.shareId}`}>
+                    {sharedLine(person)}
                   </Text>
                 </View>
                 <Chip

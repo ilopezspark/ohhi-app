@@ -89,3 +89,34 @@ describe('relativeSentLabel', () => {
     expect(relativeSentLabel('2026-09-28T11:00:00.000Z', now)).toBe('sent 1 hour ago');
   });
 });
+
+describe('card values (payload v2)', () => {
+  // Imported here so the helpers above keep their own import block untouched.
+  const { cardPatch, inOptionOrder, sectionValues, tickableSections } = jest.requireActual('../me/card/cardValues') as typeof import('../me/card/cardValues');
+  const { emptyCardPayload } = jest.requireActual('../profile/fields') as typeof import('../profile/fields');
+
+  it('cardPatch sends only the sections that changed, including a cleared single value and an emptied list', () => {
+    const initial = { ...emptyCardPayload(), pace: 'slow', safer_sex: ['condoms'], privacy: ['keep this between us'] };
+    const current = { ...initial, pace: null, safer_sex: [], hosting: 'sometimes' };
+    expect(cardPatch(initial, current)).toEqual({ pace: null, safer_sex: [], hosting: 'sometimes' });
+    expect(cardPatch(initial, { ...initial })).toEqual({});
+  });
+
+  it('tickableSections offers only the intimacy sections with something in them, in group order', () => {
+    expect(tickableSections({ practices: ['rope'], safer_sex: ['condoms'], dynamics: [], pace: 'slow' })).toEqual([
+      'safer_sex',
+      'practices',
+    ]);
+    expect(tickableSections(null)).toEqual([]);
+  });
+
+  it('sectionValues turns a single value into one entry and unset into none', () => {
+    expect(sectionValues('slow')).toEqual(['slow']);
+    expect(sectionValues(null)).toEqual([]);
+    expect(sectionValues(['a', 'b'])).toEqual(['a', 'b']);
+  });
+
+  it('inOptionOrder keeps the picker order, typed entries last', () => {
+    expect(inOptionOrder('hard_nos', ['mine', 'no calls', 'no pics unasked'])).toEqual(['no pics unasked', 'no calls', 'mine']);
+  });
+});
