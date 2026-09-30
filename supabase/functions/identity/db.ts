@@ -27,8 +27,10 @@ export interface IdentityRow {
    * private.is_blocked(user_id, caller) — symmetric, either direction blocks —
    * OR the row's owner is not visible (migration 0014, decision 90:
    * private.is_visible_user is false for a suspended, banned or deleted
-   * account). Either way the router refuses a non-owner with the same 404;
-   * the owner's own read never consults this flag.
+   * account), OR the caller is not a verified adult (migration 0021, decision
+   * 97: private.is_verified_adult; nobody sees anyone before verification).
+   * Either way the router refuses a non-owner with the same 404; the owner's
+   * own read never consults this flag.
    */
   blocked: boolean;
 }
@@ -107,7 +109,8 @@ export function createDb(): Db {
         tx`
           select is_public, payload_ciphertext, key_version,
                  (private.is_blocked(user_id, ${callerId}::uuid)
-                  or not private.is_visible_user(user_id)) as blocked
+                  or not private.is_visible_user(user_id)
+                  or not private.is_verified_adult(${callerId}::uuid)) as blocked
             from public.user_identity
            where user_id = ${userId}
         `

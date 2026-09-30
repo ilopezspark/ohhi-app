@@ -40,6 +40,11 @@
 -- fixture helper sets 3 catalog tags before onboarding. No assertion changed;
 -- the plan count is unchanged.
 
+-- Amended by migration 0021 (verified_adults_only): complete_onboarding() now requires a
+-- verified adult, so the fixture helper marks the user verified before complete_onboarding()
+-- rather than after; and the messages trigger list now includes 0021's insert-only
+-- verified_adults_only trigger. Plan unchanged.
+
 create extension if not exists pgtap with schema public;
 
 -- =============================================================================
@@ -166,12 +171,13 @@ begin
 
   -- (amended by migration 0018: complete_onboarding() needs 3 tags, written through set_my_tags())
   perform pg_temp._as17(p_uid, $q$select public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label))$q$);
-  perform pg_temp._as17(p_uid, 'select public.complete_onboarding()');
-  perform pg_temp._as17(p_uid, $q$select public.set_my_tier('on_campus')$q$);
-
+  -- (amended by migration 0021: complete_onboarding() now requires a verified adult, so the
+  -- fixture is marked verified before it rather than after)
   perform set_config('app.bypass_profiles_guard', 'on', true);
   update public.profiles set verification_status = 'verified' where id = p_uid;
   perform set_config('app.bypass_profiles_guard', 'off', true);
+  perform pg_temp._as17(p_uid, 'select public.complete_onboarding()');
+  perform pg_temp._as17(p_uid, $q$select public.set_my_tier('on_campus')$q$);
 end $fn$;
 
 -- account state change the way staff tooling makes it (profiles_guard needs the bypass flag)
@@ -447,7 +453,8 @@ begin
   select is(
     (select string_agg(tgname || ':' || pg_get_triggerdef(oid), ' | ' order by tgname) from pg_trigger
       where tgrelid = 'public.messages'::regclass and not tgisinternal),
-    'advance_conversation:CREATE TRIGGER advance_conversation AFTER INSERT ON public.messages FOR EACH ROW EXECUTE FUNCTION advance_conversation() | enforce_message_rules:CREATE TRIGGER enforce_message_rules BEFORE INSERT ON public.messages FOR EACH ROW EXECUTE FUNCTION enforce_message_rules()',
+    -- (amended by migration 0021: its insert-only verified_adults_only trigger is expected too)
+    'advance_conversation:CREATE TRIGGER advance_conversation AFTER INSERT ON public.messages FOR EACH ROW EXECUTE FUNCTION advance_conversation() | enforce_message_rules:CREATE TRIGGER enforce_message_rules BEFORE INSERT ON public.messages FOR EACH ROW EXECUTE FUNCTION enforce_message_rules() | verified_adults_only:CREATE TRIGGER verified_adults_only BEFORE INSERT ON public.messages FOR EACH ROW EXECUTE FUNCTION require_verified_adults()',
     'messages triggers are unchanged: no update trigger was added') into v_line; out := out || v_line || E'\n';
 
   -- ---------------------------------------------------------------------------

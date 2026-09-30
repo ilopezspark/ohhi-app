@@ -29,11 +29,18 @@ export interface NormalizedResult {
   outcome: VerificationOutcome;
   /** Stable per-person identifier (decision 8); null until the provider assigns one, per plan §5. */
   providerAccountReference: string | null;
-  /** Document DOB from the callback, if the provider includes one on this event (decision 26).
-   * null means "not present on this event," not "confirmed absent from the identity" — the
-   * mismatch check in index.ts only runs when this is non-null. */
-  documentDob: string | null; // ISO 'YYYY-MM-DD'
+  /** Birth date read from the verified government ID, raw as the provider sent it (decision 97:
+   * the document's date is the source of truth for age). Not validated here: age.ts decides
+   * whether it is a usable 'YYYY-MM-DD' date. null means nothing usable was found; on an approved
+   * event that is a neutral failure, never a pass. Never logged. */
+  documentDob: string | null;
+  /** Where documentDob came from, for structured logging only (never the value itself). */
+  documentDobSource: DocumentDobSource;
 }
+
+/** 'conflict': two passed government-ID verifications on one inquiry disagreed; documentDob is
+ * then null. null: no birth date found. */
+export type DocumentDobSource = "government_id" | "inquiry_fields" | "inquiry_attribute" | "conflict" | null;
 
 /** A webhook delivery this adapter recognizes but that carries no verification outcome (e.g. an
  * "inquiry created" event) — a deliberate no-op, not a parse failure. */

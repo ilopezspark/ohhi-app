@@ -17,6 +17,10 @@
 -- assertion now includes 0018's trailing about jsonb column; the plan count is
 -- unchanged.
 
+-- Amended by migration 0021 (verified_adults_only): complete_onboarding() now requires a
+-- verified adult, so the fixture helper verifies every persona for that call and puts an
+-- unverified persona (p_verified false) back to its signup status right after. Plan unchanged.
+
 create extension if not exists pgtap with schema public;
 
 create or replace function pg_temp._run_as09(p_uid uuid, p_sql text) returns void
@@ -37,6 +41,8 @@ create or replace function pg_temp._mk09(
   p_here_now boolean default false, p_verified boolean default true, p_photo_ok boolean default true
 ) returns void
 language plpgsql as $fn$
+declare
+  v_vs public.verification_status;
 begin
   insert into auth.users
     (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -58,6 +64,12 @@ begin
 
   -- (amended by migration 0018: complete_onboarding() needs 3 tags, written through set_my_tags())
   perform pg_temp._run_as09(p_uid, $q$select public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label))$q$);
+  -- (amended by migration 0021: complete_onboarding() now requires a verified adult, so every
+  -- fixture is verified for the call; an unverified persona gets its signup status back below)
+  select verification_status into v_vs from public.profiles where id = p_uid;
+  perform set_config('app.bypass_profiles_guard', 'on', true);
+  update public.profiles set verification_status = 'verified' where id = p_uid;
+  perform set_config('app.bypass_profiles_guard', 'off', true);
   perform pg_temp._run_as09(p_uid, 'select public.complete_onboarding()');
   perform pg_temp._run_as09(p_uid, format('select public.set_my_tier(%L)', p_tier));
   if p_here_now then
@@ -67,7 +79,7 @@ begin
   perform set_config('app.bypass_profiles_guard', 'on', true);
   update public.profiles
      set verification_status = case when p_verified then 'verified'::public.verification_status
-                                    else verification_status end,
+                                    else v_vs end,
          last_active_at = now() - p_active_ago
    where id = p_uid;
   perform set_config('app.bypass_profiles_guard', 'off', true);

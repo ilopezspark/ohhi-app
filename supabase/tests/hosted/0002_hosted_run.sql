@@ -15,6 +15,13 @@
 -- assertion that updated the dropped column is now a hasnt_column check, so
 -- the plan stays 98. See the pgTAP file's header.
 
+-- Migration 0021 (verified adults only) amended this runner: complete_onboarding() needs a
+-- verified adult, and a hi, conversation or share needs verified adults on both sides, so the
+-- fixtures are marked verified before they onboard or receive (gus and cam are put back to
+-- email_verified where their tests need it), and acceptance 21's two read assertions are
+-- inverted (an unverified user now reads nobody), and the two message-insert refusals for cam
+-- name the conversation id instead of selecting it (cam can no longer read it). The plan stays 98.
+
 -- Migration 0018 (tags and about) amended this runner: the 0002 CLC tags
 -- (nursing, cs, business, ...) no longer exist, user_tags is written only
 -- through set_my_tags(), and complete_onboarding() needs 3 tags. Every fixture
@@ -31,6 +38,7 @@ create extension if not exists pgtap with schema public;
 
 do $outer$
 declare
+  v_cam_conv uuid;  -- (amended by migration 0021, see rule 1 below)
   v_line   text;
   out      text := '';
   fails    text;
@@ -149,6 +157,17 @@ begin
     'f00d0000-0000-0000-0000-000000000007'
   ) and position = 0;
 
+  -- (amended by migration 0021: complete_onboarding() now requires a verified adult, and since
+  -- 0021 nobody can receive a hi or a conversation without being one. So the five onboarding
+  -- fixtures are marked verified before they onboard (gus is put back to email_verified just
+  -- after, keeping rule 11's "deliberately NOT verified"), and so are the recipients of the hi
+  -- and conversation fixtures below (rae, rob, ron, ivy, kay, mia, miatwo) and eve, who
+  -- onboards in acceptance 26. cam stays email_verified for rule 1 and acceptance 21.)
+  perform set_config('app.bypass_profiles_guard', 'on', true);
+  update public.profiles set verification_status = 'verified'
+   where id in ('f00d0000-0000-0000-0000-000000000001', 'f00d0000-0000-0000-0000-000000000002', 'f00d0000-0000-0000-0000-000000000004', 'f00d0000-0000-0000-0000-000000000005', 'f00d0000-0000-0000-0000-000000000006', 'f00d0000-0000-0000-0000-000000000007', 'f00d0000-0000-0000-0000-000000000009', 'f00d0000-0000-0000-0000-00000000000b', 'f00d0000-0000-0000-0000-00000000000c', 'f00d0000-0000-0000-0000-00000000000e', 'f00d0000-0000-0000-0000-000000000010', 'f00d0000-0000-0000-0000-000000000012', 'f00d0000-0000-0000-0000-000000000018');
+  perform set_config('app.bypass_profiles_guard', 'off', true);
+
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000001', true); execute 'set local role authenticated'; perform public.complete_onboarding(); perform public.set_my_tier('on_campus'); execute 'reset role';
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000002', true); execute 'set local role authenticated'; perform public.complete_onboarding(); perform public.set_my_tier('nearby'); execute 'reset role';
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000004', true); execute 'set local role authenticated'; perform public.complete_onboarding(); execute 'reset role';
@@ -168,6 +187,10 @@ begin
   update public.profiles set verification_status = 'verified' where id = 'f00d0000-0000-0000-0000-000000000017';
   perform set_config('app.bypass_profiles_guard', 'off', true);
   -- gus (0007) deliberately NOT verified: rule 11.
+  -- (amended by migration 0021: gus was verified only for complete_onboarding() above)
+  perform set_config('app.bypass_profiles_guard', 'on', true);
+  update public.profiles set verification_status = 'email_verified' where id = 'f00d0000-0000-0000-0000-000000000007';
+  perform set_config('app.bypass_profiles_guard', 'off', true);
 
   -- ===========================================================================
   -- Fixtures: ann <-> fay (mutual conversation, two shares, then a block)
@@ -296,6 +319,11 @@ begin
   execute 'reset role';
 
   -- 5
+  -- (amended by migration 0021: a conversation needs two verified adults, so cam is verified
+  -- while bea opens it and put back to email_verified before the assertion)
+  perform set_config('app.bypass_profiles_guard', 'on', true);
+  update public.profiles set verification_status = 'verified' where id = 'f00d0000-0000-0000-0000-000000000003';
+  perform set_config('app.bypass_profiles_guard', 'off', true);
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000002', true); execute 'set local role authenticated';
   perform public.start_conversation('f00d0000-0000-0000-0000-000000000003');
   insert into public.messages (conversation_id, sender_id, body)
@@ -303,12 +331,20 @@ begin
      where user_a_id = least('f00d0000-0000-0000-0000-000000000002'::uuid,'f00d0000-0000-0000-0000-000000000003'::uuid)
        and user_b_id = greatest('f00d0000-0000-0000-0000-000000000002'::uuid,'f00d0000-0000-0000-0000-000000000003'::uuid);
   execute 'reset role';
+  perform set_config('app.bypass_profiles_guard', 'on', true);
+  update public.profiles set verification_status = 'email_verified' where id = 'f00d0000-0000-0000-0000-000000000003';
+  perform set_config('app.bypass_profiles_guard', 'off', true);
+  -- (amended by migration 0021: an unverified cam can no longer read the conversation, so an
+  -- insert ... select from conversations as cam would insert nothing and raise nothing; the
+  -- conversation id is read here, as the owner, and the insert names it, so the refusal under
+  -- test is still enforce_message_rules' own)
+  select id into v_cam_conv from public.conversations
+   where user_a_id = least('f00d0000-0000-0000-0000-000000000002'::uuid,'f00d0000-0000-0000-0000-000000000003'::uuid)
+     and user_b_id = greatest('f00d0000-0000-0000-0000-000000000002'::uuid,'f00d0000-0000-0000-0000-000000000003'::uuid);
 
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000003', true); execute 'set local role authenticated';
-  select throws_like($$insert into public.messages (conversation_id, sender_id, body)
-      select id, 'f00d0000-0000-0000-0000-000000000003', 'hi back' from public.conversations
-       where user_a_id = least('f00d0000-0000-0000-0000-000000000002'::uuid,'f00d0000-0000-0000-0000-000000000003'::uuid)
-         and user_b_id = greatest('f00d0000-0000-0000-0000-000000000002'::uuid,'f00d0000-0000-0000-0000-000000000003'::uuid)$$,
+  select throws_like(format($f$insert into public.messages (conversation_id, sender_id, body)
+      values (%L, 'f00d0000-0000-0000-0000-000000000003', 'hi back')$f$, v_cam_conv),
     '%only a verified user can send a message%', 'rule 1: email_verified sender cannot insert a message, even a reply') into v_line; out := out || v_line || E'\n';
   execute 'reset role';
 
@@ -527,14 +563,15 @@ begin
 
   -- 21
   perform set_config('request.jwt.claim.sub', 'f00d0000-0000-0000-0000-000000000003', true); execute 'set local role authenticated';
-  select ok(exists (select 1 from public.profiles limit 1), 'acceptance 21: email_verified user can read profiles') into v_line; out := out || v_line || E'\n';
-  select ok(exists (select 1 from public.grid_for_me()), 'acceptance 21: email_verified user can read the grid') into v_line; out := out || v_line || E'\n';
+  -- (amended by migration 0021, decision 97: the owner ruled that nobody uses the app before the
+  -- 18+ ID check, so the first two acceptance-21 assertions are inverted: an email_verified user
+  -- reads only their own profile and an empty grid. Same count.)
+  select ok(not exists (select 1 from public.profiles where id <> auth.uid()), 'acceptance 21 (amended by 0021): an email_verified user reads no one else''s profile') into v_line; out := out || v_line || E'\n';
+  select ok(not exists (select 1 from public.grid_for_me()), 'acceptance 21 (amended by 0021): an email_verified user''s grid is empty') into v_line; out := out || v_line || E'\n';
   select throws_like($$insert into public.his (from_user_id, to_user_id) values ('f00d0000-0000-0000-0000-000000000003','f00d0000-0000-0000-0000-000000000004')$$,
     '%only a verified user can send a hi%', 'acceptance 21: every his write fails for an email_verified user') into v_line; out := out || v_line || E'\n';
-  select throws_like($$insert into public.messages (conversation_id, sender_id, body)
-      select id, 'f00d0000-0000-0000-0000-000000000003', 'trying again' from public.conversations
-       where user_a_id=least('f00d0000-0000-0000-0000-000000000002'::uuid,'f00d0000-0000-0000-0000-000000000003'::uuid)
-         and user_b_id=greatest('f00d0000-0000-0000-0000-000000000002'::uuid,'f00d0000-0000-0000-0000-000000000003'::uuid)$$,
+  select throws_like(format($f$insert into public.messages (conversation_id, sender_id, body)
+      values (%L, 'f00d0000-0000-0000-0000-000000000003', 'trying again')$f$, v_cam_conv),  -- (amended by migration 0021, as rule 1)
     '%only a verified user can send a message%', 'acceptance 21: every messages write fails for an email_verified user') into v_line; out := out || v_line || E'\n';
   execute 'reset role';
 

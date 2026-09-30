@@ -27,6 +27,9 @@ what `provider_account_reference` needs. Picking one is a product decision (§9)
    `verifications` row by `provider_reference`, and calls
    `private.apply_verification_result(...)` (§4) to write `verifications.state` and
    `profiles.verification_status` atomically. Returns `200` on success or safe no-op.
+   (Since migration 0021 the function calls `private.apply_checked_verification_result(...)`,
+   which adds the document birth date, see §6; the 0003 function remains only as a wrapper that
+   can no longer verify anyone.)
 
 ### Transition table
 
@@ -130,6 +133,31 @@ provider is chosen.
 
 ## 6. Age (18+)
 
+**Superseded by decision 97 (migration 0021, 30 September 2026).** The original text below
+trusted the self-declared date of birth and sent a disagreement of more than about a year to
+`needs_review`. The owner ruled instead that an 18+ result from the ID and selfie check is the
+gate to the whole app, so:
+
+- The **document's** birth date is the age source. The webhook reads the date Persona extracted
+  from the passed government ID and passes it to
+  `private.apply_checked_verification_result(p_verification_id, p_event_id, p_provider,
+  p_outcome, p_provider_account_reference, p_document_dob date)`, the age authority. 18+ means
+  whole calendar years (`dob <= today - 18 years`; a 29 February birth turns 18 on 1 March),
+  against the earlier of the UTC date and the campus-local date.
+- 18+: `passed`/`verified`, and the document date replaces the typed
+  `users_private.date_of_birth` (write-once otherwise; the RPC sets the bypass flag for that one
+  write). `verifications.document_dob_differed` records only whether the two differed.
+- Under 18: `failed`, the account is closed (`closed_age`, `id_failed`), and the Persona account
+  reference is denylisted with `reason under_18` until the 18th birthday (`expires_on`).
+- A `passed` with no usable date: a neutral `failed` (retryable within the three attempts).
+  There is no tolerance any more and no mismatch review.
+- `complete_onboarding()` now also requires a verified adult (checked last), and every read and
+  write between people requires both sides to be verified adults
+  (`private.is_verified_adult`). See `docs/decisions.md` decision 97 and
+  `docs/age-gate-contract.md`.
+
+<details><summary>Original §6 (superseded)</summary>
+
 Today, 18+ is enforced entirely by `dob_write_once` + `complete_onboarding()`'s age check
 against **self-declared** `users_private.date_of_birth`. `verifications` has no DOB column, and
 the brief's "sensitive fields never influence the grid" argues against adding one.
@@ -143,11 +171,18 @@ a small tolerance (~1 year, OCR slack), do not overwrite anything — route the 
 could contradict `dob_write_once`'s write-once guarantee. Flagged as an open question (§9 Q2)
 because it is a product-risk call, not an engineering one.
 
+</details>
+
 ## 7. Threat notes
 
-- **PII minimization.** No document images, no provider DOB — keep it that way. `verifications`
-  holds only `provider`, two reference strings, state, attempt, timestamps; discard anything
-  else from the provider payload after processing, don't persist "just in case."
+- **PII minimization.** No document images. Since decision 97 (migration 0021) exactly one
+  document field is kept: the birth date, stored in `users_private.date_of_birth` (the column the
+  typed date already used, same owner-only access, write-once), and never logged or copied into
+  `verifications`, which gains only the boolean `document_dob_differed`. `verifications`
+  otherwise holds only `provider`, two reference strings, state, attempt, timestamps; discard
+  anything else from the provider payload after processing, don't persist "just in case."
+  A denylist row for an under-18 identity carries `reason under_18` and `expires_on` (the 18th
+  birthday, a date derived from the birth date); it survives the account purge, like a ban row.
   `provider_reference`/`provider_account_reference` are themselves indirect identifiers; existing
   owner-select/service-role-write RLS is sufficient.
 - **Log hygiene** — §3: no raw bodies, no secrets, structured fields only.
@@ -195,6 +230,7 @@ because it is a product-risk call, not an engineering one.
    Stripe Identity (payments-adjacent) or Veriff (heavier enterprise integration).
 2. **DOB mismatch** (§6): trust self-declared DOB always, or let provider document DOB
    override? *Default: route disagreements to manual_review, never auto-override.*
+   **Resolved by decision 97:** the document's date overrides; no mismatch review.
 3. **4th-attempt UX**: permanent block, support escalation, or cooldown-then-retry (needs a
    schema change — the cap is a column check today)? *Default: permanent block with a support
    contact path*, matching decision 8's ban-durability posture.

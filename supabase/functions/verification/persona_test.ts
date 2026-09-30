@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertThrows } from "@std/assert";
-import { makePersonaProvider, verifyPersonaSignature } from "./providers/persona.ts";
+import { extractDocumentDob, makePersonaProvider, verifyPersonaSignature } from "./providers/persona.ts";
 import type { IgnoredEvent, NormalizedResult } from "./providers/types.ts";
 
 const SECRET = "wbhsec_test_secret";
@@ -175,7 +175,13 @@ Deno.test("verifyPersonaSignature: a replayed (previously-seen) valid signature 
 
 const VERIFICATION_ID = "33333333-3333-3333-3333-333333333333";
 
-function inquiryEnvelope(eventId: string, eventName: string, inquiryAttributes: Record<string, unknown>, relationships?: Record<string, unknown>) {
+function inquiryEnvelope(
+  eventId: string,
+  eventName: string,
+  inquiryAttributes: Record<string, unknown>,
+  relationships?: Record<string, unknown>,
+  included?: unknown[],
+) {
   return JSON.stringify({
     data: {
       id: eventId,
@@ -187,10 +193,19 @@ function inquiryEnvelope(eventId: string, eventName: string, inquiryAttributes: 
             attributes: { "reference-id": VERIFICATION_ID, ...inquiryAttributes },
             relationships: relationships ?? {},
           },
+          ...(included ? { included } : {}),
         },
       },
     },
   });
+}
+
+function governmentId(status: string, birthdate?: unknown) {
+  return {
+    type: "verification/government-id",
+    id: `ver_${status}_${String(birthdate)}`,
+    attributes: birthdate === undefined ? { status } : { status, birthdate },
+  };
 }
 
 const provider = makePersonaProvider({
@@ -252,6 +267,7 @@ Deno.test("parseWebhookEvent: extracts a flat attributes.birthdate when present"
   const raw = inquiryEnvelope("evt_dob_flat", "inquiry.approved", { status: "approved", birthdate: "2001-05-17" });
   const result = provider.parseWebhookEvent(raw) as NormalizedResult;
   assertEquals(result.documentDob, "2001-05-17");
+  assertEquals(result.documentDobSource, "inquiry_attribute");
 });
 
 Deno.test("parseWebhookEvent: extracts attributes.fields.birthdate.value when the flat field is absent", () => {
@@ -261,6 +277,7 @@ Deno.test("parseWebhookEvent: extracts attributes.fields.birthdate.value when th
   });
   const result = provider.parseWebhookEvent(raw) as NormalizedResult;
   assertEquals(result.documentDob, "1999-12-01");
+  assertEquals(result.documentDobSource, "inquiry_fields");
 });
 
 Deno.test("parseWebhookEvent: documentDob is null, not thrown, when neither shape is present", () => {
@@ -284,6 +301,67 @@ Deno.test("parseWebhookEvent: providerAccountReference is null when no account r
   const raw = inquiryEnvelope("evt_no_account", "inquiry.approved", { status: "approved" });
   const result = provider.parseWebhookEvent(raw) as NormalizedResult;
   assertEquals(result.providerAccountReference, null);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Birth date from the verified government ID (decision 97)
+// ---------------------------------------------------------------------------------------------
+
+Deno.test("documentDob: a passed government-ID verification in payload.included is preferred over inquiry fields", () => {
+  const raw = inquiryEnvelope(
+    "evt_gov",
+    "inquiry.approved",
+    { status: "approved", fields: { birthdate: { value: "1999-12-01" } }, birthdate: "1998-01-01" },
+    undefined,
+    [
+      { type: "account", id: "act_1", attributes: {} },
+      governmentId("passed", "2000-04-02"),
+      { type: "verification/selfie", id: "ver_s", attributes: { status: "passed" } },
+    ],
+  );
+  const result = provider.parseWebhookEvent(raw) as NormalizedResult;
+  assertEquals(result.documentDob, "2000-04-02");
+  assertEquals(result.documentDobSource, "government_id");
+});
+
+Deno.test("documentDob: a failed or retried government-ID verification is never read", () => {
+  const raw = inquiryEnvelope("evt_gov_fail", "inquiry.approved", { status: "approved" }, undefined, [
+    governmentId("failed", "2012-01-01"),
+    governmentId("requires_retry", "2012-01-01"),
+    governmentId("passed", "2001-07-07"),
+  ]);
+  const result = provider.parseWebhookEvent(raw) as NormalizedResult;
+  assertEquals(result.documentDob, "2001-07-07");
+});
+
+Deno.test("documentDob: two passed government IDs that disagree give null with source 'conflict'", () => {
+  const raw = inquiryEnvelope(
+    "evt_gov_conflict",
+    "inquiry.approved",
+    { status: "approved", fields: { birthdate: { value: "1999-12-01" } } },
+    undefined,
+    [governmentId("passed", "2001-07-07"), governmentId("passed", "2009-07-07")],
+  );
+  const result = provider.parseWebhookEvent(raw) as NormalizedResult;
+  assertEquals(result.documentDob, null);
+  assertEquals(result.documentDobSource, "conflict");
+});
+
+Deno.test("documentDob: two passed government IDs that agree give that date", () => {
+  const out = extractDocumentDob({ attributes: {} }, [governmentId("passed", "2001-07-07"), governmentId("passed", "2001-07-07")]);
+  assertEquals(out, { value: "2001-07-07", source: "government_id" });
+});
+
+Deno.test("documentDob: a passed government ID with no birth date does not fall back to inquiry fields", () => {
+  const out = extractDocumentDob({ attributes: { fields: { birthdate: { value: "1999-12-01" } } } }, [governmentId("passed")]);
+  assertEquals(out, { value: null, source: null });
+});
+
+Deno.test("documentDob: odd shapes never throw (non-array included, non-string birthdate, junk items)", () => {
+  assertEquals(extractDocumentDob({ attributes: {} }, "nope"), { value: null, source: null });
+  assertEquals(extractDocumentDob({ attributes: {} }, [null, 3, "x", governmentId("passed", 20010707)]), { value: null, source: null });
+  assertEquals(extractDocumentDob({} as Record<string, unknown>, undefined), { value: null, source: null });
+  assertEquals(extractDocumentDob({ attributes: { fields: { birthdate: { value: 20010707 } } } }, []), { value: null, source: null });
 });
 
 Deno.test("makePersonaProvider: name is 'persona' (used as the provider column value)", () => {

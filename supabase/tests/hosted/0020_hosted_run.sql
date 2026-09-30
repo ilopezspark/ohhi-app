@@ -19,6 +19,10 @@
 --   Ben  opens a conversation with Ada; answers the other three new prompts
 --   Cal  no relationship with anyone; answers only after_class (gated)
 
+-- Amended by migration 0021 (verified_adults_only): complete_onboarding() now requires a
+-- verified adult, so the fixture helper marks the user verified before complete_onboarding()
+-- rather than after. Plan unchanged.
+
 create extension if not exists pgtap with schema public;
 
 -- =============================================================================
@@ -150,12 +154,13 @@ begin
   update public.user_photos set moderation_state = 'ok' where id = v_photo;
 
   perform pg_temp._as20(p_uid, $q$select public.set_my_tags(array(select id from public.tags where campus_id is null and label in ('coffee', 'hiking', 'chess') order by label))$q$);
-  perform pg_temp._as20(p_uid, 'select public.complete_onboarding()');
-  perform pg_temp._as20(p_uid, $q$select public.set_my_tier('on_campus')$q$);
-
+  -- (amended by migration 0021: complete_onboarding() now requires a verified adult, so the
+  -- fixture is marked verified before it rather than after)
   perform set_config('app.bypass_profiles_guard', 'on', true);
   update public.profiles set verification_status = 'verified' where id = p_uid;
   perform set_config('app.bypass_profiles_guard', 'off', true);
+  perform pg_temp._as20(p_uid, 'select public.complete_onboarding()');
+  perform pg_temp._as20(p_uid, $q$select public.set_my_tier('on_campus')$q$);
 end $fn$;
 
 do $outer$

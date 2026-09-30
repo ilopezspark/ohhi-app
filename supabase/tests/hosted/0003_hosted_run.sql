@@ -8,6 +8,11 @@
 -- outcome. Runs on top of migration 0002's objects; builds its own
 -- fixtures rather than assuming 0002's or 0003's pgTAP file's fixtures
 -- exist.
+--
+-- Amended by migration 0021 (verified_adults_only): the two passes that verify someone
+-- (v2's first result, v3's reviewer approval) go through
+-- private.apply_checked_verification_result with an adult document date; the 0003 entry point
+-- can no longer verify. Plan count unchanged (41).
 
 create extension if not exists pgtap with schema public;
 
@@ -126,9 +131,12 @@ begin
     'start_verification_attempt is idempotent while a pending row exists (no second insert)'
   ) into v_line; out := out || v_line || E'\n';
 
-  perform private.apply_verification_result(
+  -- (amended by migration 0021: a pass now needs the verified document's birth date, which only
+  -- private.apply_checked_verification_result takes; through the 0003 entry point a pass waits
+  -- for review. Same transition, same assertions.)
+  perform private.apply_checked_verification_result(
     (select id from public.verifications where user_id = 'e0000000-0000-0000-0000-000000000002' order by attempt desc limit 1),
-    'evt-v2-1', 'persona', 'passed', 'acct-v2'
+    'evt-v2-1', 'persona', 'passed', 'acct-v2', date '1990-01-01'
   );
   select is(
     (select state from public.verifications where user_id = 'e0000000-0000-0000-0000-000000000002' order by attempt desc limit 1),
@@ -187,9 +195,10 @@ begin
     'manual_review'::public.verification_status,
     'apply_verification_result: pending -> needs_review sets profiles.verification_status = manual_review'
   ) into v_line; out := out || v_line || E'\n';
-  perform private.apply_verification_result(
+  -- (amended by migration 0021: the reviewer's pass carries the document date, as above)
+  perform private.apply_checked_verification_result(
     (select id from public.verifications where user_id = 'e0000000-0000-0000-0000-000000000003' order by attempt desc limit 1),
-    'evt-v3-2', 'persona', 'passed', 'acct-v3'
+    'evt-v3-2', 'persona', 'passed', 'acct-v3', date '1990-01-01'
   );
   select is(
     (select state from public.verifications where user_id = 'e0000000-0000-0000-0000-000000000003' order by attempt desc limit 1),

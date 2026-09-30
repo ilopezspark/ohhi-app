@@ -32,6 +32,10 @@
 --     Pur (purged at the end)
 --   residential campus: Res
 
+-- Amended by migration 0021 (verified_adults_only): complete_onboarding() now requires a
+-- verified adult, so the fixture helper marks every user verified before any onboarding call
+-- (before, the published ones were marked after). Plan unchanged.
+
 create extension if not exists pgtap with schema public;
 
 -- =============================================================================
@@ -173,14 +177,18 @@ begin
   update public.users_private set date_of_birth = '2003-01-01' where user_id = p_uid;
   update public.user_photos set moderation_state = 'ok' where id = v_photo;
 
+  -- (amended by migration 0021: complete_onboarding() now requires a verified adult, so every
+  -- fixture is marked verified before any complete_onboarding() call, the published ones here
+  -- and Ona's own later calls in section A, rather than after)
+  perform set_config('app.bypass_profiles_guard', 'on', true);
+  update public.profiles set verification_status = 'verified' where id = p_uid;
+  perform set_config('app.bypass_profiles_guard', 'off', true);
+
   if p_publish then
     perform pg_temp._as18(p_uid, format('select public.set_my_tags(%L::uuid[])',
       array[pg_temp._t18('coffee'), pg_temp._t18('hiking'), pg_temp._t18('chess')]));
     perform pg_temp._as18(p_uid, 'select public.complete_onboarding()');
     perform pg_temp._as18(p_uid, $q$select public.set_my_tier('on_campus')$q$);
-    perform set_config('app.bypass_profiles_guard', 'on', true);
-    update public.profiles set verification_status = 'verified' where id = p_uid;
-    perform set_config('app.bypass_profiles_guard', 'off', true);
   end if;
 end $fn$;
 

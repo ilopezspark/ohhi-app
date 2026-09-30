@@ -41,6 +41,8 @@ export interface StartAttemptRpcResult {
 export interface ApplyResultRpcResult {
   verificationState: VerificationRowState;
   profileStatus: string;
+  /** public.user_status after the call: 'closed_age' when the document showed under 18. */
+  accountStatus: string;
 }
 
 export interface RateLimitResult {
@@ -66,18 +68,19 @@ export interface VerificationDb {
    * only writer of profiles.verification_status, and only via apply_verification_result"
    * constraint is specifically about `profiles`, not this column on `verifications`. */
   setProviderReference(verificationId: string, providerReference: string): Promise<void>;
-  /** Joined through `verifications` because the webhook handler only ever has verificationId in
-   * hand (round-tripped via the provider's reference-id), never userId directly. */
-  getSelfDeclaredDobForVerification(verificationId: string): Promise<string | null>;
-  /** private.apply_verification_result (migration 0003). Throws on the RPC's own exceptions;
-   * index.ts checks the message against transitions.ts's NOT_OPEN_ERROR_PATTERN to distinguish a
-   * refused transition (200 + warning log) from a genuine failure (500). */
+  /** private.apply_checked_verification_result (migration 0021). Throws on the RPC's own
+   * exceptions; index.ts checks the message against transitions.ts's NOT_OPEN_ERROR_PATTERN to
+   * distinguish a refused transition (200 + warning log) from a genuine failure (500). The RPC is
+   * the age authority: given a document date it recomputes 18+ itself, and on under 18 it closes
+   * the account (closed_age) in the same transaction. */
   callApplyVerificationResult(input: {
     verificationId: string;
     eventId: string;
     provider: string;
     outcome: VerificationRowState; // 'passed' | 'failed' | 'needs_review'; never 'pending' here
     providerAccountReference: string | null;
+    /** A validated 'YYYY-MM-DD' from age.ts, or null. Never an unvalidated provider value. */
+    documentDob: string | null;
   }): Promise<ApplyResultRpcResult>;
 }
 
@@ -188,32 +191,26 @@ export function makePostgresVerificationDb(): VerificationDb {
       );
     },
 
-    async getSelfDeclaredDobForVerification(verificationId) {
-      const rows = await asServiceRole<{ date_of_birth: string | null }[]>((tx) =>
-        tx`
-          select up.date_of_birth
-            from public.users_private up
-            join public.verifications v on v.user_id = up.user_id
-           where v.id = ${verificationId}::uuid
-        `
-      );
-      return rows.length === 0 ? null : rows[0].date_of_birth;
-    },
-
     async callApplyVerificationResult(input) {
-      const rows = await asServiceRole<{ verification_state: VerificationRowState; profile_status: string }[]>((tx) =>
+      const rows = await asServiceRole<
+        { verification_state: VerificationRowState; profile_status: string; account_status: string }[]
+      >((tx) =>
         tx`
-          select * from private.apply_verification_result(
-            ${input.verificationId}::uuid,
-            ${input.eventId}::text,
-            ${input.provider}::text,
-            ${input.outcome}::public.verification_attempt_state,
-            ${input.providerAccountReference}::text
-          )
+          select verification_state::text as verification_state,
+                 profile_status::text     as profile_status,
+                 account_status::text     as account_status
+            from private.apply_checked_verification_result(
+              ${input.verificationId}::uuid,
+              ${input.eventId}::text,
+              ${input.provider}::text,
+              ${input.outcome}::public.verification_attempt_state,
+              ${input.providerAccountReference}::text,
+              ${input.documentDob}::date
+            )
         `
       );
       const r = rows[0];
-      return { verificationState: r.verification_state, profileStatus: r.profile_status };
+      return { verificationState: r.verification_state, profileStatus: r.profile_status, accountStatus: r.account_status };
     },
   };
 }

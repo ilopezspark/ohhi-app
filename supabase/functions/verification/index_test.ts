@@ -26,7 +26,6 @@ interface FakeDbOptions {
   lastAttempt?: number | null;
   rateLimit?: RateLimitResult;
   startResult?: StartAttemptRpcResult | Error;
-  selfDeclaredDob?: string | null;
   applyResult?: ApplyResultRpcResult | Error;
 }
 
@@ -34,7 +33,7 @@ interface FakeDbHandle {
   db: VerificationDb;
   calls: {
     setProviderReferenceArgs: Array<{ verificationId: string; providerReference: string }>;
-    applyResultArgs: Array<{ outcome: string; verificationId: string }>;
+    applyResultArgs: Array<{ outcome: string; verificationId: string; documentDob?: string | null }>;
   };
 }
 
@@ -61,13 +60,10 @@ function makeFakeDb(opts: FakeDbOptions): FakeDbHandle {
     async setProviderReference(verificationId, providerReference) {
       calls.setProviderReferenceArgs.push({ verificationId, providerReference });
     },
-    async getSelfDeclaredDobForVerification() {
-      return opts.selfDeclaredDob ?? null;
-    },
     async callApplyVerificationResult(input) {
-      calls.applyResultArgs.push({ outcome: input.outcome, verificationId: input.verificationId });
+      calls.applyResultArgs.push({ outcome: input.outcome, verificationId: input.verificationId, documentDob: input.documentDob });
       if (opts.applyResult instanceof Error) throw opts.applyResult;
-      return opts.applyResult ?? { verificationState: "passed", profileStatus: "verified" };
+      return opts.applyResult ?? { verificationState: "passed", profileStatus: "verified", accountStatus: "onboarding" };
     },
   };
 
@@ -123,6 +119,9 @@ function makeFakeResolveCallerId(userId: string | null): (req: Request) => Promi
   };
 }
 
+// A fixed clock for every age decision in this file (decision 97).
+const NOW = new Date("2026-09-30T12:00:00Z");
+
 function baseDeps(overrides: Partial<Deps> = {}): { deps: Deps; logs: Array<{ level: string; event: string; fields: Record<string, unknown> }> } {
   const logs: Array<{ level: string; event: string; fields: Record<string, unknown> }> = [];
   const { db } = makeFakeDb({});
@@ -134,7 +133,7 @@ function baseDeps(overrides: Partial<Deps> = {}): { deps: Deps; logs: Array<{ le
     webhookSecret: "secret",
     rateLimitPerHour: 5,
     webhookToleranceSeconds: 300,
-    dobMismatchToleranceDays: 366,
+    now: () => NOW,
     log: silentLogger(logs),
     ...overrides,
   };
@@ -359,16 +358,17 @@ Deno.test("/webhook: an ignored event type returns 200 without calling apply_ver
   assertEquals(calls.applyResultArgs.length, 0);
 });
 
-Deno.test("/webhook: an approved event applies and returns 200", async () => {
+Deno.test("/webhook: an approved event with an adult document date applies 'passed' with that date and returns 200", async () => {
   const normalized: NormalizedResult = {
     eventId: "evt_approved",
     eventName: "inquiry.approved",
     verificationId: "verif-1",
     outcome: "passed",
     providerAccountReference: "acc_1",
-    documentDob: null,
+    documentDob: "1990-01-01",
+    documentDobSource: "government_id",
   };
-  const { db, calls } = makeFakeDb({ applyResult: { verificationState: "passed", profileStatus: "verified" } });
+  const { db, calls } = makeFakeDb({ applyResult: { verificationState: "passed", profileStatus: "verified", accountStatus: "onboarding" } });
   const { provider } = makeFakeProvider({ parsedEvent: normalized });
   const { deps } = baseDeps({ db, provider });
   const handler = createHandler(deps);
@@ -378,7 +378,7 @@ Deno.test("/webhook: an approved event applies and returns 200", async () => {
 
   assertEquals(res.status, 200);
   assertEquals(body, { received: true });
-  assertEquals(calls.applyResultArgs, [{ outcome: "passed", verificationId: "verif-1" }]);
+  assertEquals(calls.applyResultArgs, [{ outcome: "passed", verificationId: "verif-1", documentDob: "1990-01-01" }]);
 });
 
 Deno.test("/webhook: a refused transition (already-terminal row) is still 200, with a warning logged", async () => {
@@ -389,6 +389,7 @@ Deno.test("/webhook: a refused transition (already-terminal row) is still 200, w
     outcome: "failed",
     providerAccountReference: null,
     documentDob: null,
+    documentDobSource: null,
   };
   const { db } = makeFakeDb({
     applyResult: new Error("verification verif-1 is not open for a result (state=passed)"),
@@ -414,6 +415,7 @@ Deno.test("/webhook: a genuine apply failure is 500, not swallowed as a refusal"
     outcome: "passed",
     providerAccountReference: null,
     documentDob: null,
+    documentDobSource: null,
   };
   const { db } = makeFakeDb({ applyResult: new Error("connection reset by peer") });
   const { provider } = makeFakeProvider({ parsedEvent: normalized });
@@ -424,51 +426,6 @@ Deno.test("/webhook: a genuine apply failure is 500, not swallowed as a refusal"
   assertEquals(res.status, 500);
 });
 
-Deno.test("/webhook: a DOB mismatch beyond tolerance overrides 'passed' to 'needs_review' before calling apply (decision 26)", async () => {
-  const normalized: NormalizedResult = {
-    eventId: "evt_dob",
-    eventName: "inquiry.approved",
-    verificationId: "verif-1",
-    outcome: "passed",
-    providerAccountReference: null,
-    documentDob: "1990-01-01",
-  };
-  const { db, calls } = makeFakeDb({
-    selfDeclaredDob: "2001-06-15", // more than a year off from the document DOB
-    applyResult: { verificationState: "needs_review", profileStatus: "manual_review" },
-  });
-  const { provider } = makeFakeProvider({ parsedEvent: normalized });
-  const { deps } = baseDeps({ db, provider });
-  const handler = createHandler(deps);
-
-  const res = await handler(new Request("https://fn.local/verification/webhook", { method: "POST", body: "{}" }));
-
-  assertEquals(res.status, 200);
-  assertEquals(calls.applyResultArgs, [{ outcome: "needs_review", verificationId: "verif-1" }]);
-});
-
-Deno.test("/webhook: a DOB within tolerance does not override the outcome", async () => {
-  const normalized: NormalizedResult = {
-    eventId: "evt_dob_close",
-    eventName: "inquiry.approved",
-    verificationId: "verif-1",
-    outcome: "passed",
-    providerAccountReference: null,
-    documentDob: "2001-06-15",
-  };
-  const { db, calls } = makeFakeDb({
-    selfDeclaredDob: "2001-06-20", // 5 days off, within tolerance
-    applyResult: { verificationState: "passed", profileStatus: "verified" },
-  });
-  const { provider } = makeFakeProvider({ parsedEvent: normalized });
-  const { deps } = baseDeps({ db, provider });
-  const handler = createHandler(deps);
-
-  await handler(new Request("https://fn.local/verification/webhook", { method: "POST", body: "{}" }));
-
-  assertEquals(calls.applyResultArgs, [{ outcome: "passed", verificationId: "verif-1" }]);
-});
-
 Deno.test("/webhook: malformed payload (parseWebhookEvent throws) is 400", async () => {
   const { provider } = makeFakeProvider({ parsedEvent: new Error("persona: webhook payload missing data.id") });
   const { deps } = baseDeps({ provider });
@@ -476,4 +433,101 @@ Deno.test("/webhook: malformed payload (parseWebhookEvent throws) is 400", async
 
   const res = await handler(new Request("https://fn.local/verification/webhook", { method: "POST", body: "not json at all" }));
   assertEquals(res.status, 400);
+});
+
+// ---------------------------------------------------------------------------------------------
+// /webhook — the 18+ document check (decision 97). NOW is 2026-09-30.
+// ---------------------------------------------------------------------------------------------
+
+function approved(dob: string | null, overrides: Partial<NormalizedResult> = {}): NormalizedResult {
+  return {
+    eventId: "evt_age",
+    eventName: "inquiry.approved",
+    verificationId: "verif-age",
+    outcome: "passed",
+    providerAccountReference: "acc_age",
+    documentDob: dob,
+    documentDobSource: dob === null ? null : "government_id",
+    ...overrides,
+  };
+}
+
+async function runWebhook(parsed: NormalizedResult, applyResult?: ApplyResultRpcResult) {
+  const { db, calls } = makeFakeDb({ applyResult });
+  const { provider } = makeFakeProvider({ parsedEvent: parsed });
+  const logs: Array<{ level: string; event: string; fields: Record<string, unknown> }> = [];
+  const { deps } = baseDeps({ db, provider, log: silentLogger(logs) });
+  const res = await createHandler(deps)(new Request("https://fn.local/verification/webhook", { method: "POST", body: "{}" }));
+  return { res, calls, logs };
+}
+
+Deno.test("/webhook age: approved with a minor's document date sends 'passed' + the date, so SQL closes the account", async () => {
+  const { res, calls, logs } = await runWebhook(
+    approved("2008-10-01"), // 17 years 364 days on NOW
+    { verificationState: "failed", profileStatus: "id_failed", accountStatus: "closed_age" },
+  );
+  assertEquals(res.status, 200);
+  assertEquals(calls.applyResultArgs, [{ outcome: "passed", verificationId: "verif-age", documentDob: "2008-10-01" }]);
+  const applied = logs.find((l) => l.event === "verification_webhook_applied");
+  assertEquals(applied?.fields.newAccountStatus, "closed_age");
+});
+
+Deno.test("/webhook age: exactly 18 today is sent as a pass with the date", async () => {
+  const { calls } = await runWebhook(approved("2008-09-30"));
+  assertEquals(calls.applyResultArgs, [{ outcome: "passed", verificationId: "verif-age", documentDob: "2008-09-30" }]);
+});
+
+Deno.test("/webhook age: approved with no document date is a neutral failure, never a pass", async () => {
+  const { res, calls, logs } = await runWebhook(approved(null));
+  assertEquals(res.status, 200);
+  assertEquals(calls.applyResultArgs, [{ outcome: "failed", verificationId: "verif-age", documentDob: null }]);
+  const unusable = logs.find((l) => l.event === "verification_document_dob_unusable");
+  assertEquals(unusable?.fields.reason, "missing");
+});
+
+Deno.test("/webhook age: approved with a malformed, future or implausible date fails, and no date reaches SQL", async () => {
+  for (const [raw, reason] of [
+    ["2001-02-30", "malformed"],
+    ["01/02/2003", "malformed"],
+    ["2027-01-01", "future"],
+    ["1850-01-01", "implausible"],
+  ] as const) {
+    const { calls, logs } = await runWebhook(approved(raw));
+    assertEquals(calls.applyResultArgs, [{ outcome: "failed", verificationId: "verif-age", documentDob: null }], raw);
+    assertEquals(logs.find((l) => l.event === "verification_document_dob_unusable")?.fields.reason, reason, raw);
+  }
+});
+
+Deno.test("/webhook age: two government IDs that disagree (adapter says 'conflict') fail neutrally", async () => {
+  const { calls } = await runWebhook(approved(null, { documentDobSource: "conflict" }));
+  assertEquals(calls.applyResultArgs[0].outcome, "failed");
+});
+
+Deno.test("/webhook age: a self-entered date plays no part (no tolerance, no manual-review rerouting)", async () => {
+  // The old decision-26 path rerouted a >366-day mismatch to needs_review. There is no
+  // self-entered date lookup any more: an adult document date is a pass, whatever was typed.
+  const { calls } = await runWebhook(approved("1990-01-01"));
+  assertEquals(calls.applyResultArgs[0].outcome, "passed");
+});
+
+Deno.test("/webhook age: marked-for-review keeps needs_review and carries a usable date (a minor is closed by SQL now)", async () => {
+  const minor = await runWebhook(approved("2010-01-01", { eventName: "inquiry.marked-for-review", outcome: "needs_review" }));
+  assertEquals(minor.calls.applyResultArgs, [{ outcome: "needs_review", verificationId: "verif-age", documentDob: "2010-01-01" }]);
+  const unusable = await runWebhook(approved("garbage", { eventName: "inquiry.marked-for-review", outcome: "needs_review" }));
+  assertEquals(unusable.calls.applyResultArgs, [{ outcome: "needs_review", verificationId: "verif-age", documentDob: null }]);
+});
+
+Deno.test("/webhook age: a declined event is sent as failed with no date, and no dob log line", async () => {
+  const { calls, logs } = await runWebhook(approved("1990-01-01", { eventName: "inquiry.declined", outcome: "failed" }));
+  assertEquals(calls.applyResultArgs, [{ outcome: "failed", verificationId: "verif-age", documentDob: null }]);
+  assertEquals(logs.some((l) => l.event === "verification_document_dob_unusable"), false);
+});
+
+Deno.test("/webhook age: no log line ever carries the birth date", async () => {
+  for (const raw of ["2008-10-01", "1990-01-01", "2001-02-30", null]) {
+    const { logs } = await runWebhook(approved(raw));
+    const text = JSON.stringify(logs);
+    if (raw) assertEquals(text.includes(raw), false, raw);
+    assertEquals(/\d{4}-\d{2}-\d{2}/.test(text), false, String(raw));
+  }
 });

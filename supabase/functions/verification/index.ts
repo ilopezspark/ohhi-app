@@ -1,6 +1,8 @@
 // Verification edge function (decision 8, decision 19's second half, handoff-0002 item 8).
 // docs/edge-verification-plan.md is the design; this implements its §1/§2 flow with the SQL
-// objects from supabase/migrations/20260918000003_edge_support.sql.
+// objects from supabase/migrations/20260918000003_edge_support.sql, and the 18+ document check
+// (decision 97) with private.apply_checked_verification_result from
+// supabase/migrations/20260918000021_verified_adults_only.sql.
 //
 // Two routes, one function: POST /verification/start, POST /verification/webhook. `verify_jwt`
 // is a per-*function*, not per-route, setting in supabase/config.toml — and /webhook must be
@@ -18,12 +20,14 @@ import { callerUid } from "../_shared/supabase.ts";
 import { makePostgresVerificationDb, type VerificationDb } from "./db.ts";
 import { makePersonaProvider } from "./providers/persona.ts";
 import type { VerificationProvider } from "./providers/types.ts";
+import { classifyDocumentDob, type DocumentDobDecision } from "./age.ts";
 import {
   ALREADY_VERIFIED_ERROR_PATTERN,
   ATTEMPT_CAP_ERROR_PATTERN,
   NOT_ALLOWED_ERROR_PATTERN,
   NOT_OPEN_ERROR_PATTERN,
   planStartAttempt,
+  type VerificationOutcome,
 } from "./transitions.ts";
 
 export type LogLevel = "info" | "warn" | "error";
@@ -41,21 +45,45 @@ export interface Deps {
   rateLimitPerHour: number;
   /** Plan §3 default: ~5 minutes. */
   webhookToleranceSeconds: number;
-  /** Decision 26 default: ~1 year (OCR slack), expressed in days for plain date-diff math. */
-  dobMismatchToleranceDays: number;
+  /** The clock the age decision uses (age.ts). Production: `() => new Date()`. */
+  now: () => Date;
   log: Logger;
 }
 
-function dobsMismatch(selfDeclaredIso: string, documentIso: string, toleranceDays: number): boolean {
-  const a = Date.parse(`${selfDeclaredIso}T00:00:00Z`);
-  const b = Date.parse(`${documentIso}T00:00:00Z`);
-  if (Number.isNaN(a) || Number.isNaN(b)) {
-    // Can't compare -> never block a pass on a parse failure of our own making; let it through
-    // and rely on the denylist/manual-review paths for anything genuinely wrong.
-    return false;
+/**
+ * Decision 97 (owner ruling, 30 September 2026): the person is let in only when the verified
+ * government ID shows 18 or over. The self-entered date of birth plays no part: the 366-day
+ * tolerance decision 26 allowed is gone, and the document's date is what the SQL function stores.
+ *
+ *   provider outcome   document date (age.ts)     sent to SQL
+ *   passed             adult                      passed + date      -> verified
+ *   passed             minor                      passed + date      -> SQL closes (closed_age)
+ *   passed             missing/malformed/future/  failed, no date    -> id_failed (neutral; the
+ *                      implausible/conflict                             person may retry)
+ *   needs_review       adult or minor             needs_review + date (SQL closes a minor now)
+ *   needs_review       unusable                   needs_review, no date (a human decides; a later
+ *                                                  approval is checked again here)
+ *   failed             anything                   failed, no date
+ *
+ * SQL recomputes the age from the date it is given and is the authority; this function never
+ * sends an unvalidated provider value as a date.
+ */
+function planOutcome(
+  outcome: VerificationOutcome,
+  rawDob: string | null,
+  now: Date,
+): { outcome: VerificationOutcome; documentDob: string | null; dobDecision: DocumentDobDecision["kind"]; dobReason?: string } {
+  if (outcome === "failed") return { outcome, documentDob: null, dobDecision: "invalid", dobReason: "not_read" };
+  const decision = classifyDocumentDob(rawDob, now);
+  if (decision.kind === "invalid") {
+    return {
+      outcome: outcome === "passed" ? "failed" : outcome,
+      documentDob: null,
+      dobDecision: "invalid",
+      dobReason: decision.reason,
+    };
   }
-  const diffDays = Math.abs(a - b) / (1000 * 60 * 60 * 24);
-  return diffDays > toleranceDays;
+  return { outcome, documentDob: decision.dob, dobDecision: decision.kind };
 }
 
 function messageOf(err: unknown): string {
@@ -195,19 +223,18 @@ async function handleWebhook(req: Request, deps: Deps): Promise<Response> {
     return json({ received: true, ignored: true });
   }
 
-  let outcome = parsed.outcome;
+  const plan = planOutcome(parsed.outcome, parsed.documentDob, deps.now());
 
-  if (outcome === "passed" && parsed.documentDob) {
-    const selfDeclaredDob = await deps.db.getSelfDeclaredDobForVerification(parsed.verificationId);
-    if (selfDeclaredDob && dobsMismatch(selfDeclaredDob, parsed.documentDob, deps.dobMismatchToleranceDays)) {
-      // Decision 26: never overwrite the stored DOB, route to manual_review instead. No DOB
-      // values in the log line, just the fact of a mismatch.
-      deps.log("info", "verification_dob_mismatch_routed_to_review", {
-        verificationId: parsed.verificationId,
-        eventId: parsed.eventId,
-      });
-      outcome = "needs_review";
-    }
+  if (plan.dobDecision === "invalid" && parsed.outcome !== "failed") {
+    // Never the date itself: only that it was unusable, why, and where the adapter looked.
+    deps.log("info", "verification_document_dob_unusable", {
+      verificationId: parsed.verificationId,
+      eventId: parsed.eventId,
+      reason: plan.dobReason,
+      source: parsed.documentDobSource,
+      providerOutcome: parsed.outcome,
+      sentOutcome: plan.outcome,
+    });
   }
 
   try {
@@ -215,8 +242,9 @@ async function handleWebhook(req: Request, deps: Deps): Promise<Response> {
       verificationId: parsed.verificationId,
       eventId: parsed.eventId,
       provider: deps.provider.name,
-      outcome,
+      outcome: plan.outcome,
       providerAccountReference: parsed.providerAccountReference,
+      documentDob: plan.documentDob,
     });
 
     deps.log("info", "verification_webhook_applied", {
@@ -225,6 +253,7 @@ async function handleWebhook(req: Request, deps: Deps): Promise<Response> {
       eventName: parsed.eventName,
       newState: result.verificationState,
       newProfileStatus: result.profileStatus,
+      newAccountStatus: result.accountStatus,
     });
     return json({ received: true });
   } catch (err) {
@@ -296,7 +325,7 @@ function buildRealDeps(): Deps {
     webhookSecret: personaWebhookSecret,
     rateLimitPerHour: 5, // decision 29
     webhookToleranceSeconds: 5 * 60, // plan §3
-    dobMismatchToleranceDays: 366, // decision 26: "~1 year, OCR slack"
+    now: () => new Date(),
     log: consoleLogger(),
   };
 }

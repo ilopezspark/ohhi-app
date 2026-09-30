@@ -29,12 +29,18 @@
 // content did not yield a single confirmed end-to-end example payload during this build, only
 // per-field confirmations from separate pages.
 
-import type { IgnoredEvent, NormalizedResult, SignatureVerification, VerificationProvider } from "./types.ts";
+import type {
+  DocumentDobSource,
+  IgnoredEvent,
+  NormalizedResult,
+  SignatureVerification,
+  VerificationProvider,
+} from "./types.ts";
 import type { VerificationOutcome } from "../transitions.ts";
 
 /** inquiry.approved -> passed, inquiry.declined -> failed, inquiry.marked-for-review ->
- * needs_review (decision 26 routes DOB mismatches here too, applied by index.ts after this
- * mapping, not inside it). Every other recognized event name is an IgnoredEvent. */
+ * needs_review. The age decision (decision 97) is applied by index.ts and the SQL function after
+ * this mapping, never inside it. Every other recognized event name is an IgnoredEvent. */
 const EVENT_NAME_TO_OUTCOME: Record<string, VerificationOutcome> = {
   "inquiry.approved": "passed",
   "inquiry.declined": "failed",
@@ -124,22 +130,75 @@ export async function verifyPersonaSignature(input: {
   return { valid: false, reason: "no_matching_signature" };
 }
 
-/** // TODO(persona): confirm the exact JSON path. Tried both shapes seen across Persona's docs
- * during this build: a flat `attributes.birthdate` (seen on a Verification-object reference page)
- * and the more common Persona "fields" wrapper `attributes.fields.birthdate.value` (seen on
- * Inquiry-object pages). Returns null — "not present," handled as "skip the mismatch check," not
- * "confirmed no DOB" — if neither shape matches. */
-function extractDocumentDob(inquiryData: Record<string, unknown>): string | null {
-  const attributes = inquiryData?.attributes as Record<string, unknown> | undefined;
-  if (!attributes) return null;
+/** Persona's JSON:API type for a government ID verification object, and the only status whose
+ * extracted birth date we accept as read from a verified document. */
+const GOVERNMENT_ID_TYPE = "verification/government-id";
+const PASSED_STATUS = "passed";
 
-  if (typeof attributes.birthdate === "string") return attributes.birthdate;
+export interface ExtractedDob {
+  /** Raw value exactly as found (validated later by age.ts, never here). null: nothing usable. */
+  value: string | null;
+  source: DocumentDobSource;
+}
+
+/**
+ * Birth date from the verified government ID (decision 97: the DOCUMENT's date is the source of
+ * truth for age). Deliberately defensive: every access is optional, nothing here throws, and a
+ * value is only returned as a raw string for age.ts to validate.
+ *
+ * Preference order:
+ *   1. `payload.included[]` objects of type `verification/government-id` with
+ *      `attributes.status = 'passed'`: `attributes.birthdate`. This is the date Persona read off
+ *      the ID that passed. If two passed government-ID verifications disagree, the result is
+ *      "conflict" (null): never pick one.
+ *   2. The inquiry's `attributes.fields.birthdate.value`, which Persona fills from the verified
+ *      ID in a Government ID + Selfie template.
+ *   3. The inquiry's flat `attributes.birthdate` (older API versions).
+ * 2 and 3 are only used when no passed government-ID object is in the payload at all.
+ *
+ * // TODO(persona): confirm against one real sandbox `inquiry.approved` payload: (a) that the
+ * webhook's `payload.included` carries the verification objects (the API returns them for
+ * `GET /inquiries/{id}?include=verifications`; whether the webhook body includes them depends on
+ * the webhook's settings), (b) the `verification/government-id` type string and its
+ * `attributes.birthdate` key, and (c) that the template does not let the person type the
+ * `birthdate` field themselves (if it does, fallbacks 2 and 3 must be removed and only 1 kept).
+ * Until confirmed, a payload with none of the three shapes fails verification with a neutral
+ * reason (the person can retry), which is the safe direction.
+ */
+export function extractDocumentDob(inquiryData: Record<string, unknown>, included: unknown): ExtractedDob {
+  if (Array.isArray(included)) {
+    const dates = new Set<string>();
+    let sawGovernmentId = false;
+    for (const item of included) {
+      if (!item || typeof item !== "object") continue;
+      const obj = item as Record<string, unknown>;
+      if (obj.type !== GOVERNMENT_ID_TYPE) continue;
+      const attrs = obj.attributes as Record<string, unknown> | undefined;
+      if (!attrs || attrs.status !== PASSED_STATUS) continue;
+      sawGovernmentId = true;
+      if (typeof attrs.birthdate === "string" && attrs.birthdate.length > 0) dates.add(attrs.birthdate);
+    }
+    if (dates.size > 1) return { value: null, source: "conflict" };
+    if (dates.size === 1) return { value: [...dates][0], source: "government_id" };
+    // A passed government ID with no birth date on it: do not fall back to inquiry fields that
+    // may have come from somewhere else.
+    if (sawGovernmentId) return { value: null, source: null };
+  }
+
+  const attributes = inquiryData?.attributes as Record<string, unknown> | undefined;
+  if (!attributes) return { value: null, source: null };
 
   const fields = attributes.fields as Record<string, unknown> | undefined;
   const birthdateField = fields?.birthdate as Record<string, unknown> | undefined;
-  if (birthdateField && typeof birthdateField.value === "string") return birthdateField.value;
+  if (birthdateField && typeof birthdateField.value === "string" && birthdateField.value.length > 0) {
+    return { value: birthdateField.value, source: "inquiry_fields" };
+  }
 
-  return null;
+  if (typeof attributes.birthdate === "string" && attributes.birthdate.length > 0) {
+    return { value: attributes.birthdate, source: "inquiry_attribute" };
+  }
+
+  return { value: null, source: null };
 }
 
 function extractAccountReference(inquiryData: Record<string, unknown>): string | null {
@@ -267,13 +326,16 @@ export function makePersonaProvider(config: {
         throw new Error(`persona: webhook payload missing reference-id for event ${eventName}`);
       }
 
+      const dob = extractDocumentDob(inquiryData as Record<string, unknown>, data?.attributes?.payload?.included);
+
       const result: NormalizedResult = {
         eventId,
         eventName,
         verificationId,
         outcome,
         providerAccountReference: extractAccountReference(inquiryData as Record<string, unknown>),
-        documentDob: extractDocumentDob(inquiryData as Record<string, unknown>),
+        documentDob: dob.value,
+        documentDobSource: dob.source,
       };
       return result;
     },
