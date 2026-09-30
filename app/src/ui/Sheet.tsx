@@ -3,6 +3,7 @@ import { Modal, StyleSheet, View, Pressable, type StyleProp, type ViewStyle } fr
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
 import { KeyboardSpacer } from './KeyboardSpacer';
+import { footerBottomPadding, footerKeyboardInset, type BottomBarGaps } from './keyboardInset';
 
 export interface SheetProps {
   children?: ReactNode;
@@ -14,8 +15,12 @@ export interface SheetProps {
   testID?: string;
 }
 
-/** The design's `.sheet` bottom padding (on an artboard with no home indicator). */
-const SHEET_BOTTOM = spacing.xxxl + spacing.xs;
+/**
+ * The panel's bottom room, by the shared bar rule (`footerBottomPadding`):
+ * the design's `.sheet` 32 (an artboard with no home indicator), else 16
+ * above the home indicator / navigation bar; 16 above the keyboard.
+ */
+const SHEET_GAPS: BottomBarGaps = { edge: spacing.xxxl + spacing.xs, aboveInset: spacing.lgXl, aboveKeyboard: spacing.lgXl };
 
 /**
  * `.dim` + `.sheet` + `.handle` — the bottom-sheet chrome from `Grid-Verify.html`
@@ -32,7 +37,7 @@ const SHEET_BOTTOM = spacing.xxxl + spacing.xs;
  */
 export function Sheet({ children, onDismiss, showHandle = true, style, testID }: SheetProps) {
   const bottomInset = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
-  const paddingBottom = Math.max(SHEET_BOTTOM, bottomInset + spacing.lgXl);
+  const paddingBottom = footerBottomPadding(bottomInset, SHEET_GAPS);
   return (
     <View style={StyleSheet.absoluteFill} testID={testID ?? 'sheet'} pointerEvents="box-none">
       <Pressable
@@ -56,7 +61,7 @@ export function Sheet({ children, onDismiss, showHandle = true, style, testID }:
           {showHandle ? <View style={styles.handle} /> : null}
           {children}
         </View>
-        <KeyboardSpacer bottomInset={paddingBottom - spacing.lgXl} testID={testID ? `${testID}-keyboard` : 'sheet-keyboard'} />
+        <KeyboardSpacer bottomInset={footerKeyboardInset(bottomInset, SHEET_GAPS)} testID={testID ? `${testID}-keyboard` : 'sheet-keyboard'} />
       </View>
     </View>
   );

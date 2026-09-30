@@ -6,7 +6,8 @@ import Constants from 'expo-constants';
 import { deleteMyAccount } from '../../api/account';
 import { mapSupabaseError } from '../../api/errors';
 import { signOutAndReset } from '../../settings/signOut';
-import { ScreenHeader, PillButton, RowCard, SectionLabel, SettingsRow, Text, VerificationPill } from '../../ui';
+import { ScreenHeader, PillButton, RowCard, SectionLabel, SettingsRow, Text, VerificationPill, useHeaderInsets } from '../../ui';
+import { footerBottomPadding } from '../../ui/keyboardInset';
 import { ChevronRightIcon } from '../../ui/icons';
 import { colors, radii, spacing } from '../../theme/tokens';
 import { useSettingsData } from '../../me/settings/useSettingsData';
@@ -24,6 +25,7 @@ import { INFO_LINKS } from '../../me/links';
  */
 export default function SettingsScreen() {
   const queryClient = useQueryClient();
+  const bottomInset = useHeaderInsets().bottom;
   const {
     meData,
     campus,
@@ -75,7 +77,11 @@ export default function SettingsScreen() {
   return (
     <View style={styles.safe} testID="settings-screen">
       <ScreenHeader title="settings" titleSize={28} onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        // log out / delete and the footer lines end clear of the home
+        // indicator / navigation bar (the shared bar rule).
+        contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.huge }) }]}
+      >
         <View style={styles.section}>
           <SectionLabel label="account" />
           <RowCard style={styles.cardPadding}>
@@ -270,7 +276,7 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.paper },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.xl, gap: spacing.xl },
   section: { gap: spacing.smMd },
   cardPadding: { paddingHorizontal: spacing.lgXl },
   footerActions: { gap: spacing.mdLg, alignItems: 'center', marginTop: spacing.smMd },

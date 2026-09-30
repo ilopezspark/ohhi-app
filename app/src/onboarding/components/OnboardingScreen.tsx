@@ -27,6 +27,12 @@ export interface OnboardingScreenProps {
  * the focused field is scrolled above the keyboard, every field stays
  * reachable, and the footer rides on the keyboard, on both platforms
  * (edge-to-edge Android no longer resizes the window for the keyboard).
+ *
+ * Bottom: the artboards have no home indicator, so their 28 (built as 24)
+ * is the room to the screen's edge. On a phone the footer keeps
+ * `footerBottomPadding(inset)`: 24 with no inset, else the home indicator /
+ * navigation bar plus 12; with the keyboard up, 24 above the keyboard and
+ * no inset. A screen with no footer ends its content by the same rule.
  */
 export function OnboardingScreen({ step, onBack, backTestID, children, footer, testID }: OnboardingScreenProps) {
   // The Me screen's heading padding (owner ruling): below the status bar,
@@ -60,5 +66,7 @@ const styles = StyleSheet.create({
   },
   scroll: { flex: 1 },
   scrollContent: { gap: spacing.xl, paddingTop: spacing.xxl, paddingBottom: spacing.xl },
-  footer: { gap: spacing.xs, paddingBottom: spacing.xxl },
+  // No bottom padding here: the footer owns it (`KeyboardFooter`,
+  // `footerBottomPadding`), the design's 24 or the inset plus 12.
+  footer: { gap: spacing.xs },
 });

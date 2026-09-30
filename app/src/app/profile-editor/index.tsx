@@ -9,6 +9,7 @@ import { Text, useHeaderInsets } from '../../ui';
 import { displayName } from '../../ui/displayName';
 import { colors, spacing } from '../../theme/tokens';
 import { HEADER_TOP_GAP } from '../../ui/screenInsets';
+import { footerBottomPadding } from '../../ui/keyboardInset';
 
 type EditorTab = 'edit' | 'preview';
 
@@ -167,11 +168,18 @@ export default function ProfileEditorScreen() {
       ) : null}
 
       {tab === 'edit' ? (
-        <ScrollView contentContainerStyle={styles.scroll} testID="profile-editor-edit-scroll">
+        <ScrollView
+          // The end clears the home indicator / navigation bar (the shared bar rule).
+          contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(insets.bottom, { edge: spacing.huge }) }]}
+          testID="profile-editor-edit-scroll"
+        >
           <EditSections />
         </ScrollView>
       ) : (
-        <View style={styles.previewWrap} testID="profile-editor-preview-wrap">
+        <View
+          style={[styles.previewWrap, { paddingBottom: footerBottomPadding(insets.bottom, { edge: spacing.lgXl }) }]}
+          testID="profile-editor-preview-wrap"
+        >
           <PreviewCard />
         </View>
       )}
@@ -225,6 +233,6 @@ const styles = StyleSheet.create({
   tabUnderline: { height: 2, width: '100%', backgroundColor: 'transparent' },
   tabUnderlineActive: { backgroundColor: colors.ink },
   doneError: { paddingHorizontal: spacing.lgXl, paddingTop: spacing.smMd },
-  scroll: { padding: spacing.lgXl, paddingBottom: spacing.huge },
+  scroll: { padding: spacing.lgXl },
   previewWrap: { flex: 1, padding: spacing.lgXl },
 });

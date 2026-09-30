@@ -31,6 +31,8 @@ import { queryKeys } from '../../me/queryKeys';
 import { BackIcon, Button, CheckIcon, DragIcon, PencilIcon, PlusIcon, Sheet, Text, XIcon } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 import { HEADER_TOP_GAP } from '../../ui/screenInsets';
+import { footerBottomPadding } from '../../ui/keyboardInset';
+import { useHeaderInsets } from '../../ui/useHeaderInsets';
 
 const GRID_COLUMNS = 2;
 const GRID_GAP = spacing.smMd;
@@ -247,6 +249,7 @@ export default function EditPhotosScreen() {
     }
   }
 
+  const bottomInset = useHeaderInsets().bottom;
   const activePhoto = actionSheetIndex !== null ? photos[actionSheetIndex] : null;
   const canAdd = isLoaded && photos.length < MAX_PHOTOS;
 
@@ -276,7 +279,10 @@ export default function EditPhotosScreen() {
           </Pressable>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView
+          // The end clears the home indicator / navigation bar (the shared bar rule).
+          contentContainerStyle={[styles.scroll, { paddingBottom: footerBottomPadding(bottomInset, { edge: spacing.xxl }) }]}
+        >
           <Text variant="bodyMedium" color={colors.inkSoft} style={styles.intro}>
             hold and drag to reorder. the first one is your tile on the grid.
           </Text>
@@ -608,7 +614,7 @@ const styles = StyleSheet.create({
   },
   headerBtn: { minWidth: 44, minHeight: 44, alignItems: 'flex-start', justifyContent: 'center' },
   headerBtnRight: { minWidth: 44, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
-  scroll: { paddingHorizontal: spacing.lgXl, paddingBottom: spacing.xxl },
+  scroll: { paddingHorizontal: spacing.lgXl },
   intro: { lineHeight: 19, marginBottom: spacing.lgXl },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GRID_GAP },
   tile: {

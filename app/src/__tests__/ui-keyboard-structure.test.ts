@@ -132,3 +132,62 @@ describe('every screen with a text field handles the keyboard', () => {
     expect(uses.test(code(rel))).toBe(true);
   });
 });
+
+/**
+ * Bottom bars keep the home indicator / navigation bar inset by one rule,
+ * `footerBottomPadding` (`ui/keyboardInset.ts`), and hand `KeyboardSpacer`
+ * the matching `footerKeyboardInset`, so a bar is never under the navigation
+ * bar and never double-inset over the keyboard.
+ */
+describe('bottom bars keep the inset by the shared rule', () => {
+  /**
+   * Bars with their own, verified arithmetic that already is the rule:
+   * the chat composers keep exactly the inset under a composer that pads
+   * itself; the profile's action bar is the inset plus 12; the album
+   * editor's spacer ends a list on the keyboard (no bar, inset 0); the
+   * message menu only keeps a floating menu off the inset (no bar).
+   */
+  const OWN_ARITHMETIC = [
+    'chat/MessageMenu.tsx',
+    'app/chat/[id].tsx',
+    'app/chat/[id]/media/[messageId].tsx',
+    'app/settings/albums/[id]/edit.tsx',
+    'profile/view/ProfileView.tsx',
+  ];
+
+  const USES_RULE = /\bfooter(BottomPadding|KeyboardInset)\(/;
+
+  it.each(files.filter((rel) => /<(KeyboardSpacer|KeyboardFooter)\b/.test(code(rel))))(
+    '%s, a bar riding the keyboard, uses the rule',
+    (rel) => {
+      expect({ file: rel, usesRule: USES_RULE.test(code(rel)) || OWN_ARITHMETIC.includes(rel) }).toEqual({
+        file: rel,
+        usesRule: true,
+      });
+    }
+  );
+
+  it.each([
+    'ui/KeyboardScrollView.tsx',
+    'ui/Sheet.tsx',
+    'ui/TabBar.tsx',
+    'tags/TagPicker.tsx',
+    'albums/StoryViewer.tsx',
+    'app/(auth)/welcome.tsx',
+    'app/me/settings.tsx',
+  ])('%s pads its bottom with footerBottomPadding', (rel) => {
+    expect(/\bfooterBottomPadding\(/.test(code(rel))).toBe(true);
+  });
+
+  it('no bar hand-rolls "inset + gap" outside the rule', () => {
+    const handRolled = /\.bottom\s*\+\s*(spacing\.\w+|\d+)|Math\.max\([^)]*\.bottom\b/;
+    const users = files.filter((rel) => rel !== 'ui/keyboardInset.ts' && handRolled.test(code(rel)));
+    expect(users.filter((rel) => !OWN_ARITHMETIC.includes(rel))).toEqual([]);
+  });
+
+  it('the onboarding footer adds no bottom padding of its own (the footer owns it)', () => {
+    const footerStyle = /footer:\s*\{([^}]*)\}/.exec(code('onboarding/components/OnboardingScreen.tsx'));
+    expect(footerStyle).not.toBeNull();
+    expect(footerStyle![1]).not.toMatch(/padding(Bottom|Vertical)?\s*:/);
+  });
+});

@@ -2,7 +2,9 @@ import { Tabs } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { chatsTabLabel, formatBadge, hisTabLabel, refreshBadges } from '../../badges/badgeCounts';
 import { useBadgeCounts } from '../../badges/useBadgeCounts';
-import { tabBarBadgeStyle, tabBarScreenOptions, TabBarIcon } from '../../ui/TabBar';
+import { useMemo } from 'react';
+import { tabBarBadgeStyle, tabBarScreenOptionsFor, TabBarIcon } from '../../ui/TabBar';
+import { useHeaderInsets } from '../../ui/useHeaderInsets';
 import { TagsChangedNotice } from '../../notices/TagsChangedNotice';
 
 /**
@@ -32,12 +34,15 @@ export default function TabsLayout() {
   const counts = useBadgeCounts();
   const unreadChats = counts?.unreadChats ?? 0;
   const hisWaiting = counts?.hisWaiting ?? 0;
+  // The bar keeps the home indicator / navigation bar inset (`ui/TabBar.tsx`).
+  const bottomInset = useHeaderInsets().bottom;
+  const screenOptions = useMemo(() => tabBarScreenOptionsFor(bottomInset), [bottomInset]);
 
   // The one-time tags notice (migration 0018) sits over the tabs, so it
   // only ever shows to an active user and never blocks anything.
   return (
     <>
-    <Tabs screenOptions={tabBarScreenOptions} screenListeners={{ focus: () => refreshBadges(queryClient) }}>
+    <Tabs screenOptions={screenOptions} screenListeners={{ focus: () => refreshBadges(queryClient) }}>
       <Tabs.Screen
         name="grid"
         options={{

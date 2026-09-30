@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 import { Tabs } from 'expo-router';
 import { colors, hairline, layout, spacing } from '../theme/tokens';
 import { GridIcon, HisIcon, ChatIcon, PersonIcon } from './icons';
+import { footerBottomPadding } from './keyboardInset';
 
 /**
  * `expo-router`'s public surface re-exports `Tabs` but not the
@@ -15,7 +16,7 @@ type TabsScreenOptions = Exclude<ComponentProps<typeof Tabs>['screenOptions'], u
 
 /**
  * `Grid.html`/`Chat-List.html`/`Me.html`'s shared bottom tab bar, as an Expo
- * Router `<Tabs screenOptions={tabBarScreenOptions}>` object. Colours/height
+ * Router `<Tabs screenOptions={tabBarScreenOptionsFor(insets.bottom)}>` object. Colours/height
  * are extracted; the four tab routes already exist at `src/app/(tabs)/_layout.tsx`
  * (`grid`, `his`, `chats`, `settings` — the last is visually "me", see
  * `docs/design/system.md`'s screen→route map) and are not touched by this pass.
@@ -26,27 +27,46 @@ type TabsScreenOptions = Exclude<ComponentProps<typeof Tabs>['screenOptions'], u
  * `react-native-svg`) instead of the earlier `View`-based silhouette
  * approximations.
  */
-export const tabBarScreenOptions: TabsScreenOptions = {
-  headerShown: false,
-  tabBarActiveTintColor: colors.ink,
-  tabBarInactiveTintColor: colors.faint,
-  tabBarStyle: {
-    backgroundColor: colors.surfaceTabBar,
-    borderTopWidth: hairline.width,
-    borderTopColor: hairline.color,
-    height: layout.tabBarHeight + layout.tabBarPaddingBottom,
-    paddingTop: layout.tabBarPaddingTop,
-    paddingBottom: layout.tabBarPaddingBottom,
-  },
-  tabBarLabelStyle: {
-    fontFamily: 'Outfit_600SemiBold',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  tabBarItemStyle: {
-    paddingVertical: spacing.smMd,
-  },
-};
+export function tabBarScreenOptionsFor(bottomInset: number): TabsScreenOptions {
+  const paddingBottom = tabBarBottomPadding(bottomInset);
+  return {
+    headerShown: false,
+    tabBarActiveTintColor: colors.ink,
+    tabBarInactiveTintColor: colors.faint,
+    tabBarStyle: {
+      backgroundColor: colors.surfaceTabBar,
+      borderTopWidth: hairline.width,
+      borderTopColor: hairline.color,
+      height: layout.tabBarHeight + paddingBottom,
+      paddingTop: layout.tabBarPaddingTop,
+      paddingBottom,
+    },
+    tabBarLabelStyle: {
+      fontFamily: 'Outfit_600SemiBold',
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    tabBarItemStyle: {
+      paddingVertical: spacing.smMd,
+    },
+  };
+}
+
+/**
+ * The tab bar's bottom padding, by the shared bar rule
+ * (`footerBottomPadding`): the design's 26, which already stands for a home
+ * indicator, or the real inset when that is taller (Android's three-button
+ * navigation bar, 48). No extra gap above the inset: the items keep their
+ * own 8 of vertical padding, as a native tab bar sits on the home indicator.
+ * Setting `height`/`paddingBottom` here replaces React Navigation's own
+ * inset handling, so the inset has to be in them.
+ */
+export function tabBarBottomPadding(bottomInset: number): number {
+  return footerBottomPadding(bottomInset, { edge: layout.tabBarPaddingBottom, aboveInset: 0 });
+}
+
+/** The options with no inset (a phone without a home indicator or navigation bar); screens use `tabBarScreenOptionsFor`. */
+export const tabBarScreenOptions: TabsScreenOptions = tabBarScreenOptionsFor(0);
 
 /**
  * The Chats and Hi's count badges (decision 93): the brand's signal colour

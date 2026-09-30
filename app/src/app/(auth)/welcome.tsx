@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { Badge, Button, Text, useHeaderInsets } from '../../ui';
+import { footerBottomPadding } from '../../ui/keyboardInset';
 import { colors, spacing } from '../../theme/tokens';
 
 /**
@@ -32,9 +33,17 @@ export default function WelcomeScreen() {
 
   // The design's 64 top, but never closer to the status bar than the shared
   // heading padding (a tall status bar or a punch-hole camera).
-  const { top } = useHeaderInsets();
+  // At the bottom, the design's 32 under the footer line, or 12 above the
+  // home indicator / navigation bar when that is more (the shared bar rule).
+  const { top, bottom } = useHeaderInsets();
   return (
-    <View style={[styles.container, { paddingTop: Math.max(WELCOME_TOP, top) }]} testID="welcome-screen">
+    <View
+      style={[
+        styles.container,
+        { paddingTop: Math.max(WELCOME_TOP, top), paddingBottom: footerBottomPadding(bottom, { edge: spacing.huge }) },
+      ]}
+      testID="welcome-screen"
+    >
       <Text variant="wordmark" style={styles.wordmark}>
         ohhi
       </Text>
@@ -85,7 +94,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.paper,
     paddingHorizontal: spacing.xxl,
-    paddingBottom: spacing.huge,
   },
   wordmark: { textAlign: 'center' },
   illustration: { position: 'relative', height: 320, marginTop: spacing.xxl },

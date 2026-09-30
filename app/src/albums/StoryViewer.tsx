@@ -19,7 +19,15 @@ import * as ScreenCapture from 'expo-screen-capture';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { Sheet, Text, useHeaderInsets } from '../ui';
 import { KeyboardSpacer } from '../ui/KeyboardSpacer';
+import { footerBottomPadding, footerKeyboardInset, type BottomBarGaps } from '../ui/keyboardInset';
 import { colors, radii, spacing } from '../theme/tokens';
+
+/**
+ * The reply bar's bottom room, by the shared bar rule: 8 over the photo's
+ * edge, the home indicator / navigation bar and the keyboard alike (it sits
+ * on a full-bleed photo, so it hugs the bottom).
+ */
+const REPLY_GAPS: BottomBarGaps = { edge: spacing.smMd, aboveInset: spacing.smMd };
 import { useStoryTimer } from './useStoryTimer';
 import { useSystemPauses } from './useSystemPauses';
 import { StoryHeader, type StoryOwner } from './StoryHeader';
@@ -646,7 +654,11 @@ export function StoryViewer({
               top of it. */}
           <View style={styles.bottom} pointerEvents="box-none">
             <View
-              style={[styles.bottomInner, { paddingBottom: insets.bottom + spacing.smMd }, !chromeVisible && styles.hidden]}
+              style={[
+                styles.bottomInner,
+                { paddingBottom: footerBottomPadding(insets.bottom, REPLY_GAPS) },
+                !chromeVisible && styles.hidden,
+              ]}
               pointerEvents={chromeVisible ? 'box-none' : 'none'}
             >
               {reply || notice ? (
@@ -671,7 +683,7 @@ export function StoryViewer({
                 />
               ) : null}
             </View>
-            <KeyboardSpacer bottomInset={insets.bottom} testID={`${p}-keyboard-spacer`} />
+            <KeyboardSpacer bottomInset={footerKeyboardInset(insets.bottom, REPLY_GAPS)} testID={`${p}-keyboard-spacer`} />
           </View>
         </View>
       </Animated.View>

@@ -13,7 +13,16 @@ import {
 import { MAX_TAGS, MIN_TAGS, type Tag } from '../api/tags';
 import { Button, ChevronDownIcon, ChevronUpIcon, SearchIcon, Text, XIcon, useHeaderInsets } from '../ui';
 import { KeyboardSpacer } from '../ui/KeyboardSpacer';
+import { footerBottomPadding, footerKeyboardInset, type BottomBarGaps } from '../ui/keyboardInset';
 import { colors, radii, spacing } from '../theme/tokens';
+
+/**
+ * The CTA bar's bottom room, by the shared bar rule (`footerBottomPadding`):
+ * its compact 12 on a phone with no inset and above the keyboard (the list
+ * keeps the room while searching), else 12 above the home indicator /
+ * navigation bar, like every other bar.
+ */
+const CTA_GAPS: BottomBarGaps = { edge: spacing.mdLg, aboveInset: spacing.mdLg };
 import {
   counterAnnouncement,
   counterText,
@@ -342,7 +351,7 @@ export function TagPicker({
           }
         />
 
-        <View style={[styles.cta, { paddingBottom: Math.max(spacing.mdLg, insets.bottom + spacing.smMd) }]}>
+        <View style={[styles.cta, { paddingBottom: footerBottomPadding(insets.bottom, CTA_GAPS) }]}>
           {error ? (
             <Text variant="helper" color={colors.danger} testID={`${testID}-error`}>
               {error}
@@ -356,8 +365,8 @@ export function TagPicker({
             disabled={belowMin || submitting}
           />
         </View>
-        {/* Lifts the CTA onto the keyboard; the CTA's own inset room goes under it. */}
-        <KeyboardSpacer bottomInset={insets.bottom} testID={`${testID}-keyboard`} />
+        {/* Lifts the CTA onto the keyboard; the CTA's own inset room goes under it (12 above the keyboard). */}
+        <KeyboardSpacer bottomInset={footerKeyboardInset(insets.bottom, CTA_GAPS)} testID={`${testID}-keyboard`} />
       </View>
 
       {suggestOpen ? (
