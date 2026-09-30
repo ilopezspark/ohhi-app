@@ -1133,9 +1133,24 @@ export default function ChatThreadScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyBox}>
-            <Text variant="body" color={colors.muted} style={styles.empty} testID="thread-empty">
-              No messages yet.
-            </Text>
+            {conversation?.state === 'awaiting_reply' ? (
+              // The only thread that exists with no message at all is one a hi
+              // back created (a message opener writes its first message in the
+              // same breath as `start_conversation`). Both people have said hi;
+              // nudge whoever is looking to go first.
+              <>
+                <Text variant="body" color={colors.ink} style={styles.empty} testID="thread-empty">
+                  you both said hi 👋
+                </Text>
+                <Text variant="helper" color={colors.muted} style={styles.empty} testID="thread-empty-hint">
+                  don&apos;t be shy. say something.
+                </Text>
+              </>
+            ) : (
+              <Text variant="body" color={colors.muted} style={styles.empty} testID="thread-empty">
+                no messages yet.
+              </Text>
+            )}
           </View>
         }
         renderItem={({ item }) =>
