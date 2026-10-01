@@ -13,7 +13,14 @@ const config: ExpoConfig = {
   icon: './assets/images/icon.png',
   scheme: 'ohhi',
   userInterfaceStyle: 'automatic',
+  ios: {
+    // Reverse-domain id; must match the App Store Connect record once one exists.
+    bundleIdentifier: 'com.ohhi.app',
+  },
   android: {
+    // Permanent once published to Play. versionCode is managed remotely by EAS
+    // (appVersionSource "remote" in eas.json), so it is not set here.
+    package: 'com.ohhi.app',
     adaptiveIcon: {
       backgroundColor: '#F7F3EC',
       foregroundImage: './assets/images/android-icon-foreground.png',
@@ -38,7 +45,7 @@ const config: ExpoConfig = {
       {
         backgroundColor: '#F7F3EC',
         image: './assets/images/splash-icon.png',
-        imageWidth: 76,
+        imageWidth: 150,
         resizeMode: 'contain',
       },
     ],
@@ -72,7 +79,10 @@ const config: ExpoConfig = {
     // Read by src/api/client.ts. Never the service-role key — see .env.example.
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+    // Links builds to @spark-n-code/ohhi-app on EAS.
+    eas: { projectId: 'd4beb178-ca5e-4581-a796-09177c8fcccf' },
   },
+  owner: 'spark-n-code',
 };
 
 export default config;
