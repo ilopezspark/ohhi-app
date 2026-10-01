@@ -13,6 +13,8 @@ export interface PhotoStatePillProps {
   tone?: 'paper' | 'ink' | 'photo';
   /** Text color override (e.g. `colors.danger` for "removed"). */
   color?: string;
+  /** One line, shrinking the text to fit: for a pill on a small tile (the Me tile), where a wrap would spill past the corner. */
+  singleLine?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
@@ -23,12 +25,18 @@ export interface PhotoStatePillProps {
  * padding as the "on the grid" pill it sits next to; the words come from
  * `me/editor/photoStates.ts`.
  */
-export function PhotoStatePill({ label, tone = 'paper', color, style, testID }: PhotoStatePillProps) {
+export function PhotoStatePill({ label, tone = 'paper', color, singleLine = false, style, testID }: PhotoStatePillProps) {
   const toneStyle = tone === 'ink' ? styles.ink : tone === 'photo' ? styles.photo : styles.paper;
   const textColor = color ?? (tone === 'paper' ? colors.inkSoft : colors.onDark);
   return (
     <View style={[styles.pill, toneStyle, style]} testID={testID} pointerEvents="none">
-      <Text variant="micro" color={textColor} numberOfLines={2}>
+      <Text
+        variant="micro"
+        color={textColor}
+        numberOfLines={singleLine ? 1 : 2}
+        adjustsFontSizeToFit={singleLine}
+        minimumFontScale={singleLine ? 0.75 : undefined}
+      >
         {label}
       </Text>
     </View>

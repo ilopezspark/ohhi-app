@@ -78,6 +78,7 @@ export default function MeScreen() {
               <PhotoStatePill
                 testID={photoState === 'pending' ? 'me-photo-under-review' : 'me-photo-removed'}
                 label={photoState === 'pending' ? PHOTO_STATE_COPY.underReview : PHOTO_STATE_COPY.removed}
+                singleLine
                 style={styles.photoStatePill}
               />
             ) : null}
