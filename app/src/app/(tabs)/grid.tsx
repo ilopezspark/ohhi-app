@@ -12,7 +12,9 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { prefetchStorageImages } from '../../storage/imageCache';
+import { SIGNED_URL_STALE_MS } from '../../storage/signedUrlCache';
 import { gridForMe, type GridRow } from '../../api/grid';
 import { me as fetchMe } from '../../api/me';
 import { getMyPresence } from '../../api/presence';
@@ -177,7 +179,7 @@ export default function GridScreen() {
   }, [campusId, queryClient]);
 
   // ---------------------------------------------------------------------
-  // Photo URLs. Re-signed per fetch (60s expiry, architecture plan §7).
+  // Photo URLs. Signed through the shared cache (10-minute expiry, architecture plan §7).
   // ---------------------------------------------------------------------
   const photoPaths = useMemo(
     () => (rows ?? []).map((row) => row.photo_path).filter((path): path is string => !!path),
@@ -186,10 +188,16 @@ export default function GridScreen() {
   const photoPathsKey = useMemo(() => [...photoPaths].sort().join('|'), [photoPaths]);
   const { data: photoUrls } = useQuery({
     queryKey: ['grid_photo_urls', photoPathsKey],
-    queryFn: () => signedPhotoUrls(photoPaths),
+    queryFn: () => signedPhotoUrls(photoPaths, { variant: 'thumb' }),
     enabled: photoPaths.length > 0,
-    staleTime: 45_000,
+    staleTime: SIGNED_URL_STALE_MS,
+    placeholderData: keepPreviousData,
   });
+  // The tiles are thumbnails (docs/thumbnails.md), a few KB each: warm every
+  // one so scrolling the grid never waits on a download.
+  useEffect(() => {
+    if (photoUrls) void prefetchStorageImages(Object.values(photoUrls));
+  }, [photoUrls]);
 
   // ---------------------------------------------------------------------
   // Banners.

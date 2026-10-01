@@ -1,7 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { SIGNED_URL_STALE_MS } from '../../storage/signedUrlCache';
 import { listConversations, type ConversationListItem } from '../../api/conversations';
 import { signedPhotoUrls } from '../../api/photos';
 import { me as fetchMe } from '../../api/me';
@@ -134,9 +135,10 @@ export default function ChatsScreen() {
   const photoPathsKey = useMemo(() => [...photoPaths].sort().join('|'), [photoPaths]);
   const { data: photoUrls } = useQuery({
     queryKey: ['conversation_photo_urls', photoPathsKey],
-    queryFn: () => signedPhotoUrls(photoPaths),
+    queryFn: () => signedPhotoUrls(photoPaths, { variant: 'thumb' }),
     enabled: photoPaths.length > 0,
-    staleTime: 45_000,
+    staleTime: SIGNED_URL_STALE_MS,
+    placeholderData: keepPreviousData,
   });
 
   const openThread = useCallback((conversationId: string) => {

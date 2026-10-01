@@ -7,7 +7,7 @@
  * `…` offers `remove this video` on the video only.
  */
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { Image } from 'react-native';
+import { Image } from 'expo-image';
 
 jest.mock('expo-screen-capture', () => ({
   preventScreenCaptureAsync: jest.fn(() => Promise.resolve()),
@@ -114,7 +114,7 @@ let prefetchSpy: jest.SpyInstance;
 
 beforeEach(() => {
   mockPlayers.length = 0;
-  prefetchSpy = jest.spyOn(Image, 'prefetch').mockResolvedValue(true);
+  prefetchSpy = jest.spyOn(Image, 'loadAsync').mockResolvedValue({} as never);
   jest.useFakeTimers();
 });
 
@@ -131,7 +131,7 @@ it('a video waits out its own length, a photo the interval', () => {
 
 it('shows the poster, plays the video in chat’s player without native controls, cover-fit, not looping', async () => {
   const { screen } = await renderViewer();
-  expect(screen.getByTestId('album-viewer-poster-v').props.source).toEqual({ uri: 'https://example.test/v-poster.jpg?token=1' });
+  expect(screen.getByTestId('album-viewer-poster-v').props.source).toEqual([{ uri: 'https://example.test/v-poster.jpg?token=1' }]);
   const view = screen.getByTestId('album-viewer-video-v');
   expect(view.props.contentFit).toBe('cover');
   expect(view.props.nativeControls).toBe(false);
@@ -193,13 +193,13 @@ it('on a wide screen, the backdrop is the poster, blurred', async () => {
     screen.getByTestId('album-viewer').props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 900, height: 800 } } });
   });
   const backdrop = screen.getByTestId('album-viewer-backdrop-image');
-  expect(backdrop.props.source).toEqual({ uri: 'https://example.test/v-poster.jpg?token=1' });
+  expect(backdrop.props.source).toEqual([{ uri: 'https://example.test/v-poster.jpg?token=1' }]);
   expect(backdrop.props.blurRadius).toBe(40);
 });
 
 it('prefetches the next item’s still: the video’s poster', async () => {
   await renderViewer({ initialIndex: 0 });
-  expect(prefetchSpy).toHaveBeenCalledWith('https://example.test/v-poster.jpg?token=1');
+  expect(prefetchSpy).toHaveBeenCalledWith({ uri: 'https://example.test/v-poster.jpg?token=1' });
 });
 
 it('the owner’s … offers remove this video on the video and remove this photo on a photo', async () => {

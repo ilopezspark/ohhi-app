@@ -126,7 +126,7 @@ describe('EditSections photos row', () => {
       [`${USER}/b.jpg`]: 'https://signed/b',
     });
     const screen = await render(<EditSections />);
-    await fireEvent(screen.getByTestId('editor-photo-tile-1-image'), 'error');
+    await fireEvent(screen.getByTestId('editor-photo-tile-1-image'), 'error', { nativeEvent: {} });
     expect(screen.getByTestId('editor-photo-tile-1-placeholder')).toBeTruthy();
     expect(screen.getByTestId('editor-photo-tile-1-under-review')).toBeTruthy();
     expect(resignUrls).toHaveBeenCalled();

@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { SIGNED_URL_STALE_MS } from '../../storage/signedUrlCache';
 import { useFocusEffect } from 'expo-router';
 import { me as fetchMe } from '../../api/me';
 import { listMyPhotos, signedPhotoUrls } from '../../api/photos';
@@ -73,8 +74,9 @@ export function useMeData(): UseMeDataResult {
   const mainPhoto = photos.find((photo) => photo.position === 0) ?? null;
   const photoUrlsQuery = useQuery({
     queryKey: ['me_photo_urls', mainPhoto?.storage_path],
-    queryFn: () => signedPhotoUrls([mainPhoto!.storage_path]),
+    queryFn: () => signedPhotoUrls([mainPhoto!.storage_path], { variant: 'thumb' }),
     enabled: !!mainPhoto,
+    staleTime: SIGNED_URL_STALE_MS,
   });
   const photoUrl = mainPhoto ? photoUrlsQuery.data?.[mainPhoto.storage_path] : undefined;
   const tint = userId ? tintForPhoto(userId, 0) : colors.avatarTints[0];

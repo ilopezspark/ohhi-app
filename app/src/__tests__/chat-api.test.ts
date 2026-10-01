@@ -85,6 +85,13 @@ jest.mock('../photos/resize', () => ({
   resizeForUpload: jest.fn(() => Promise.resolve({ uri: 'file:///resized.jpg', width: 10, height: 10 })),
 }));
 
+// The thumbnail's pixels (docs/thumbnails.md): a re-encode of the upload.
+const mockManipulate = jest.fn((..._args: unknown[]) => Promise.resolve({ uri: 'file:///thumb.jpg', width: 480, height: 360 }));
+jest.mock('expo-image-manipulator', () => ({
+  manipulateAsync: (...args: unknown[]) => mockManipulate(...args),
+  SaveFormat: { JPEG: 'jpeg' },
+}));
+
 // Every upload reads its body through the one shared helper (native: file
 // bytes via expo-file-system; web: fetch().blob()) — its own per-platform
 // behavior is covered in `storage-read-upload.test.ts`.
@@ -101,6 +108,7 @@ jest.mock('../storage/uploadLocalFile', () => ({
   uploadLocalFile: (input: Record<string, unknown>) => mockUploadLocalFile(input),
 }));
 
+import { clearSignedUrlCache } from '../storage/signedUrlCache';
 import { getConversation, listConversations, startConversation } from '../api/conversations';
 import {
   getMessageMedia,
@@ -135,9 +143,11 @@ beforeEach(() => {
   mockQueued = {};
   mockStorageUpload.mockReset().mockResolvedValue({ error: null });
   mockStorageSignedUrls.mockReset();
+  clearSignedUrlCache();
   mockRpc.mockReset();
   mockReadUploadBody.mockClear();
   mockUploadLocalFile.mockClear();
+  mockManipulate.mockClear();
 });
 
 // ---------------------------------------------------------------------------
@@ -472,6 +482,40 @@ describe('chatMedia', () => {
     });
   });
 
+  it('uploads a kept photo’s thumbnail right after the original (480px, q0.7), upsert off', async () => {
+    mockStorageUpload.mockResolvedValue({ error: null });
+    await uploadChatMedia({ conversationId: CONV, messageId: 'mmmm', uri: 'file:///pick.jpg', width: 4000, height: 3000 });
+
+    expect(mockStorageUpload.mock.calls.map((call) => [call[0], call[1]])).toEqual([
+      ['chat-media', `${CONV}/mmmm.jpg`],
+      ['chat-media', `${CONV}/mmmm.thumb.jpg`],
+    ]);
+    expect(mockStorageUpload.mock.calls[1][3]).toEqual({ contentType: 'image/jpeg', upsert: false });
+    // From the resized upload (10x10 here: already under 480, so only re-encoded).
+    expect(mockManipulate).toHaveBeenCalledWith('file:///resized.jpg', [], { compress: 0.7, format: 'jpeg' });
+  });
+
+  it('never makes a thumbnail for view-once / view-twice media', async () => {
+    mockStorageUpload.mockResolvedValue({ error: null });
+    await uploadChatMedia({
+      conversationId: CONV,
+      messageId: 'mmmm',
+      uri: 'file:///pick.jpg',
+      width: 10,
+      height: 10,
+      bucket: CHAT_MEDIA_LIMITED_BUCKET,
+    });
+    expect(mockStorageUpload).toHaveBeenCalledTimes(1);
+    expect(mockManipulate).not.toHaveBeenCalled();
+  });
+
+  it('still returns the path when the thumbnail upload is refused', async () => {
+    mockStorageUpload.mockResolvedValueOnce({ error: null }).mockResolvedValueOnce({ error: { message: 'refused' } });
+    await expect(
+      uploadChatMedia({ conversationId: CONV, messageId: 'mmmm', uri: 'file:///pick.jpg', width: 10, height: 10 })
+    ).resolves.toBe(`${CONV}/mmmm.jpg`);
+  });
+
   it('throws generically when the write policy refuses (thread not open)', async () => {
     mockStorageUpload.mockResolvedValue({ error: { message: 'new row violates row-level security policy' } });
     await expect(
@@ -558,7 +602,89 @@ describe('chatMedia', () => {
     });
   });
 
+  it('uploads a kept video poster’s thumbnail after the poster, never one for limited', async () => {
+    mockStorageUpload.mockResolvedValue({ error: null });
+    await uploadChatMediaPoster({ conversationId: CONV, messageId: 'vid1', uri: 'file:///poster.jpg' });
+    expect(mockStorageUpload.mock.calls.map((call) => call[1])).toEqual([`${CONV}/vid1-poster.jpg`, `${CONV}/vid1-poster.thumb.jpg`]);
+
+    mockStorageUpload.mockClear();
+    await uploadChatMediaPoster({ conversationId: CONV, messageId: 'vid2', uri: 'file:///poster.jpg', bucket: CHAT_MEDIA_LIMITED_BUCKET });
+    expect(mockStorageUpload).toHaveBeenCalledTimes(1);
+  });
+
   describe('resendChatMedia — the recently-shared tray’s resend (CM-2)', () => {
+    it('copies the source thumbnail to a kept target after the original', async () => {
+      mockStorageUpload.mockResolvedValue({ error: null });
+      mockStorageSignedUrls.mockImplementation((_bucket: string, paths: string[]) =>
+        Promise.resolve({ data: paths.map((path) => ({ path, signedUrl: `https://signed/${path}` })), error: null })
+      );
+      await resendChatMedia({
+        sourcePath: `${CONV}/orig.jpg`,
+        targetConversationId: 'new-conv',
+        targetMessageId: 'new-msg',
+        kind: 'photo',
+        viewLimit: null,
+      });
+      expect(mockStorageUpload.mock.calls.map((call) => call[1])).toEqual(['new-conv/new-msg.jpg', 'new-conv/new-msg.thumb.jpg']);
+      expect(mockReadUploadBody).toHaveBeenCalledWith(`https://signed/${CONV}/orig.thumb.jpg`, undefined);
+    });
+
+    it('copies a video’s poster thumbnail, not the mp4’s', async () => {
+      mockStorageUpload.mockResolvedValue({ error: null });
+      mockStorageSignedUrls.mockImplementation((_bucket: string, paths: string[]) =>
+        Promise.resolve({ data: paths.map((path) => ({ path, signedUrl: `https://signed/${path}` })), error: null })
+      );
+      await resendChatMedia({
+        sourcePath: `${CONV}/orig.mp4`,
+        sourcePosterPath: `${CONV}/orig-poster.jpg`,
+        targetConversationId: 'new-conv',
+        targetMessageId: 'new-msg',
+        kind: 'video',
+        viewLimit: null,
+      });
+      expect(mockStorageUpload.mock.calls.map((call) => call[1])).toEqual([
+        'new-conv/new-msg.mp4',
+        'new-conv/new-msg-poster.jpg',
+        'new-conv/new-msg-poster.thumb.jpg',
+      ]);
+    });
+
+    it('never copies a thumbnail to a view-limited target', async () => {
+      mockStorageUpload.mockResolvedValue({ error: null });
+      mockStorageSignedUrls.mockImplementation((_bucket: string, paths: string[]) =>
+        Promise.resolve({ data: paths.map((path) => ({ path, signedUrl: `https://signed/${path}` })), error: null })
+      );
+      await resendChatMedia({
+        sourcePath: `${CONV}/orig.jpg`,
+        targetConversationId: 'new-conv',
+        targetMessageId: 'new-msg',
+        kind: 'photo',
+        viewLimit: 1,
+      });
+      expect(mockStorageUpload).toHaveBeenCalledTimes(1);
+      expect(mockStorageSignedUrls).not.toHaveBeenCalledWith(CHAT_MEDIA_BUCKET, [`${CONV}/orig.thumb.jpg`], 600);
+    });
+
+    it('skips silently when the source has no thumbnail', async () => {
+      mockStorageUpload.mockResolvedValue({ error: null });
+      mockStorageSignedUrls.mockImplementation((_bucket: string, paths: string[]) =>
+        Promise.resolve({
+          data: paths.filter((path) => !path.endsWith('.thumb.jpg')).map((path) => ({ path, signedUrl: `https://signed/${path}` })),
+          error: null,
+        })
+      );
+      await expect(
+        resendChatMedia({
+          sourcePath: `${CONV}/orig.jpg`,
+          targetConversationId: 'new-conv',
+          targetMessageId: 'new-msg',
+          kind: 'photo',
+          viewLimit: null,
+        })
+      ).resolves.toEqual({ mediaPath: 'new-conv/new-msg.jpg', posterPath: null });
+      expect(mockStorageUpload).toHaveBeenCalledTimes(1);
+    });
+
     beforeEach(() => {
       mockStorageSignedUrls.mockResolvedValue({
         data: [
@@ -578,7 +704,7 @@ describe('chatMedia', () => {
         kind: 'photo',
         viewLimit: null,
       });
-      expect(mockStorageSignedUrls).toHaveBeenCalledWith(CHAT_MEDIA_BUCKET, [`${CONV}/orig.jpg`], 60);
+      expect(mockStorageSignedUrls).toHaveBeenCalledWith(CHAT_MEDIA_BUCKET, [`${CONV}/orig.jpg`], 600);
     });
 
     it('uploads a keep-in-chat resend to chat-media, at the new conversation/message path', async () => {

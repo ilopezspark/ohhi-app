@@ -1,10 +1,12 @@
 import { useCallback, useMemo } from 'react';
 import { View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAlbum, listAlbumPhotos, signedAlbumPhotoUrls } from '../../../../api/albums';
 import { me as fetchMe } from '../../../../api/me';
 import type { ShareFeedItem } from '../../../../chat/shareFeed';
+import { forgetAlbumImagesIfViewer } from '../../../../albums/revoked';
+import { SIGNED_URL_STALE_MS } from '../../../../storage/signedUrlCache';
 import { dropQueries, leaveScreen, useGoneLatch, useLeaveWhenGone } from '../../../../query/gone';
 import { albumSignPaths, albumStoryItems } from '../../../../albums/albumMedia';
 import { StoryViewer } from '../../../../albums/StoryViewer';
@@ -32,8 +34,8 @@ import { useStoryReply } from '../../../../albums/useStoryReply';
  * for a non-owner viewer to an active, unrevoked share with no block either
  * way. Album photos are not moderated (migration 0013), so every photo in a
  * shared album is shown; this screen adds no filtering of its own. Signed
- * URLs last 60 seconds, so they are re-signed every 45 while the story is
- * open, and on demand when a photo fails to load.
+ * URLs come from the shared signing cache (10 minutes, `storage/signedUrlCache.ts`),
+ * and are signed again on demand when a photo fails to load.
  *
  * The reply bar shows only while this thread lets the viewer send a text
  * message (`albums/useStoryReply.ts`). The story pauses while another screen
@@ -43,7 +45,9 @@ import { useStoryReply } from '../../../../albums/useStoryReply';
  * any refetch (the share was taken back, or the owner was suspended, banned
  * or deleted their account; the same empty read either way), the album and
  * its bubble drop out of the cache and the screen goes back to the thread,
- * without a word. An album that is there but has no photos is not gone.
+ * without a word. An album that is there but has no photos is not gone. A
+ * viewer who finds the album gone also drops its images from the device
+ * (`albums/revoked.ts`).
  */
 export default function ChatSharedAlbumScreen() {
   const params = useLocalSearchParams<{ id: string; albumId: string; photo?: string }>();
@@ -79,6 +83,7 @@ export default function ChatSharedAlbumScreen() {
   useLeaveWhenGone(
     gone,
     () => {
+      forgetAlbumImagesIfViewer(queryClient, albumId);
       dropQueries(queryClient, ['chat-shared-album', albumId]);
       dropQueries(queryClient, ['chat-shared-album-photos', albumId]);
       queryClient.setQueriesData<ShareFeedItem[]>({ queryKey: ['chat-share-feed', conversationId] }, (current) =>
@@ -97,13 +102,12 @@ export default function ChatSharedAlbumScreen() {
   const {
     data: photoUrls,
     isPending: urlsPending,
-    refetch: refetchUrls,
   } = useQuery({
     queryKey: ['chat-shared-album-urls', pathsKey],
     queryFn: () => signedAlbumPhotoUrls(paths),
     enabled: paths.length > 0 && !gone,
-    staleTime: 45_000,
-    refetchInterval: 45_000,
+    staleTime: SIGNED_URL_STALE_MS,
+    placeholderData: keepPreviousData,
   });
 
   const storyPhotos = useMemo(() => albumStoryItems(photos ?? [], photoUrls), [photos, photoUrls]);
@@ -114,7 +118,15 @@ export default function ChatSharedAlbumScreen() {
   const reply = useStoryReply({ conversationId, ownerId, viewerId: meId, enabled: !gone && !!album });
 
   const close = useCallback(() => leaveScreen(fallback), [fallback]);
-  const retry = useCallback(() => refetchUrls(), [refetchUrls]);
+  // The story's one-shot re-sign: only the failed item's paths are signed again.
+  const retry = useCallback(
+    async (photoId: string) => {
+      const row = (photos ?? []).find((p) => p.id === photoId);
+      const urls = await signedAlbumPhotoUrls(paths, { force: row ? albumSignPaths([row]) : paths });
+      queryClient.setQueryData(['chat-shared-album-urls', pathsKey], urls);
+    },
+    [photos, paths, pathsKey, queryClient]
+  );
   const openOwner = useCallback(() => {
     if (ownerId) router.push(`/profile/${ownerId}` as never);
   }, [ownerId]);

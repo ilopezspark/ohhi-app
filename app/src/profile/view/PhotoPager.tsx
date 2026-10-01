@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image, Pressable, StyleSheet, View, type AccessibilityActionEvent } from 'react-native';
+import { Pressable, StyleSheet, View, type AccessibilityActionEvent } from 'react-native';
 import { PhotoStatePill } from '../../photos/PhotoStatePill';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { tintForPhoto } from '../../photos/tint';
@@ -7,6 +7,7 @@ import { BackIcon, ChevronRightIcon } from '../../ui';
 import { colors, radii, spacing } from '../../theme/tokens';
 import { PHOTO_REPLY_A11Y } from './reply';
 import { ReplyAction } from './ReplyAction';
+import { StorageImage } from '../../ui/StorageImage';
 
 export interface PhotoPagerProps {
   /** Owner's id — the tint fallback is deterministic per `{userId, position}`, same as the grid. */
@@ -108,11 +109,11 @@ export function PhotoPager({
                 testID={visible ? `${p}-photo-current` : undefined}
               >
                 {showPhoto ? (
-                  <Image
+                  <StorageImage
                     testID={`${p}-photo-image-${i}`}
-                    source={{ uri: url }}
+                    uri={url}
+                    tint={tintForPhoto(userId, i)}
                     style={styles.image}
-                    resizeMode="cover"
                     onError={() => setFailed((prev) => ({ ...prev, [path]: true }))}
                   />
                 ) : (

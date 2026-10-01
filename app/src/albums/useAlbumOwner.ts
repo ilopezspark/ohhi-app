@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { SIGNED_URL_STALE_MS } from '../storage/signedUrlCache';
 import { getAlbumOwner } from '../api/albumOwner';
 import { signedPhotoUrls } from '../api/photos';
 import type { StoryOwner } from './StoryHeader';
@@ -21,9 +22,9 @@ export function useAlbumOwner(ownerId: string | null | undefined): StoryOwner | 
   const path = card?.photoPath ?? null;
   const { data: urls } = useQuery({
     queryKey: ['album-owner-photo', path],
-    queryFn: () => signedPhotoUrls(path ? [path] : []),
+    queryFn: () => signedPhotoUrls(path ? [path] : [], { variant: 'thumb' }),
     enabled: !!path,
-    staleTime: 45_000,
+    staleTime: SIGNED_URL_STALE_MS,
   });
   if (!ownerId || !card) return null;
   return { name: card.firstName, avatarUri: path ? urls?.[path] ?? null : null };

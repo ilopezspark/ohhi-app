@@ -73,6 +73,11 @@ jest.mock('../storage/uploadLocalFile', () => ({
     return mockUploadLocalFile(input);
   },
 }));
+// The thumbnail's pixels (docs/thumbnails.md): a re-encode, never the picker's file.
+jest.mock('expo-image-manipulator', () => ({
+  manipulateAsync: jest.fn(() => Promise.resolve({ uri: 'file://thumb.jpg', width: 480, height: 270 })),
+  SaveFormat: { JPEG: 'jpeg' },
+}));
 jest.mock('../storage/localFileSize', () => ({ localFileSize: (uri: string) => mockFileSize(uri) }));
 jest.mock('../storage/readUpload', () => ({
   ...jest.requireActual('../storage/readUpload'),
@@ -143,11 +148,15 @@ describe('addAlbumVideo', () => {
     const id = stream.path.split('/')[2].replace('.mp4', '');
 
     expect(mockPoster).toHaveBeenCalledWith('file://clip.mp4');
-    expect(mockUpload).toHaveBeenCalledTimes(1);
+    // The poster, then the poster's thumbnail (never one for the mp4).
+    expect(mockUpload).toHaveBeenCalledTimes(2);
     const [bucket, posterPath, , posterOpts] = mockUpload.mock.calls[0] as [string, string, unknown, { upsert: boolean; contentType: string }];
     expect(bucket).toBe('album-photos');
     expect(posterPath).toBe(`${USER_ID}/${ALBUM_ID}/${id}-poster.jpg`);
     expect(posterOpts).toEqual({ contentType: 'image/jpeg', upsert: false });
+    const thumbPath = `${USER_ID}/${ALBUM_ID}/${id}-poster.thumb.jpg`;
+    expect(mockUpload.mock.calls[1][1]).toBe(thumbPath);
+    expect(mockUpload.mock.calls[1][3]).toEqual({ contentType: 'image/jpeg', upsert: false });
 
     expect(insertArgs()).toEqual({
       album_id: ALBUM_ID,
@@ -159,8 +168,20 @@ describe('addAlbumVideo', () => {
       media_height: 1280,
       media_poster_path: posterPath,
     });
-    // Objects first, row last: a row would lock its own name out (migration 0012).
-    expect(mockOrder.slice(0, 3)).toEqual([`storage.stream:${stream.path}`, `storage.upload:${posterPath}`, 'album_photos.insert']);
+    // Objects first, row last: a row would lock its own name out (migration 0012). mp4, poster, poster thumbnail, row.
+    expect(mockOrder.slice(0, 4)).toEqual([
+      `storage.stream:${stream.path}`,
+      `storage.upload:${posterPath}`,
+      `storage.upload:${thumbPath}`,
+      'album_photos.insert',
+    ]);
+  });
+
+  it('still sends the row when the poster thumbnail fails to upload', async () => {
+    mockTableResults.album_photos = { data: { id: 'v1' }, error: null };
+    mockUpload.mockResolvedValueOnce({ error: null }).mockResolvedValueOnce({ error: { message: 'refused' } });
+    await expect(addAlbumVideo(VIDEO)).resolves.toBeTruthy();
+    expect(mockOrder).toContain('album_photos.insert');
   });
 
   it('every video gets a fresh name', async () => {
@@ -203,7 +224,7 @@ describe('addAlbumVideo', () => {
 
     const videoPath = (mockUploadLocalFile.mock.calls[0][0] as { path: string }).path;
     const posterPath = mockUpload.mock.calls[0][1] as string;
-    expect(mockRemove).toHaveBeenCalledWith('album-photos', [videoPath, posterPath]);
+    expect(mockRemove).toHaveBeenCalledWith('album-photos', [videoPath, posterPath, posterPath.replace(/.jpg$/, '.thumb.jpg')]);
     expect(mockOrder.indexOf('album_photos.insert')).toBeLessThan(mockOrder.indexOf('storage.remove'));
   });
 
@@ -241,6 +262,7 @@ describe('removeAlbumPhoto for the video', () => {
     expect(mockRemove).toHaveBeenCalledWith('album-photos', [
       `${USER_ID}/${ALBUM_ID}/v.mp4`,
       `${USER_ID}/${ALBUM_ID}/v-poster.jpg`,
+      `${USER_ID}/${ALBUM_ID}/v-poster.thumb.jpg`,
     ]);
     expect(mockOrder.indexOf('album_photos.delete')).toBeLessThan(mockOrder.indexOf('storage.remove'));
   });

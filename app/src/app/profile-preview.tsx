@@ -51,7 +51,7 @@ export default function ProfilePreviewScreen() {
   const [handedOver] = useState<PreviewSource | null>(() => (from === 'editor' ? getPreviewDraft() : null));
   const source = handedOver ?? (saved.ready ? previewSourceOf(saved) : null);
 
-  const { photos, urls } = useMyPhotos();
+  const { photos, urls } = useMyPhotos({ variant: 'full' });
   const tier = usePresenceStore((state) => state.tier) ?? 'away';
   const hereNow = usePresenceStore((state) => state.hereNow);
   const identityQuery = useQuery({ queryKey: MY_IDENTITY_CARDS_KEY, queryFn: getMyIdentity, retry: false });

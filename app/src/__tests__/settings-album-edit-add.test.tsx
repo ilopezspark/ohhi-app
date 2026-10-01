@@ -254,9 +254,9 @@ describe('one video', () => {
     (listAlbumPhotos as jest.Mock).mockResolvedValue([photo('p1'), video('v1')]);
     const screen = await renderScreen();
     await waitFor(() =>
-      expect(screen.getByTestId('album-photo-image-v1').props.source).toEqual({
+      expect(screen.getByTestId('album-photo-image-v1').props.source).toEqual([{
         uri: `https://example.test/${ME}/${ALBUM}/v1-poster.jpg?token=1`,
-      })
+      }])
     );
     expect(screen.getByTestId('album-video-badge-v1')).toBeTruthy();
     expect(screen.getByTestId('album-video-duration-v1')).toHaveTextContent('0:12');

@@ -1,9 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { me as fetchMe } from '../../../api/me';
 import { getAlbum, listAlbumPhotos, removeAlbumPhoto, signedAlbumPhotoUrls, type AlbumPhotoRow } from '../../../api/albums';
+import { forgetAlbumImagesIfViewer } from '../../../albums/revoked';
+import { SIGNED_URL_STALE_MS } from '../../../storage/signedUrlCache';
 import { dropQueries, leaveScreen, useGoneLatch, useLeaveWhenGone, useRefetchOnFocus } from '../../../query/gone';
 import { StoryViewer, type StoryAction, type StoryPhoto } from '../../../albums/StoryViewer';
 import { useAlbumOwner } from '../../../albums/useAlbumOwner';
@@ -93,6 +95,7 @@ export default function AlbumStoryScreen() {
   useLeaveWhenGone(
     gone,
     () => {
+      forgetAlbumImagesIfViewer(queryClient, albumId);
       dropQueries(queryClient, ['album-story', albumId]);
       dropQueries(queryClient, ['album-story-photos', albumId]);
       for (const key of [['shared_with_me_albums'], ['my_albums'], ['me', 'albums'], ['me', 'albums_summary']]) {
@@ -108,13 +111,12 @@ export default function AlbumStoryScreen() {
   const {
     data: photoUrls,
     isPending: urlsPending,
-    refetch: refetchUrls,
   } = useQuery({
     queryKey: ['album-story-urls', pathsKey],
     queryFn: () => signedAlbumPhotoUrls(paths),
     enabled: paths.length > 0 && !gone,
-    staleTime: 45_000,
-    refetchInterval: 45_000,
+    staleTime: SIGNED_URL_STALE_MS,
+    placeholderData: keepPreviousData,
   });
 
   const storyPhotos = useMemo<StoryPhoto[]>(() => albumStoryItems(photos ?? [], photoUrls), [photos, photoUrls]);
@@ -144,7 +146,15 @@ export default function AlbumStoryScreen() {
 
   const openEdit = useCallback(() => router.push(`/settings/albums/${albumId}/edit` as never), [albumId]);
   const close = useCallback(() => leaveScreen('/settings/albums'), []);
-  const retry = useCallback(() => refetchUrls(), [refetchUrls]);
+  // The story's one-shot re-sign: only the failed item's paths are signed again.
+  const retry = useCallback(
+    async (photoId: string) => {
+      const row = (photos ?? []).find((p) => p.id === photoId);
+      const urls = await signedAlbumPhotoUrls(paths, { force: row ? albumSignPaths([row]) : paths });
+      queryClient.setQueryData(['album-story-urls', pathsKey], urls);
+    },
+    [photos, paths, pathsKey, queryClient]
+  );
   const openOwner = useCallback(() => {
     if (ownerId) router.push(`/profile/${ownerId}` as never);
   }, [ownerId]);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useLocalSearchParams } from 'expo-router';
 import { FALLBACK, goBack } from '../../../../routing/goBack';
@@ -17,6 +17,7 @@ import { colors, layout, radii, shadows, spacing } from '../../../../theme/token
 import { BackIcon } from '../../../../ui/icons';
 import { Text, useHeaderInsets } from '../../../../ui';
 import { KeyboardSpacer } from '../../../../ui/KeyboardSpacer';
+import { StorageImage } from '../../../../ui/StorageImage';
 
 const SCREEN_CAPTURE_KEY = 'chat-media-viewer';
 
@@ -192,10 +193,11 @@ export default function ChatMediaViewerScreen() {
           state.kind === 'video' ? (
             <ViewerVideo uri={state.url} />
           ) : (
-            <Image
-              source={{ uri: state.url }}
+            <StorageImage
+              uri={state.url}
+              uncached={limited}
               style={styles.media}
-              resizeMode="contain"
+              contentFit="contain"
               accessibilityIgnoresInvertColors
               testID="chat-media-viewer-image"
             />

@@ -1,8 +1,9 @@
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { LockIcon } from '../../ui/icons';
 import { Text } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
+import { StorageImage } from '../../ui/StorageImage';
 
 /** How soft the cover is. Enough that the first photo is a colour field, not a preview of it. */
 export const ALBUM_COVER_BLUR_RADIUS = 24;
@@ -27,7 +28,7 @@ export interface AlbumCoverProps {
  * An album's cover. The owner's ruling (2026-09-30): "albums should be the
  * first picture as the cover blurred". So the cover is the album's first
  * item by `created_at` (a video stands in with its poster), blurred
- * (`Image`'s `blurRadius`; this app has no `expo-image`), with the album's
+ * (`expo-image`'s `blurRadius`, through `ui/StorageImage`), with the album's
  * name and count over it on a soft scrim. Blurred on purpose: the cover
  * says which album it is without showing the photo itself on the list.
  *
@@ -42,10 +43,10 @@ export function AlbumCover({ coverUri, tiles, name, countLabel, testID }: AlbumC
   return (
     <View style={styles.cover} testID={testID}>
       {coverUri ? (
-        <Image
-          source={{ uri: coverUri }}
+        <StorageImage
+          uri={coverUri}
+          tint={colors.tint}
           style={styles.coverImage}
-          resizeMode="cover"
           blurRadius={ALBUM_COVER_BLUR_RADIUS}
           accessible={false}
           testID={testID ? `${testID}-image` : undefined}
@@ -54,7 +55,7 @@ export function AlbumCover({ coverUri, tiles, name, countLabel, testID }: AlbumC
         <View style={styles.grid} testID={testID ? `${testID}-empty` : undefined}>
           {cells.map((cell, i) => (
             <View key={i} style={[styles.cell, { backgroundColor: cell?.tint ?? colors.avatarTints[0] }]}>
-              {cell?.uri ? <Image source={{ uri: cell.uri }} style={styles.image} /> : null}
+              {cell?.uri ? <StorageImage uri={cell.uri} style={styles.image} /> : null}
             </View>
           ))}
         </View>

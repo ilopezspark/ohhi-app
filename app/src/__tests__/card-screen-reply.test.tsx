@@ -201,7 +201,7 @@ describe('the reply sheet', () => {
     await fireEvent.press(screen.getByTestId('profile-photo-card-1-reply'));
 
     const image = await screen.findByTestId('profile-message-sheet-quote-image');
-    expect(image.props.source).toEqual({ uri: `https://signed/${PHOTO_1}` });
+    expect(image.props.source).toEqual([{ uri: `https://signed/${PHOTO_1}` }]);
     expect(screen.getByTestId('profile-message-sheet-quote-caption').props.children).toBe("ada's photo");
   });
 

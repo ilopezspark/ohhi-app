@@ -117,7 +117,7 @@ describe('viewer — keep-in-chat media', () => {
     const { screen } = await renderScreen();
 
     await waitFor(() => expect(screen.getByTestId('chat-media-viewer-image')).toBeTruthy());
-    expect(screen.getByTestId('chat-media-viewer-image').props.source).toEqual({ uri: 'https://signed/m1.jpg' });
+    expect(screen.getByTestId('chat-media-viewer-image').props.source).toEqual([{ uri: 'https://signed/m1.jpg' }]);
     expect(openLimitedMedia).not.toHaveBeenCalled();
   });
 
@@ -153,7 +153,7 @@ describe('viewer — limited media', () => {
 
     const { screen } = await renderScreen();
     await waitFor(() => expect(screen.getByTestId('chat-media-viewer-image')).toBeTruthy());
-    expect(screen.getByTestId('chat-media-viewer-image').props.source).toEqual({ uri: 'https://signed/limited.jpg' });
+    expect(screen.getByTestId('chat-media-viewer-image').props.source).toEqual([{ uri: 'https://signed/limited.jpg' }]);
     expect(signedChatMediaUrls).not.toHaveBeenCalled();
   });
 

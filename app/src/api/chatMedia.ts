@@ -1,8 +1,11 @@
 import { supabase } from './client';
 import { mapSupabaseError } from './errors';
 import { resizeForUpload } from '../photos/resize';
+import { uploadThumbnail } from '../photos/thumb';
+import { bucketHasThumbs, thumbPathFor } from '../storage/thumbs';
 import { readUploadBody, UploadTooLargeError, type UploadBody } from '../storage/readUpload';
 import { uploadLocalFile } from '../storage/uploadLocalFile';
+import { signStoragePaths, type SignPathsOptions } from '../storage/signedUrlCache';
 import { logUploadFailure } from '../storage/uploadError';
 import { MAX_VIDEO_BYTES } from '../chat/video';
 
@@ -98,9 +101,11 @@ export async function uploadChatMedia({
 
   let uploadUri = uri;
   let contentType = kind === 'video' ? 'video/mp4' : 'image/jpeg';
+  let resizedSize: { width: number; height: number } | undefined;
   if (kind === 'photo') {
     const resized = await resizeForUpload({ uri, width, height });
     uploadUri = resized.uri;
+    resizedSize = { width: resized.width, height: resized.height };
     contentType = 'image/jpeg';
   }
 
@@ -134,6 +139,11 @@ export async function uploadChatMedia({
   if (error) {
     logUploadFailure({ what: 'chat media', step: 'upload', bucket, path }, error);
     throw mapSupabaseError(error);
+  }
+
+  // Kept media only (view-once / view-twice never has a thumbnail, decision 62).
+  if (bucketHasThumbs(bucket)) {
+    await uploadThumbnail({ bucket, path, source: { uri: uploadUri, ...resizedSize }, what: 'chat media' });
   }
 
   return path;
@@ -174,12 +184,15 @@ export async function uploadChatMediaPoster({
     throw mapSupabaseError(error);
   }
 
+  if (bucketHasThumbs(bucket)) await uploadThumbnail({ bucket, path, source: { uri }, what: 'chat media poster' });
+
   return path;
 }
 
 /**
- * Signed URLs for `messages.media_path` values, 60s, re-signed per fetch —
- * same policy as profile photos (architecture plan §7). The bucket is private
+ * Signed URLs for `messages.media_path` values, through the shared signing
+ * cache (10 minutes, `storage/signedUrlCache.ts`) — same policy as profile
+ * photos (architecture plan §7). The bucket is private
  * and the read policy re-evaluates `can_read_conversation` at sign time, so a
  * path that stops qualifying simply fails to sign. A failure is therefore
  * "render the placeholder", never an error state and never an explanation.
@@ -188,20 +201,8 @@ export async function uploadChatMediaPoster({
  * (CM-1), so this must never be called against it; the viewer reads limited
  * media exclusively through `api/mediaOpen.ts`.
  */
-export async function signedChatMediaUrls(paths: string[]): Promise<Record<string, string>> {
-  const unique = Array.from(new Set(paths.filter((path) => !!path)));
-  if (unique.length === 0) return {};
-
-  const { data, error } = await supabase.storage
-    .from(CHAT_MEDIA_BUCKET)
-    .createSignedUrls(unique, 60);
-  if (error || !data) return {};
-
-  const urls: Record<string, string> = {};
-  for (const entry of data) {
-    if (entry.signedUrl && entry.path) urls[entry.path] = entry.signedUrl;
-  }
-  return urls;
+export function signedChatMediaUrls(paths: string[], options?: SignPathsOptions): Promise<Record<string, string>> {
+  return signStoragePaths('chat-media', paths, options);
 }
 
 export interface ResendChatMediaInput {
@@ -228,7 +229,7 @@ export interface ResendChatMediaResult {
  *
  * Decision 59 (amended 28 September 2026) settled on exactly this client-side
  * shape rather than a service-role storage-to-storage `copy` op: sign the
- * source (60s, `chat-media` only, which the tray's own `view_limit is null`
+ * source (`chat-media` only, which the tray's own `view_limit is null`
  * scoping guarantees is readable), fetch the bytes, and upload them to the
  * target path/bucket. Same outcome as a server-side copy — a new object at
  * the target conversation's path, the original untouched — without adding a
@@ -246,15 +247,7 @@ export async function resendChatMedia({
   const targetBucket = viewLimit == null ? CHAT_MEDIA_BUCKET : CHAT_MEDIA_LIMITED_BUCKET;
   const paths = sourcePosterPath ? [sourcePath, sourcePosterPath] : [sourcePath];
 
-  const { data: signed, error: signError } = await supabase.storage
-    .from(CHAT_MEDIA_BUCKET)
-    .createSignedUrls(paths, 60);
-  if (signError || !signed) throw mapSupabaseError(signError ?? new Error('could not sign source media'));
-
-  const urlByPath: Record<string, string> = {};
-  for (const entry of signed) {
-    if (entry.signedUrl && entry.path) urlByPath[entry.path] = entry.signedUrl;
-  }
+  const urlByPath = await signStoragePaths('chat-media', paths);
   const mediaUrl = urlByPath[sourcePath];
   if (!mediaUrl) throw mapSupabaseError(new Error('source media no longer readable'));
 
@@ -284,5 +277,37 @@ export async function resendChatMedia({
     }
   }
 
+  // Kept target only: copy the source's thumbnail (the poster's, for a video)
+  // after the original, before the message insert. Missing = skip silently.
+  // A view-limited target never gets one (decision 62).
+  if (viewLimit == null) {
+    const sourceStill = kind === 'video' ? sourcePosterPath : sourcePath;
+    const targetStill = kind === 'video' ? targetPosterPath : targetMediaPath;
+    if (sourceStill && targetStill) await copyThumbnail(sourceStill, targetStill);
+  }
+
   return { mediaPath: targetMediaPath, posterPath: targetPosterPath };
+}
+
+/** Best effort: signs the source's thumbnail, fetches it and uploads it next to the target's original. Silent when the source has none. */
+async function copyThumbnail(sourcePath: string, targetPath: string): Promise<void> {
+  const sourceThumb = thumbPathFor(sourcePath, CHAT_MEDIA_BUCKET);
+  const targetThumb = thumbPathFor(targetPath, CHAT_MEDIA_BUCKET);
+  if (!sourceThumb || !targetThumb) return;
+  try {
+    const urls = await signStoragePaths(CHAT_MEDIA_BUCKET, [sourceThumb]);
+    const url = urls[sourceThumb];
+    if (!url) return;
+    const body = await readUploadBody(url);
+    const { error } = await supabase.storage.from(CHAT_MEDIA_BUCKET).upload(targetThumb, body, {
+      contentType: 'image/jpeg',
+      upsert: false,
+    });
+    if (error) throw error;
+  } catch (error) {
+    logUploadFailure(
+      { what: 'chat media resend thumbnail (continuing without it)', step: 'resend', bucket: CHAT_MEDIA_BUCKET, path: targetThumb, level: 'info' },
+      error
+    );
+  }
 }

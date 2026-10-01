@@ -3,10 +3,13 @@ import { mapSupabaseError } from './errors';
 import { currentUserId } from './session';
 import { resizeForUpload } from '../photos/resize';
 import { newPhotoId } from '../photos/path';
+import { uploadThumbnail } from '../photos/thumb';
 import { readUploadBody, UploadTooLargeError } from '../storage/readUpload';
+import { withThumbPaths } from '../storage/thumbs';
 import { logUploadFailure } from '../storage/uploadError';
 import { uploadLocalFile } from '../storage/uploadLocalFile';
 import { localFileSize } from '../storage/localFileSize';
+import { signStoragePaths, type SignPathsOptions } from '../storage/signedUrlCache';
 import { checkVideo, generateVideoPoster, MAX_VIDEO_BYTES } from '../chat/video';
 import { compressVideo } from '../chat/videoPrep';
 import {
@@ -211,6 +214,8 @@ export async function addAlbumPhoto({ albumId, uri, width, height }: AddAlbumPho
     logUploadFailure({ what: 'album photo', step: 'upload', bucket: 'album-photos', path }, uploadError);
     throw mapSupabaseError(uploadError);
   }
+  // Original -> thumbnail -> row (docs/thumbnails.md). Never fatal.
+  await uploadThumbnail({ bucket: 'album-photos', path, source: resized, what: 'album photo' });
 
   const { data, error } = await supabase
     .from('album_photos')
@@ -313,6 +318,8 @@ export async function addAlbumVideo({
     await removeAlbumObjects([videoPath]);
     throw mapSupabaseError(error);
   }
+  // mp4 -> poster -> poster thumbnail -> row (docs/thumbnails.md). Never fatal.
+  await uploadThumbnail({ bucket: 'album-photos', path: posterPath, source: { uri: poster }, what: 'album video poster' });
 
   const { data, error } = await supabase
     .from('album_photos')
@@ -329,7 +336,7 @@ export async function addAlbumVideo({
     .select()
     .single();
   if (error || !data) {
-    await removeAlbumObjects([videoPath, posterPath]);
+    await removeAlbumObjects(withThumbPaths('album-photos', [videoPath, posterPath]));
     if (isRefusal(error)) throw new AlbumHasVideoError();
     throw mapSupabaseError(error ?? new Error('album video insert returned nothing'));
   }
@@ -357,7 +364,7 @@ function isRefusal(error: unknown): boolean {
 export async function removeAlbumPhoto(photoId: string, storagePath: string, posterPath?: string | null): Promise<void> {
   const { error } = await supabase.from('album_photos').delete().eq('id', photoId);
   if (error) throw mapSupabaseError(error);
-  await removeAlbumObjects(posterPath ? [storagePath, posterPath] : [storagePath]);
+  await removeAlbumObjects(withThumbPaths('album-photos', [storagePath, posterPath]));
 }
 
 export interface AlbumSummary {
@@ -409,21 +416,12 @@ export async function listAlbumSummaries(albumIds: string[]): Promise<Record<str
 }
 
 /**
- * Signed URLs for `album-photos` paths, 60s TTL — same pattern as
- * `src/api/photos.ts#signedPhotoUrls`, separate bucket.
+ * Signed URLs for `album-photos` paths, through the shared signing cache
+ * (`storage/signedUrlCache.ts`): a path keeps its URL until it is nearly
+ * expired, and only missing paths are signed.
  */
-export async function signedAlbumPhotoUrls(paths: string[]): Promise<Record<string, string>> {
-  const unique = Array.from(new Set(paths.filter((path) => !!path)));
-  if (unique.length === 0) return {};
-
-  const { data, error } = await supabase.storage.from('album-photos').createSignedUrls(unique, 60);
-  if (error || !data) return {};
-
-  const urls: Record<string, string> = {};
-  for (const entry of data) {
-    if (entry.signedUrl && entry.path) urls[entry.path] = entry.signedUrl;
-  }
-  return urls;
+export function signedAlbumPhotoUrls(paths: string[], options?: SignPathsOptions): Promise<Record<string, string>> {
+  return signStoragePaths('album-photos', paths, options);
 }
 
 // -----------------------------------------------------------------------------

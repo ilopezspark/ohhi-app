@@ -57,11 +57,14 @@ export function fitMedia(size: Partial<MediaSize> | null | undefined, options: F
 }
 
 /**
- * Natural pixel size from an `Image` `onLoad` event. Native puts it on
- * `nativeEvent.source`; react-native-web passes the DOM load event, whose
+ * Natural pixel size from an `Image` `onLoad` event. expo-image puts it on
+ * `event.source`, React Native's own `Image` on `nativeEvent.source`; react-native-web passes the DOM load event, whose
  * target is the loaded `<img>`.
  */
 export function sizeFromLoadEvent(event: unknown): MediaSize | null {
+  // expo-image's load event carries the size directly: `{ source: { width, height } }`.
+  const direct = (event as { source?: Partial<MediaSize> } | null)?.source;
+  if (validSize(direct)) return { width: direct.width, height: direct.height };
   const nativeEvent = (event as { nativeEvent?: Record<string, unknown> } | null)?.nativeEvent;
   if (!nativeEvent) return null;
   const source = nativeEvent.source as Partial<MediaSize> | undefined;

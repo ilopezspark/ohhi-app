@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { colors, radii, spacing } from '../theme/tokens';
 import { XIcon } from '../ui/icons';
 import { Text } from '../ui';
 import { ReplyIcon } from './mediaIcons';
 import { replyingToLabel, type ReplyDraft } from './replies';
+import { StorageImage } from '../ui/StorageImage';
 
 interface Props {
   draft: ReplyDraft;
@@ -38,10 +39,9 @@ export function ReplyPreviewBar({ draft, thumbUrl, onCancel }: Props) {
         ) : null}
       </View>
       {draft.thumbPath && thumbUrl && !thumbFailed ? (
-        <Image
-          source={{ uri: thumbUrl }}
+        <StorageImage
+          uri={thumbUrl}
           style={styles.thumb}
-          resizeMode="cover"
           onError={() => setThumbFailed(true)}
           accessibilityIgnoresInvertColors
           testID="reply-bar-thumb"

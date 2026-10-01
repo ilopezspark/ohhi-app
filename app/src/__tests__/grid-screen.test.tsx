@@ -218,9 +218,9 @@ describe('GridScreen — tiles', () => {
     const { getByTestId, queryByTestId } = await renderScreen();
 
     await waitFor(() => expect(getByTestId('grid-tile-photo-u1')).toBeTruthy());
-    expect(getByTestId('grid-tile-photo-u1').props.source).toEqual({
+    expect(getByTestId('grid-tile-photo-u1').props.source).toEqual([{
       uri: 'https://signed.test/u1',
-    });
+    }]);
     expect(getByTestId('grid-tile-placeholder-u2')).toBeTruthy();
     expect(queryByTestId('grid-tile-placeholder-u1')).toBeNull();
   });

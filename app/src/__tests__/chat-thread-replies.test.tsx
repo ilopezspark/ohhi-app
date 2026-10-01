@@ -302,7 +302,7 @@ describe('thread — the reply bar', () => {
     await fireEvent(await screen.findByTestId('message-media-kept'), 'longPress');
     await fireEvent.press(await screen.findByTestId('message-menu-reply'));
     expect(await screen.findByTestId('reply-bar-line')).toHaveTextContent('photo');
-    await waitFor(() => expect(screen.getByTestId('reply-bar-thumb').props.source).toEqual({ uri: 'https://signed/kept.jpg' }));
+    await waitFor(() => expect(screen.getByTestId('reply-bar-thumb').props.source).toEqual([{ uri: 'https://signed/kept.jpg' }]));
 
     await fireEvent(screen.getByTestId('message-limited-press-once'), 'longPress');
     await fireEvent.press(await screen.findByTestId('message-menu-reply'));
@@ -378,7 +378,7 @@ describe('thread — quotes', () => {
     const screen = await renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByTestId('message-quote-r1-image').props.source).toEqual({ uri: 'https://signed/q1.jpg' })
+      expect(screen.getByTestId('message-quote-r1-image').props.source).toEqual([{ uri: 'https://signed/q1.jpg' }])
     );
     expect(screen.getByTestId('message-quote-r1-line')).toHaveTextContent('photo');
   });
@@ -393,7 +393,7 @@ describe('thread — quotes', () => {
     );
     const screen = await renderScreen();
     await waitFor(() =>
-      expect(screen.getByTestId('message-quote-r1-image').props.source).toEqual({ uri: 'https://signed/poster.jpg' })
+      expect(screen.getByTestId('message-quote-r1-image').props.source).toEqual([{ uri: 'https://signed/poster.jpg' }])
     );
     expect(screen.getByTestId('message-quote-r1-line')).toHaveTextContent('video');
     expect(signedChatMediaUrls).not.toHaveBeenCalledWith(expect.arrayContaining([`${CONV}/q1.mp4`]));
@@ -438,7 +438,7 @@ describe('thread — quotes', () => {
     const screen = await renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByTestId('message-quote-r1-image').props.source).toEqual({ uri: 'https://signed/p1.jpg' })
+      expect(screen.getByTestId('message-quote-r1-image').props.source).toEqual([{ uri: 'https://signed/p1.jpg' }])
     );
     expect(screen.getByTestId('message-quote-r1-line')).toHaveTextContent('album photo');
     await fireEvent.press(screen.getByTestId('message-quote-r1'));

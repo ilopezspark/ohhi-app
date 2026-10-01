@@ -64,6 +64,12 @@ jest.mock('../storage/readUpload', () => ({
   readUploadBody: (uri: string) => mockReadUploadBody(uri),
 }));
 jest.mock('../photos/tint', () => ({ tintForPhoto: jest.fn() }));
+// The thumbnail's pixels (docs/thumbnails.md): a 480px re-encode.
+const mockManipulate = jest.fn((..._args: unknown[]) => Promise.resolve({ uri: 'file://thumb.jpg', width: 480, height: 360 }));
+jest.mock('expo-image-manipulator', () => ({
+  manipulateAsync: (...args: unknown[]) => mockManipulate(...args),
+  SaveFormat: { JPEG: 'jpeg' },
+}));
 jest.mock('../photos/path', () => {
   const actual = jest.requireActual('../photos/path');
   return { ...actual, newPhotoId: jest.fn() };
@@ -102,6 +108,7 @@ beforeEach(() => {
   (tintForPhoto as jest.Mock).mockReturnValue('#abcdef');
   (newPhotoId as jest.Mock).mockReturnValue(FRESH_PHOTO_ID);
   mockUpload.mockResolvedValue({ error: null });
+  mockManipulate.mockResolvedValue({ uri: 'file://thumb.jpg', width: 480, height: 360 });
 });
 
 describe('addProfilePhoto', () => {
@@ -137,6 +144,42 @@ describe('addProfilePhoto', () => {
 
     expect(mockInsert).not.toHaveBeenCalled();
   });
+
+  it('uploads the original, then its 480px q0.7 thumbnail, then inserts the row (docs/thumbnails.md)', async () => {
+    mockInsertSingle.mockResolvedValue({ data: SAVED_ROW, error: null });
+
+    await addProfilePhoto({ position: 0, uri: 'file://original.jpg', width: 4000, height: 3000 });
+
+    const original = `${USER_ID}/${FRESH_PHOTO_ID}.jpg`;
+    const thumb = `${USER_ID}/${FRESH_PHOTO_ID}.thumb.jpg`;
+    expect(mockUpload.mock.calls.map((call) => call[0])).toEqual([original, thumb]);
+    expect(mockUpload.mock.calls[1][2]).toEqual({ contentType: 'image/jpeg', upsert: false });
+    // Made from the resized upload (1600x1200), long edge scaled to 480, JPEG 0.7.
+    expect(mockManipulate).toHaveBeenCalledWith(RESIZED.uri, [{ resize: { width: 480 } }], { compress: 0.7, format: 'jpeg' });
+    expect(mockReadUploadBody).toHaveBeenCalledWith('file://thumb.jpg');
+    expect(mockUpload.mock.invocationCallOrder[1]).toBeLessThan(mockInsert.mock.invocationCallOrder[0]);
+    // The row names the original only.
+    expect(mockInsert.mock.calls[0][0]).toMatchObject({ storage_path: original });
+  });
+
+  it('carries on to the row insert when the thumbnail upload fails', async () => {
+    mockInsertSingle.mockResolvedValue({ data: SAVED_ROW, error: null });
+    mockUpload.mockResolvedValueOnce({ error: null }).mockResolvedValueOnce({ error: { message: 'refused' } });
+
+    await expect(addProfilePhoto({ position: 0, uri: 'file://original.jpg', width: 4000, height: 3000 })).resolves.toEqual(SAVED_ROW);
+
+    expect(mockInsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries on to the row insert when the thumbnail cannot even be made', async () => {
+    mockInsertSingle.mockResolvedValue({ data: SAVED_ROW, error: null });
+    mockManipulate.mockRejectedValueOnce(new Error('decode failed'));
+
+    await expect(addProfilePhoto({ position: 0, uri: 'file://original.jpg', width: 4000, height: 3000 })).resolves.toEqual(SAVED_ROW);
+
+    expect(mockUpload).toHaveBeenCalledTimes(1);
+    expect(mockInsert).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('replaceProfilePhoto', () => {
@@ -162,7 +205,7 @@ describe('replaceProfilePhoto', () => {
     expect(mockUpdate).toHaveBeenCalledWith({ storage_path: `${USER_ID}/${FRESH_PHOTO_ID}.jpg`, tint: '#abcdef' });
     expect(mockUpdateEq).toHaveBeenCalledWith('id', 'existing-row-id');
     expect(mockUpdateEqUser).toHaveBeenCalledWith('user_id', USER_ID);
-    expect(mockRemove).toHaveBeenCalledWith([PREVIOUS_PATH]);
+    expect(mockRemove).toHaveBeenCalledWith([PREVIOUS_PATH, `${USER_ID}/old-uuid.thumb.jpg`]);
 
     const uploadOrder = mockUpload.mock.invocationCallOrder[0];
     const updateOrder = mockUpdate.mock.invocationCallOrder[0];
@@ -218,7 +261,7 @@ describe('removeProfilePhoto', () => {
     expect(mockDelete).toHaveBeenCalled();
     expect(mockDeleteEq).toHaveBeenCalledWith('id', 'row-a');
     expect(mockDeleteEqUser).toHaveBeenCalledWith('user_id', USER_ID);
-    expect(mockRemove).toHaveBeenCalledWith([`${USER_ID}/a.jpg`]);
+    expect(mockRemove).toHaveBeenCalledWith([`${USER_ID}/a.jpg`, `${USER_ID}/a.thumb.jpg`]);
     expect(mockRpc).toHaveBeenCalledWith('set_my_photo_order', { p_photo_ids: ['row-b', 'row-c'] });
 
     const deleteOrder = mockDeleteEqUser.mock.invocationCallOrder[0];
@@ -289,7 +332,7 @@ describe('uploadProfilePhoto (onboarding call site — signature kept, reimpleme
     const result = await uploadProfilePhoto({ position: 0, uri: 'file://x.jpg', width: 100, height: 100 });
 
     expect(mockUpdateEq).toHaveBeenCalledWith('id', 'existing-id');
-    expect(mockRemove).toHaveBeenCalledWith([`${USER_ID}/existing.jpg`]);
+    expect(mockRemove).toHaveBeenCalledWith([`${USER_ID}/existing.jpg`, `${USER_ID}/existing.thumb.jpg`]);
     expect(mockInsert).not.toHaveBeenCalled();
     expect(result).toEqual(SAVED_ROW);
   });

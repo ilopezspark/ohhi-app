@@ -4,6 +4,8 @@ import { supabase } from '../api/client';
 import { usePresenceStore } from '../presence/store';
 import { setAppBadge } from '../badges/appBadge';
 import { resetVerificationSession } from '../verify/session';
+import { clearSignedUrlCache } from '../storage/signedUrlCache';
+import { wipeImageCache } from '../storage/imageCache';
 
 /**
  * The sign-out sequence architecture plan §4 step 5 specifies:
@@ -12,11 +14,15 @@ import { resetVerificationSession } from '../verify/session';
  * and the post-delete-account flow (plan §7: `delete_my_account()` does
  * **not** invalidate the session, so the caller must sign out immediately
  * after it resolves, before navigating anywhere). The app icon badge is
- * cleared too: its counts belonged to the account that just left.
+ * cleared too: its counts belonged to the account that just left, and so are
+ * the signed URLs and cached images (`storage/signedUrlCache.ts`,
+ * `storage/imageCache.ts`).
  */
 export async function signOutAndReset(queryClient: QueryClient): Promise<void> {
   await supabase.auth.signOut();
   queryClient.clear();
+  clearSignedUrlCache();
+  void wipeImageCache();
   void setAppBadge(0).catch(() => {});
   usePresenceStore.getState().reset();
   resetVerificationSession();

@@ -3,7 +3,10 @@ import { supabase } from './client';
 import { mapSupabaseError } from './errors';
 import { currentUserId } from './session';
 import { resizeForUpload } from '../photos/resize';
+import { uploadThumbnail } from '../photos/thumb';
 import { readUploadBody } from '../storage/readUpload';
+import { signStoragePaths, type SignPathsOptions } from '../storage/signedUrlCache';
+import { withThumbPaths } from '../storage/thumbs';
 import { logUploadFailure } from '../storage/uploadError';
 import { tintForPhoto } from '../photos/tint';
 import { newPhotoId, profilePhotoPath, profilePhotoPathForId, type ProfilePhotoPosition } from '../photos/path';
@@ -131,6 +134,8 @@ export async function addProfilePhoto({ position, uri, width, height }: AddProfi
     logUploadFailure({ what: 'profile photo', step: 'upload', bucket: 'profile-photos', path }, uploadError);
     throw mapSupabaseError(uploadError);
   }
+  // Original -> thumbnail -> row (docs/thumbnails.md). Never fatal.
+  await uploadThumbnail({ bucket: 'profile-photos', path, source: resized, what: 'profile photo' });
 
   const { data, error } = await supabase
     .from('user_photos')
@@ -184,6 +189,7 @@ export async function replaceProfilePhoto({
     logUploadFailure({ what: 'profile photo', step: 'upload', bucket: 'profile-photos', path }, uploadError);
     throw mapSupabaseError(uploadError);
   }
+  await uploadThumbnail({ bucket: 'profile-photos', path, source: resized, what: 'profile photo' });
 
   const { data, error } = await supabase
     .from('user_photos')
@@ -194,7 +200,7 @@ export async function replaceProfilePhoto({
     .single();
   if (error) throw mapSupabaseError(error);
 
-  const { error: removeError } = await supabase.storage.from('profile-photos').remove([previousStoragePath]);
+  const { error: removeError } = await supabase.storage.from('profile-photos').remove(withThumbPaths('profile-photos', [previousStoragePath]));
   if (removeError && __DEV__) {
     // Best-effort only — same rationale as the remove sequence below: the
     // row update above already succeeded, so the caller is never left
@@ -234,7 +240,7 @@ export async function removeProfilePhoto(
   const { error: deleteError } = await supabase.from('user_photos').delete().eq('id', photoId).eq('user_id', userId);
   if (deleteError) throw mapSupabaseError(deleteError);
 
-  const { error: removeError } = await supabase.storage.from('profile-photos').remove([storagePath]);
+  const { error: removeError } = await supabase.storage.from('profile-photos').remove(withThumbPaths('profile-photos', [storagePath]));
   if (removeError && __DEV__) {
     // Best-effort only — mirrors `deleteProfilePhoto`'s pre-0011 tolerance of
     // an already-missing object; the row delete above is the one write that
@@ -300,8 +306,9 @@ export async function listMyPhotos(): Promise<UserPhotoRow[]> {
 
 /**
  * Signed URLs for grid/profile photo paths (`grid_for_me()` returns
- * `photo_path`, never a URL — architecture plan §7). 60-second expiry, per
- * the migration plan's storage section, re-signed per fetch.
+ * `photo_path`, never a URL — architecture plan §7). Signed through the
+ * shared cache (`storage/signedUrlCache.ts`, 10-minute expiry): a path keeps
+ * its URL until it is nearly expired and only missing paths are signed.
  *
  * The `profile-photos` bucket is private; the "read when ok and readable"
  * policy is what lets one authenticated user sign another's object, and it
@@ -312,22 +319,10 @@ export async function listMyPhotos(): Promise<UserPhotoRow[]> {
  *
  * Returns a path -> URL map with only the paths that signed successfully.
  */
-export async function signedPhotoUrls(paths: string[]): Promise<Record<string, string>> {
-  const unique = Array.from(new Set(paths.filter((path) => !!path)));
-  if (unique.length === 0) return {};
-
-  const { data, error } = await supabase.storage
-    .from('profile-photos')
-    .createSignedUrls(unique, 60);
+export function signedPhotoUrls(paths: string[], options?: SignPathsOptions): Promise<Record<string, string>> {
   // A whole-request failure is treated the same as a per-path failure: no URL,
   // so the tile falls back to its tinted placeholder.
-  if (error || !data) return {};
-
-  const urls: Record<string, string> = {};
-  for (const entry of data) {
-    if (entry.signedUrl && entry.path) urls[entry.path] = entry.signedUrl;
-  }
-  return urls;
+  return signStoragePaths('profile-photos', paths, options);
 }
 
 // Re-exported so a caller that only imports `api/photos` can still reach the

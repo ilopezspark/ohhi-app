@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { colors, spacing } from '../theme/tokens';
 import { AlbumIcon, CameraIcon } from '../ui/icons';
 import { Text } from '../ui';
@@ -11,6 +11,7 @@ import {
   quoteAccessibilityLabel,
   type QuoteView,
 } from './replies';
+import { StorageImage } from '../ui/StorageImage';
 
 interface Props {
   view: QuoteView;
@@ -102,10 +103,9 @@ export function ReplyQuote({ view, name, thumbUrl, mine, onPress, testID }: Prop
         <View style={styles.thumb} testID={`${testID}-thumb`}>
           {showImage ? (
             <>
-              <Image
-                source={{ uri: thumbUrl }}
+              <StorageImage
+                uri={thumbUrl}
                 style={styles.thumbImage}
-                resizeMode="cover"
                 onError={() => setThumbFailed(true)}
                 accessibilityIgnoresInvertColors
                 testID={`${testID}-image`}

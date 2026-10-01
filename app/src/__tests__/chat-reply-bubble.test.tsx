@@ -14,7 +14,8 @@ jest.mock('expo-screen-capture', () => ({
 }));
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { Image, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
+import { Image } from 'expo-image';
 import { MessageBubble, type ThreadMessage } from '../chat/MessageBubble';
 import { StoryViewer } from '../albums/StoryViewer';
 
@@ -114,7 +115,7 @@ describe('StoryViewer — opening at a quoted photo', () => {
   ];
 
   beforeEach(() => {
-    jest.spyOn(Image, 'prefetch').mockResolvedValue(true);
+    jest.spyOn(Image, 'loadAsync').mockResolvedValue({} as never);
   });
 
   it('opens at that photo, even when the photos arrive after it opened', async () => {

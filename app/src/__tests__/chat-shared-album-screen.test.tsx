@@ -102,15 +102,15 @@ describe('shared album viewer — story', () => {
     (listAlbumPhotos as jest.Mock).mockResolvedValue([photo, photo2]);
     const screen = await renderScreen(newClient());
     expect(await screen.findByTestId('chat-shared-album-photo-p1')).toBeTruthy();
-    expect(screen.getByTestId('chat-shared-album-photo-p1').props.resizeMode).toBe('cover');
+    expect(screen.getByTestId('chat-shared-album-photo-p1').props.contentFit).toBe('cover');
     expect(screen.getByTestId('chat-shared-album-stage').props.accessibilityLabel).toBe('photo 1 of 2');
     expect(screen.getByTestId('chat-shared-album-title')).toHaveTextContent('more of me');
     expect(await screen.findByTestId('chat-shared-album-owner')).toHaveTextContent('maya');
     expect(getAlbumOwner).toHaveBeenCalledWith('owner');
     await waitFor(() =>
-      expect(screen.getByTestId('chat-shared-album-avatar-image').props.source).toEqual({
+      expect(screen.getByTestId('chat-shared-album-avatar-image').props.source).toEqual([{
         uri: 'https://example.test/avatar/owner/0.jpg',
-      })
+      }])
     );
     // A recipient gets no owner controls, and nothing that looks like a gallery.
     expect(screen.queryByTestId('chat-shared-album-more')).toBeNull();

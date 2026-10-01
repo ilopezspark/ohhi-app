@@ -1,8 +1,9 @@
-import { Animated, Image, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../ui';
 import { MoreIcon, PersonIcon, XIcon } from '../ui/icons';
 import { colors, spacing } from '../theme/tokens';
 import { displayName } from '../ui/displayName';
+import { StorageImage } from '../ui/StorageImage';
 
 /** Who the album belongs to, as the story's header shows them. */
 export interface StoryOwner {
@@ -152,8 +153,8 @@ export function StoryAvatar({ owner, testID }: { owner: StoryOwner | null; testI
   return (
     <View style={styles.avatar} testID={testID}>
       {owner?.avatarUri ? (
-        <Image
-          source={{ uri: owner.avatarUri }}
+        <StorageImage
+          uri={owner.avatarUri}
           style={styles.avatarImage}
           testID={`${testID}-image`}
           accessibilityIgnoresInvertColors

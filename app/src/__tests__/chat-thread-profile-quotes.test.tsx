@@ -174,8 +174,8 @@ describe('thread — profile reply quotes', () => {
     const screen = await renderScreen();
 
     const image = await screen.findByTestId('message-quote-r1-image');
-    expect(image.props.source).toEqual({ uri: `https://signed/${THEM}/1.jpg` });
-    expect(signedPhotoUrls).toHaveBeenCalledWith([`${THEM}/1.jpg`]);
+    expect(image.props.source).toEqual([{ uri: `https://signed/${THEM}/1.jpg` }]);
+    expect(signedPhotoUrls).toHaveBeenCalledWith([`${THEM}/1.jpg`], { variant: 'thumb' });
     expect(signedAlbumPhotoUrls).not.toHaveBeenCalled();
     expect(screen.getByTestId('message-quote-r1-line')).toHaveTextContent('photo');
 

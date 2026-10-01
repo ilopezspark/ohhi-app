@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import { Image, Platform, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -35,6 +35,7 @@ import { colors, radii, shadows, spacing } from '../../theme/tokens';
 import { HEADER_TOP_GAP } from '../../ui/screenInsets';
 import { footerBottomPadding } from '../../ui/keyboardInset';
 import { useHeaderInsets } from '../../ui/useHeaderInsets';
+import { StorageImage } from '../../ui/StorageImage';
 
 const GRID_COLUMNS = 2;
 const GRID_GAP = spacing.smMd;
@@ -356,9 +357,10 @@ export default function EditPhotosScreen() {
                         </Text>
                       </Pressable>
                     ) : url && failedUrls[url] !== true ? (
-                      <Image
+                      <StorageImage
                         testID={`editor-photos-tile-${i}-image`}
-                        source={{ uri: url }}
+                        uri={url}
+                        tint={photo.tint ?? colors.avatarTints[i]}
                         style={styles.tileImage}
                         onError={() => onImageError(url)}
                       />

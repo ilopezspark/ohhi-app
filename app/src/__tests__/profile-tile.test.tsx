@@ -40,7 +40,7 @@ describe('ProfileTile — grid size', () => {
       />
     );
     const img = getByTestId2('ph2-img');
-    expect(img.props.source).toEqual({ uri: 'https://example.test/a.jpg' });
+    expect(img.props.source).toEqual([{ uri: 'https://example.test/a.jpg' }]);
   });
 
   it('shows the here-now badge only when hereNow is true', async () => {

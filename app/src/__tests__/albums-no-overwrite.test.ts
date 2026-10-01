@@ -63,6 +63,12 @@ jest.mock('../photos/resize', () => ({
   resizeForUpload: jest.fn(() => Promise.resolve({ uri: 'file://resized.jpg', width: 1, height: 1 })),
 }));
 
+// The thumbnail's pixels (docs/thumbnails.md): a re-encode, never the picker's file.
+jest.mock('expo-image-manipulator', () => ({
+  manipulateAsync: jest.fn(() => Promise.resolve({ uri: 'file://thumb.jpg', width: 480, height: 270 })),
+  SaveFormat: { JPEG: 'jpeg' },
+}));
+
 jest.mock('../storage/readUpload', () => ({
   readUploadBody: jest.fn(() => Promise.resolve('blob')),
 }));
@@ -98,7 +104,7 @@ describe('addAlbumPhoto', () => {
     await addAlbumPhoto({ albumId: ALBUM_ID, uri: 'file://a.jpg', width: 1, height: 1 });
     await addAlbumPhoto({ albumId: ALBUM_ID, uri: 'file://a.jpg', width: 1, height: 1 });
 
-    const uploads = mockStorageCalls.filter((c) => c.op === 'upload');
+    const uploads = mockStorageCalls.filter((c) => c.op === 'upload' && !String(c.args[0]).endsWith('.thumb.jpg'));
     expect(uploads).toHaveLength(2);
     const [firstPath, , firstOpts] = uploads[0].args as [string, unknown, { upsert: boolean }];
     const [secondPath, , secondOpts] = uploads[1].args as [string, unknown, { upsert: boolean }];
@@ -106,6 +112,26 @@ describe('addAlbumPhoto', () => {
     expect(secondOpts.upsert).toBe(false);
     expect(firstPath).not.toBe(secondPath);
     expect(firstPath).toMatch(new RegExp(`^${USER_ID}/${ALBUM_ID}/[0-9a-f-]{36}\\.jpg$`));
+  });
+});
+
+describe('addAlbumPhoto thumbnail', () => {
+  it('uploads the original, then its thumbnail, then inserts the row', async () => {
+    mockTableResults.album_photos = { data: { id: 'p1' }, error: null };
+    await addAlbumPhoto({ albumId: ALBUM_ID, uri: 'file://a.jpg', width: 1, height: 1 });
+
+    const uploads = mockStorageCalls.filter((c) => c.op === 'upload');
+    const [original, thumb] = uploads.map((c) => c.args[0] as string);
+    expect(thumb).toBe(original.replace(/.jpg$/, '.thumb.jpg'));
+    expect(uploads[1].args[2]).toEqual({ contentType: 'image/jpeg', upsert: false });
+    expect(mockCalls.some((c) => c.table === 'album_photos' && c.op === 'insert')).toBe(true);
+  });
+
+  it('inserts the row anyway when the thumbnail upload fails', async () => {
+    mockTableResults.album_photos = { data: { id: 'p1' }, error: null };
+    mockUpload.mockResolvedValueOnce({ error: null }).mockResolvedValueOnce({ error: { message: 'refused' } });
+    await expect(addAlbumPhoto({ albumId: ALBUM_ID, uri: 'file://a.jpg', width: 1, height: 1 })).resolves.toBeTruthy();
+    expect(mockCalls.some((c) => c.table === 'album_photos' && c.op === 'insert')).toBe(true);
   });
 });
 
@@ -117,7 +143,7 @@ describe('removeAlbumPhoto', () => {
     const del = opsFor('album_photos').find((c) => c.op === 'delete');
     expect(del).toBeTruthy();
     expect(opsFor('album_photos')).toContainEqual({ table: 'album_photos', op: 'eq', args: ['id', 'photo-1'] });
-    expect(mockRemove).toHaveBeenCalledWith([`${USER_ID}/${ALBUM_ID}/x.jpg`]);
+    expect(mockRemove).toHaveBeenCalledWith([`${USER_ID}/${ALBUM_ID}/x.jpg`, `${USER_ID}/${ALBUM_ID}/x.thumb.jpg`]);
     expect(mockStorageCalls[0].bucket).toBe('album-photos');
   });
 

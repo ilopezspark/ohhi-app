@@ -1,6 +1,7 @@
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { TintedPlaceholder } from '../photos/TintedPlaceholder';
 import { colors, radii } from '../theme/tokens';
+import { StorageImage } from './StorageImage';
 
 export type AvatarSize = 'sm' | 'md' | 'lg';
 
@@ -25,7 +26,7 @@ export function Avatar({ uri, tint = colors.avatarTints[0], size = 'md', testID 
   return (
     <View style={[styles.container, { width: px, height: px, borderRadius: radius }]} testID={testID ?? 'avatar'}>
       {uri ? (
-        <Image source={{ uri }} style={styles.image} testID={testID ? `${testID}-image` : 'avatar-image'} />
+        <StorageImage uri={uri} tint={tint} style={styles.image} testID={testID ? `${testID}-image` : 'avatar-image'} />
       ) : (
         <TintedPlaceholder tint={tint} testID={testID ? `${testID}-placeholder` : 'avatar-placeholder'} />
       )}

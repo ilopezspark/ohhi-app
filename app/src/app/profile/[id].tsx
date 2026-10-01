@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { SIGNED_URL_STALE_MS } from '../../storage/signedUrlCache';
 import { getProfileCard, getProfileReplyTargets } from '../../api/profileCard';
 import { getIdentity } from '../../api/identity';
 import { me as fetchMe } from '../../api/me';
@@ -139,6 +140,7 @@ export default function ProfileScreen() {
     queryKey: ['profile_photo_urls', targetId, photoPaths.join('|')],
     queryFn: () => signedPhotoUrls(photoPaths),
     enabled: photoPaths.length > 0,
+    staleTime: SIGNED_URL_STALE_MS,
   });
 
   const cta = card ? cardCta(card.my_hi_state, card.conversation_id) : ({ kind: 'none' } as const);

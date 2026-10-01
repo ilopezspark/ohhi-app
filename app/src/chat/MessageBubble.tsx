@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   StyleSheet,
   View,
@@ -18,6 +17,7 @@ import { formatMessageTime } from './time';
 import { aspectOf, fitMedia, sizeFromLoadEvent, type MediaSize } from './mediaLayout';
 import type { MenuAnchor } from './menuPlacement';
 import { SwipeToReply } from './SwipeToReply';
+import { StorageImage } from '../ui/StorageImage';
 
 /**
  * A message as the thread renders it: a server row, or an optimistic one that
@@ -318,10 +318,10 @@ function InlineMedia({ message, kind, mediaUrl, onOpenMedia, onLongPress }: Inli
         style={[styles.media, { width: frame.width, height: frame.height }]}
       >
         {showImage ? (
-          <Image
-            source={{ uri: mediaUrl }}
+          <StorageImage
+            uri={mediaUrl}
+            tint={colors.dashed}
             style={styles.mediaImage}
-            resizeMode="cover"
             onLoad={(event) => {
               const size = sizeFromLoadEvent(event);
               if (size) setLoadedSize(size);

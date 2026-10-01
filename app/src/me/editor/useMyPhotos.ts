@@ -1,4 +1,6 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { SIGNED_URL_STALE_MS } from '../../storage/signedUrlCache';
+import type { ImageVariant } from '../../storage/thumbs';
 import { listMyPhotos, signedPhotoUrls, type UserPhotoRow } from '../../api/photos';
 import { queryKeys } from '../queryKeys';
 
@@ -35,17 +37,24 @@ export interface UseMyPhotosResult {
  * up on Me the next time it focuses without either screen knowing about the
  * other.
  */
-export function useMyPhotos(): UseMyPhotosResult {
+export interface UseMyPhotosOptions {
+  /** `'thumb'` (default) for the editor's tiles and rows; `'full'` for a full-bleed preview. */
+  variant?: ImageVariant;
+}
+
+export function useMyPhotos({ variant = 'thumb' }: UseMyPhotosOptions = {}): UseMyPhotosResult {
   const queryClient = useQueryClient();
   const photosQuery = useQuery({ queryKey: queryKeys.me.photos, queryFn: listMyPhotos });
 
   const photos = photosQuery.data ?? [];
   const paths = photos.map((photo) => photo.storage_path);
-  const urlsKey = [...queryKeys.me.photos, 'urls', paths.join('|')];
+  const urlsKey = [...queryKeys.me.photos, 'urls', variant, paths.join('|')];
   const urlsQuery = useQuery({
     queryKey: urlsKey,
-    queryFn: () => signedPhotoUrls(paths),
+    queryFn: () => signedPhotoUrls(paths, { variant }),
     enabled: paths.length > 0,
+    staleTime: SIGNED_URL_STALE_MS,
+    placeholderData: keepPreviousData,
   });
 
   function invalidate() {

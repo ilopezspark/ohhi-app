@@ -432,7 +432,7 @@ describe('ProfileView — hero layout (the phone report: scrim stopped short)', 
   it('shows the photo covering the hero, never stretched', async () => {
     const screen = await laidOut(360, 880);
     const image = screen.getByTestId('profile-photo-image-0');
-    expect(image.props.resizeMode ?? flat(image).resizeMode).toBe('cover');
+    expect(image.props.contentFit).toBe('cover');
   });
 });
 

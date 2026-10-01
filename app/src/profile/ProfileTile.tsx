@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from 'react';
-import { Image, Pressable, StyleSheet, View, type ImageStyle, type StyleProp } from 'react-native';
+import { Pressable, StyleSheet, View, type ImageStyle, type StyleProp } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { TintedPlaceholder } from '../photos/TintedPlaceholder';
 import { Badge, CheckIcon, Dot, Text } from '../ui';
 import { displayName } from '../ui/displayName';
 import { colors, radii, shadows, spacing } from '../theme/tokens';
 import { ProfileHero } from './view/ProfileHero';
+import { StorageImage } from '../ui/StorageImage';
 
 export type ProfileTileSize = 'grid' | 'thumbnail' | 'hero';
 
@@ -131,9 +132,10 @@ function TilePhoto({
   }
 
   return (
-    <Image
+    <StorageImage
       testID={photoTestID}
-      source={{ uri: photoUrl as string }}
+      uri={photoUrl as string}
+      tint={tint}
       style={style}
       onError={() => setFailed(true)}
     />

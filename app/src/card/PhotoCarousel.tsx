@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   Dimensions,
   FlatList,
-  Image,
   StyleSheet,
   View,
   type LayoutChangeEvent,
@@ -13,6 +12,7 @@ import {
 } from 'react-native';
 import { TintedPlaceholder } from '../photos/TintedPlaceholder';
 import { tintForPhoto } from '../photos/tint';
+import { StorageImage } from '../ui/StorageImage';
 
 export interface PhotoCarouselProps {
   /** Card owner's id — the tint fallback is deterministic per `{userId, position}`. */
@@ -86,9 +86,10 @@ export function PhotoCarousel({ userId, paths, urls, style, testID }: PhotoCarou
           return (
             <View style={[styles.page, { width: frameWidth }]} testID={`photo-carousel-page-${i}`}>
               {showPhoto ? (
-                <Image
+                <StorageImage
                   testID={`photo-carousel-image-${i}`}
-                  source={{ uri: url }}
+                  uri={url}
+                  tint={tintForPhoto(userId, i)}
                   style={styles.image}
                   onError={() => setFailed((prev) => ({ ...prev, [path]: true }))}
                 />

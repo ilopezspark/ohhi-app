@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode } from 'react';
-import { Image, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { CheckIcon, ChevronUpIcon, Dot, InfoIcon, PinIcon, Text } from '../../ui';
@@ -7,6 +7,7 @@ import { displayName } from '../../ui/displayName';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
 import { hereForChipLabel } from '../goalLabels';
 import { HERE_FOR_FALLBACK, metaParts, type ProfileViewData } from './model';
+import { StorageImage } from '../../ui/StorageImage';
 
 export interface ProfileHeroTestIDs {
   root?: string;
@@ -161,7 +162,7 @@ function SinglePhoto({ photoUrl, tint, testIDs }: { photoUrl?: string | null; ti
     return <TintedPlaceholder testID={testIDs.placeholder} tint={tint} style={styles.flatPlaceholder} />;
   }
   return (
-    <Image testID={testIDs.photo} source={{ uri: photoUrl }} style={styles.fill} resizeMode="cover" onError={() => setFailed(true)} />
+    <StorageImage testID={testIDs.photo} uri={photoUrl} tint={tint} style={styles.fill} onError={() => setFailed(true)} />
   );
 }
 

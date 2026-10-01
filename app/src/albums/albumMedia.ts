@@ -41,6 +41,16 @@ export function albumSignPaths(rows: readonly AlbumItemRow[]): string[] {
   return paths;
 }
 
+/** The stills of a list of rows (a photo's own path, a video's poster), for the small surfaces that sign thumbnails; the raw video is never one of them. */
+export function albumStillPaths(rows: readonly AlbumItemRow[]): string[] {
+  const paths: string[] = [];
+  for (const row of rows) {
+    const still = albumStillPath(row);
+    if (still) paths.push(still);
+  }
+  return paths;
+}
+
 /** The still that stands for an item: a photo itself, a video's poster. */
 export function albumStillPath(row: AlbumItemRow): string | null {
   if (isAlbumVideo(row)) return row.media_poster_path ?? null;

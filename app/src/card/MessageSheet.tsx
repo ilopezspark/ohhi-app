@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Avatar, Button, Input, Sheet, Text } from '../ui';
 import { displayName } from '../ui/displayName';
 import { TintedPlaceholder } from '../photos/TintedPlaceholder';
 import { colors, spacing } from '../theme/tokens';
 import { MAX_OPENER_LENGTH } from '../chat/rules';
+import { StorageImage } from '../ui/StorageImage';
 
 /**
  * What a reply from the profile quotes (migration 0024, decision 100): the
@@ -196,10 +197,10 @@ function SheetQuote({ quote, name }: { quote: MessageSheetQuote; name: string })
       <View style={styles.accent} />
       <View style={styles.quotePhoto} testID="profile-message-sheet-quote-photo">
         {showImage ? (
-          <Image
-            source={{ uri: quote.photoUrl! }}
+          <StorageImage
+            uri={quote.photoUrl!}
+            tint={quote.tint ?? colors.tint}
             style={styles.quoteImage}
-            resizeMode="cover"
             onError={() => setFailed(true)}
             testID="profile-message-sheet-quote-image"
           />

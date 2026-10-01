@@ -156,9 +156,9 @@ describe('my album', () => {
     const screen = await renderScreen();
 
     expect(await screen.findByTestId('album-viewer-video-v1')).toBeTruthy();
-    expect(screen.getByTestId('album-viewer-poster-v1').props.source).toEqual({
+    expect(screen.getByTestId('album-viewer-poster-v1').props.source).toEqual([{
       uri: `https://example.test/${ME}/${ALBUM}/v1-poster.jpg?token=1`,
-    });
+    }]);
     expect(signedAlbumPhotoUrls).toHaveBeenCalledWith(
       expect.arrayContaining([`${ME}/${ALBUM}/v1.mp4`, `${ME}/${ALBUM}/v1-poster.jpg`])
     );

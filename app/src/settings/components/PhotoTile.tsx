@@ -1,8 +1,9 @@
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { Badge, Text } from '../../ui';
 import { colors, radii, shadows, spacing } from '../../theme/tokens';
+import { StorageImage } from '../../ui/StorageImage';
 
 export interface PhotoTileProps {
   uri?: string | null;
@@ -32,7 +33,7 @@ export function PhotoTile({ uri, tint, pending, hereNow, name, subtitle, width =
   return (
     <View style={[styles.tile, shadows.md, { width, aspectRatio: 4 / 5 }]} testID={testID}>
       {uri ? (
-        <Image source={{ uri }} style={styles.photo} testID={testID ? `${testID}-image` : undefined} />
+        <StorageImage uri={uri} tint={tint} style={styles.photo} testID={testID ? `${testID}-image` : undefined} />
       ) : (
         <TintedPlaceholder tint={tint} pending={pending} testID={testID ? `${testID}-placeholder` : undefined} />
       )}

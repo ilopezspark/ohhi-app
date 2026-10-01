@@ -6,7 +6,8 @@
  * states, prefetch, screenshot prevention and the accessibility surface.
  */
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { AccessibilityInfo, AppState, BackHandler, Image, type AppStateStatus } from 'react-native';
+import { AccessibilityInfo, AppState, BackHandler, type AppStateStatus } from 'react-native';
+import { Image } from 'expo-image';
 
 const mockPrevent = jest.fn((_key?: string) => Promise.resolve());
 const mockAllow = jest.fn((_key?: string) => Promise.resolve());
@@ -29,7 +30,7 @@ let prefetchSpy: jest.SpyInstance;
 
 beforeEach(() => {
   jest.clearAllMocks();
-  prefetchSpy = jest.spyOn(Image, 'prefetch').mockResolvedValue(true);
+  prefetchSpy = jest.spyOn(Image, 'loadAsync').mockResolvedValue({} as never);
 });
 
 afterEach(() => {
@@ -52,7 +53,7 @@ function stageLabel(screen: Screen) {
 
 async function load(screen: Screen, id: string) {
   await act(async () => {
-    fireEvent(screen.getByTestId(`album-viewer-photo-${id}`), 'load');
+    fireEvent(screen.getByTestId(`album-viewer-photo-${id}`), 'load', { nativeEvent: {} });
   });
 }
 
@@ -77,7 +78,7 @@ describe('full bleed', () => {
   it('covers the screen with the photo, centred, never letterboxed', async () => {
     const { screen } = await renderViewer();
     const photo = screen.getByTestId('album-viewer-photo-p1');
-    expect(photo.props.resizeMode).toBe('cover');
+    expect(photo.props.contentFit).toBe('cover');
     expect(photo).toHaveStyle({ objectFit: 'cover' });
   });
 
@@ -266,7 +267,7 @@ describe('auto-advance', () => {
   it('a photo that failed to load never times out', async () => {
     const { screen } = await renderViewer();
     await act(async () => {
-      fireEvent(screen.getByTestId('album-viewer-photo-p1'), 'error');
+      fireEvent(screen.getByTestId('album-viewer-photo-p1'), 'error', { nativeEvent: {} });
     });
     await advance(30_000);
     expect(stageLabel(screen)).toBe('photo 1 of 3');
@@ -322,11 +323,20 @@ describe('tap zones', () => {
     expect(stageLabel(again.screen)).toBe('photo 3 of 3');
   });
 
-  it('prefetches the next photo', async () => {
-    const { screen } = await renderViewer();
-    expect(prefetchSpy).toHaveBeenCalledWith(PHOTOS[1].uri);
+  it('prefetches the next two photos, and the one after as the story moves on', async () => {
+    const PLUS = [...PHOTOS, { id: 'p4', uri: 'https://example.test/p4.jpg?token=1' }];
+    const { screen } = await renderViewer({ photos: PLUS });
+    expect(prefetchSpy).toHaveBeenCalledWith({ uri: PLUS[1].uri });
+    expect(prefetchSpy).toHaveBeenCalledWith({ uri: PLUS[2].uri });
+    expect(prefetchSpy).not.toHaveBeenCalledWith({ uri: PLUS[3].uri });
     await fireEvent.press(screen.getByTestId('album-viewer-forward-zone'));
-    expect(prefetchSpy).toHaveBeenCalledWith(PHOTOS[2].uri);
+    expect(prefetchSpy).toHaveBeenCalledWith({ uri: PLUS[3].uri });
+  });
+
+  it('keys a prefetched stored photo by its storage path, not its signed URL', async () => {
+    const stored = 'https://x.supabase.co/storage/v1/object/sign/album-photos/owner/album/p2.jpg?token=abc';
+    await renderViewer({ photos: [PHOTOS[0], { id: 'p2', uri: stored }] });
+    expect(prefetchSpy).toHaveBeenCalledWith({ uri: stored, cacheKey: 'album-photos/owner/album/p2.jpg' });
   });
 
   it('a tap while typing a reply puts the keyboard away instead of moving', async () => {
@@ -340,7 +350,7 @@ describe('tap zones', () => {
 describe('header', () => {
   it('shows the owner’s round photo, their first name in lowercase and the album name', async () => {
     const { screen } = await renderViewer({ owner: OWNER });
-    expect(screen.getByTestId('album-viewer-avatar-image').props.source).toEqual({ uri: OWNER.avatarUri });
+    expect(screen.getByTestId('album-viewer-avatar-image').props.source).toEqual([{ uri: OWNER.avatarUri }]);
     expect(screen.getByTestId('album-viewer-owner')).toHaveTextContent('maya');
     expect(screen.getByTestId('album-viewer-title')).toHaveTextContent('summer');
   });
@@ -569,7 +579,7 @@ describe('loading and failure', () => {
     const onRetry = jest.fn().mockResolvedValue(undefined);
     const { screen } = await renderViewer({ onRetry });
     await act(async () => {
-      fireEvent(screen.getByTestId('album-viewer-photo-p1'), 'error');
+      fireEvent(screen.getByTestId('album-viewer-photo-p1'), 'error', { nativeEvent: {} });
     });
     expect(onRetry).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('album-viewer-failed')).toHaveTextContent(/didn.t load/);

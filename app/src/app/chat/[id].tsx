@@ -3,7 +3,10 @@ import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, View } fr
 import { router, useLocalSearchParams } from 'expo-router';
 import { FALLBACK, goBack } from '../../routing/goBack';
 import * as ImagePicker from 'expo-image-picker';
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { chatAlbumKeys, useAlbumPrefetch } from '../../albums/prefetch';
+import { useWatchRevokedAlbums } from '../../albums/revoked';
+import { SIGNED_URL_STALE_MS } from '../../storage/signedUrlCache';
 import { getConversation, type ConversationListItem } from '../../api/conversations';
 import {
   listMessages,
@@ -324,6 +327,14 @@ export default function ChatThreadScreen() {
     [shareFeed]
   );
   const albumShareIdsKey = useMemo(() => [...albumShareIds].sort().join('|'), [albumShareIds]);
+  // Opening a shared album from its bubble starts on data already read, and an
+  // album the other person takes back leaves this device (`albums/revoked.ts`).
+  useAlbumPrefetch(albumShareIds, chatAlbumKeys);
+  useWatchRevokedAlbums(
+    shareFeed
+      ? shareFeed.filter((s) => s.kind === 'album' && s.viewerId === meId).map((s) => s.subjectId)
+      : undefined
+  );
   const { data: sharedAlbums } = useQuery({
     queryKey: ['chat-share-albums', albumShareIdsKey],
     queryFn: async () => {
@@ -475,12 +486,17 @@ export default function ChatThreadScreen() {
       ].filter((path): path is string => !!path),
     [messages, quoteViews]
   );
+  // The key is the path set, so a new message changes it; the signing cache
+  // (`storage/signedUrlCache.ts`) then signs only the new path and hands back
+  // every existing bubble's URL unchanged, and `keepPreviousData` keeps the
+  // old URLs on screen meanwhile.
   const mediaPathsKey = useMemo(() => [...mediaPaths].sort().join('|'), [mediaPaths]);
   const { data: mediaUrls } = useQuery({
     queryKey: ['chat_media_urls', mediaPathsKey],
-    queryFn: () => signedChatMediaUrls(mediaPaths),
+    queryFn: () => signedChatMediaUrls(mediaPaths, { variant: 'thumb' }),
     enabled: mediaPaths.length > 0,
-    staleTime: 45_000,
+    staleTime: SIGNED_URL_STALE_MS,
+    placeholderData: keepPreviousData,
   });
 
   // Album photo quotes sign from `album-photos`, like the story viewer.
@@ -495,9 +511,10 @@ export default function ChatThreadScreen() {
   const albumQuoteKey = useMemo(() => [...albumQuotePaths].sort().join('|'), [albumQuotePaths]);
   const { data: albumQuoteUrls } = useQuery({
     queryKey: ['chat_quote_album_urls', albumQuoteKey],
-    queryFn: () => signedAlbumPhotoUrls(albumQuotePaths),
+    queryFn: () => signedAlbumPhotoUrls(albumQuotePaths, { variant: 'thumb' }),
     enabled: albumQuotePaths.length > 0,
-    staleTime: 45_000,
+    staleTime: SIGNED_URL_STALE_MS,
+    placeholderData: keepPreviousData,
   });
 
   // Profile photo quotes (migration 0024) sign from `profile-photos`, like
@@ -513,17 +530,18 @@ export default function ChatThreadScreen() {
   const profileQuoteKey = useMemo(() => [...profileQuotePaths].sort().join('|'), [profileQuotePaths]);
   const { data: profileQuoteUrls } = useQuery({
     queryKey: ['chat_quote_profile_urls', profileQuoteKey],
-    queryFn: () => signedPhotoUrls(profileQuotePaths),
+    queryFn: () => signedPhotoUrls(profileQuotePaths, { variant: 'thumb' }),
     enabled: profileQuotePaths.length > 0,
-    staleTime: 45_000,
+    staleTime: SIGNED_URL_STALE_MS,
+    placeholderData: keepPreviousData,
   });
 
   const otherPhotoPath = conversation?.other.photoPath ?? null;
   const { data: headerPhotoUrls } = useQuery({
     queryKey: ['thread_header_photo', otherPhotoPath],
-    queryFn: () => signedPhotoUrls(otherPhotoPath ? [otherPhotoPath] : []),
+    queryFn: () => signedPhotoUrls(otherPhotoPath ? [otherPhotoPath] : [], { variant: 'thumb' }),
     enabled: !!otherPhotoPath,
-    staleTime: 45_000,
+    staleTime: SIGNED_URL_STALE_MS,
   });
 
   const composer = useMemo(() => {
@@ -704,9 +722,10 @@ export default function ChatThreadScreen() {
   const trayThumbKey = useMemo(() => [...trayThumbPaths].sort().join('|'), [trayThumbPaths]);
   const { data: trayThumbUrls } = useQuery({
     queryKey: ['recently-shared-thumbs', trayThumbKey],
-    queryFn: () => signedChatMediaUrls(trayThumbPaths),
+    queryFn: () => signedChatMediaUrls(trayThumbPaths, { variant: 'thumb' }),
     enabled: trayThumbPaths.length > 0,
-    staleTime: 45_000,
+    staleTime: SIGNED_URL_STALE_MS,
+    placeholderData: keepPreviousData,
   });
 
   const openMediaPick = useCallback(() => {

@@ -5,7 +5,7 @@ import { colors, radii } from '../theme/tokens';
 describe('ui/Avatar', () => {
   it('renders the photo image when a uri is given', async () => {
     const { getByTestId, queryByTestId } = await render(<Avatar testID="av" uri="https://example.com/a.jpg" />);
-    expect(getByTestId('av-image').props.source).toEqual({ uri: 'https://example.com/a.jpg' });
+    expect(getByTestId('av-image').props.source).toEqual([{ uri: 'https://example.com/a.jpg' }]);
     expect(queryByTestId('av-placeholder')).toBeNull();
   });
 

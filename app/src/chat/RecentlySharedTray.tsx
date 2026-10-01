@@ -1,8 +1,9 @@
-import { FlatList, Image, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import type { RecentlySharedItem } from '../api/messages';
 import { colors, radii, spacing } from '../theme/tokens';
 import { Text } from '../ui';
 import { PlayIcon } from './mediaIcons';
+import { StorageImage } from '../ui/StorageImage';
 
 export interface RecentlySharedTrayProps {
   items: RecentlySharedItem[] | undefined;
@@ -55,10 +56,9 @@ export function RecentlySharedTray({ items, loading, thumbnailUrls, onSelect }: 
             {uri ? (
               // A square thumbnail is a crop by design; the preview it opens
               // shows the whole image.
-              <Image
-                source={{ uri }}
+              <StorageImage
+                uri={uri}
                 style={StyleSheet.absoluteFill}
-                resizeMode="cover"
                 accessibilityIgnoresInvertColors
                 testID={`recently-shared-image-${item.messageId}`}
               />

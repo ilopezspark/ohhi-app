@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { Chip, ChipGroup, RowCard, SectionLabel, SettingsRow, Text } from '../../ui';
 import { ChevronRightIcon, PencilIcon, PlusIcon } from '../../ui/icons';
@@ -20,6 +20,7 @@ import { gridSlotLabel, hasPhotoUnderReview, PHOTO_STATE_COPY } from './photoSta
 import { useMyPhotos } from './useMyPhotos';
 import type { UserGoal } from './useProfileEditorDraft';
 import type { DraftField, UseProfileEditorDraftResult } from './useProfileEditorDraft';
+import { StorageImage } from '../../ui/StorageImage';
 
 /** Brief's literal 3-up photo-tile radius (18) — no exact existing token (`radii.tile` is 20, `radii.lg` is 22). */
 const PHOTO_TILE_RADIUS = 18;
@@ -160,9 +161,10 @@ function PhotoRowTile({
           </Text>
         </View>
       ) : showImage ? (
-        <Image
+        <StorageImage
           testID={`editor-photo-tile-${index}-image`}
-          source={{ uri: url }}
+          uri={url}
+          tint={photo.tint ?? colors.avatarTints[index]}
           style={styles.photoTileImage}
           onError={() => {
             setFailedUrl(url ?? null);

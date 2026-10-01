@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { me } from '../../../../api/me';
@@ -19,6 +19,7 @@ import {
 import {
   albumHasVideo,
   albumSignPaths,
+  albumStillPaths,
   albumStoryItems,
   formatVideoDuration,
   isAlbumVideo,
@@ -46,6 +47,7 @@ import { ScreenHeader, Sheet, Text } from '../../../../ui';
 import { KeyboardSpacer } from '../../../../ui/KeyboardSpacer';
 import { displayName } from '../../../../ui/displayName';
 import { colors, fontFamilies, radii, spacing } from '../../../../theme/tokens';
+import { StorageImage } from '../../../../ui/StorageImage';
 
 const NAME_MAX_LENGTH = 60;
 
@@ -89,6 +91,8 @@ export default function AlbumEditScreen() {
   const [album, setAlbum] = useState<AlbumRow | null>(null);
   const [photos, setPhotos] = useState<AlbumPhotoRow[]>([]);
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+  /** The grid's small stills (thumbnails); `photoUrls` stays full-size for the story. */
+  const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({});
   const [candidates, setCandidates] = useState<ShareCandidate[]>([]);
   const [shares, setShares] = useState<ShareRow[]>([]);
   const [name, setName] = useState('');
@@ -130,8 +134,17 @@ export default function AlbumEditScreen() {
         return;
       }
 
+      // Read through the signing cache: coming back to this screen (or the app
+      // to the foreground) reuses every URL that still has life in it.
       const paths = albumSignPaths(photoRows);
-      if (paths.length > 0) setPhotoUrls(await signedAlbumPhotoUrls(paths));
+      if (paths.length > 0) {
+        const [full, thumbs] = await Promise.all([
+          signedAlbumPhotoUrls(paths),
+          signedAlbumPhotoUrls(albumStillPaths(photoRows), { variant: 'thumb' }),
+        ]);
+        setPhotoUrls(full);
+        setThumbUrls(thumbs);
+      }
       const [candidateRows, shareRows] = await Promise.all([listShareCandidates(), listSharesForSubject('album', albumId)]);
       setCandidates(candidateRows);
       setShares(shareRows);
@@ -156,13 +169,17 @@ export default function AlbumEditScreen() {
     }
   }, [albumId, queryClient]);
 
-  /** Signed URLs last 60 seconds: the story calls this when a photo fails to load. */
-  const refreshUrls = useCallback(async () => {
-    const paths = albumSignPaths(photos);
-    if (paths.length === 0) return;
-    const urls = await signedAlbumPhotoUrls(paths);
-    setPhotoUrls((prev) => ({ ...prev, ...urls }));
-  }, [photos]);
+  /** The story calls this when a photo fails to load: signs that item's paths again, whatever the signing cache holds. */
+  const refreshUrls = useCallback(
+    async (photoId: string) => {
+      const row = photos.find((p) => p.id === photoId);
+      const paths = albumSignPaths(photos);
+      if (paths.length === 0) return;
+      const urls = await signedAlbumPhotoUrls(paths, { force: row ? albumSignPaths([row]) : paths });
+      setPhotoUrls((prev) => ({ ...prev, ...urls }));
+    },
+    [photos]
+  );
 
   const storyPhotos = useMemo<StoryPhoto[]>(() => albumStoryItems(photos, photoUrls), [photos, photoUrls]);
   const hasVideo = albumHasVideo(photos);
@@ -407,7 +424,7 @@ export default function AlbumEditScreen() {
         renderItem={({ item, index }) => {
           const video = isAlbumVideo(item);
           // The video shows as its poster; the grid never plays it.
-          const url = video ? (item.media_poster_path ? photoUrls[item.media_poster_path] : undefined) : photoUrls[item.storage_path];
+          const url = video ? (item.media_poster_path ? thumbUrls[item.media_poster_path] : undefined) : thumbUrls[item.storage_path];
           const noun = video ? 'video' : 'photo';
           return (
             <View style={styles.photoCell} testID={`album-photo-${item.id}`}>
@@ -422,7 +439,7 @@ export default function AlbumEditScreen() {
                 }}
               >
                 {url ? (
-                  <Image source={{ uri: url }} style={styles.photoImage} testID={`album-photo-image-${item.id}`} />
+                  <StorageImage uri={url} style={styles.photoImage} testID={`album-photo-image-${item.id}`} />
                 ) : (
                   <View style={styles.photoPlaceholder} />
                 )}

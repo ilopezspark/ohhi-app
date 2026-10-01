@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Animated,
   BackHandler,
-  Image,
   Keyboard,
   PanResponder,
   Platform,
@@ -19,6 +18,9 @@ import * as ScreenCapture from 'expo-screen-capture';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { Sheet, Text, useHeaderInsets } from '../ui';
 import { KeyboardSpacer } from '../ui/KeyboardSpacer';
+import { StorageImage } from '../ui/StorageImage';
+import { prefetchStorageImages } from '../storage/imageCache';
+import { useThumbUrl } from '../storage/useThumbUrl';
 import { footerBottomPadding, footerKeyboardInset, type BottomBarGaps } from '../ui/keyboardInset';
 import { colors, radii, spacing } from '../theme/tokens';
 
@@ -115,8 +117,12 @@ export interface StoryViewerProps {
   loading?: boolean;
   /** Photo URLs are still being signed: a photo without one shows as loading, not failed. */
   resolving?: boolean;
-  /** Re-signs the URLs (they last 60 seconds). Called once on its own when a photo fails, and by `try again`. */
-  onRetry?: () => unknown;
+  /**
+   * Signs the failed item's URL again (force-refreshing just its paths, the
+   * item's still and a video's poster), whatever the signing cache holds.
+   * Called once on its own when an item fails to load, and by `try again`.
+   */
+  onRetry?: (photoId: string) => unknown;
   onClose: () => void;
   /** Owner-only actions for the `…` sheet. No sheet, and no `…`, without them. */
   actions?: StoryAction[];
@@ -165,10 +171,12 @@ export interface StoryViewerProps {
  * - **Reply bar** (`StoryReplyBar`), when `reply` is given: a message to
  *   the owner that replies to the photo on screen (migration 0017), lifted
  *   by the keyboard.
- * - The next photo is prefetched. A photo shows a quiet spinner until it has
- *   loaded and a neutral failure with `try again` if it cannot. Signed URLs
- *   last 60 seconds, so the first failure of a photo re-signs once on its own,
- *   and a loaded photo keeps its URL when newer ones arrive (no flicker).
+ * - The next two items are prefetched into the image cache (keyed by storage
+ *   path, `storage/imageCache.ts`). A photo shows a quiet spinner until it
+ *   has loaded and a neutral failure with `try again` if it cannot. The
+ *   first failure of a photo re-signs just that item once on its own (a URL
+ *   can have expired), and a loaded photo keeps its URL when newer ones
+ *   arrive (no flicker).
  * - Albums are private and unmoderated (decision 89): nothing here saves,
  *   downloads or shares a photo out, and screen capture is prevented where
  *   the platform allows it (Android; skipped on web, a no-op on iOS).
@@ -268,6 +276,8 @@ export function StoryViewer({
   /** What a video shows until it plays, and what the wide-screen backdrop blurs: its poster. */
   const posterUri = isVideo ? photo?.posterUri ?? null : null;
   const stillUri = isVideo ? posterUri : uri;
+  // The wide-screen backdrop is blurred, so it blurs the thumbnail (docs/thumbnails.md).
+  const backdropUri = useThumbUrl(stillUri, wide);
   const imageKey = photo && uri ? `${photo.id}|${attempt}|${uri}` : null;
   const photoState: 'none' | 'loading' | 'loaded' | 'failed' = !photo
     ? 'none'
@@ -279,11 +289,11 @@ export function StoryViewer({
           : 'failed'
         : loadStatus[imageKey] ?? 'loading';
 
-  const runRetry = useCallback(async () => {
+  const runRetry = useCallback(async (retryId: string) => {
     if (!onRetry) return;
     setRetrying(true);
     try {
-      await onRetry();
+      await onRetry(retryId);
     } catch {
       // The photo just stays failed; `try again` is still there.
     } finally {
@@ -302,7 +312,7 @@ export function StoryViewer({
       setLoadStatus((prev) => ({ ...prev, [key]: 'failed' }));
       if (onRetry && !autoRetried.current.has(photoId)) {
         autoRetried.current.add(photoId);
-        void runRetry();
+        void runRetry(photoId);
       }
     },
     [onRetry, runRetry]
@@ -321,22 +331,19 @@ export function StoryViewer({
 
   const tryAgain = useCallback(() => {
     setAttempt((a) => a + 1);
-    void runRetry();
-  }, [runRetry]);
+    if (photoId) void runRetry(photoId);
+  }, [runRetry, photoId]);
 
-  // Prefetch the next photo so it is on screen (and its clock running) at once.
-  // For the video, its poster: the player loads the video itself.
-  const next = photos[index + 1];
-  const nextUri = (next?.kind === 'video' ? next.posterUri : next?.uri) ?? null;
+  // Prefetch the next two photos so each is on screen (and its clock running)
+  // at once. For the video, its poster: the player loads the video itself.
+  const upcoming = [photos[index + 1], photos[index + 2]]
+    .map((item) => (item?.kind === 'video' ? item.posterUri : item?.uri) ?? '')
+    .join(' ');
   useEffect(() => {
-    if (!nextUri) return;
-    try {
-      const pending = Image.prefetch(nextUri) as Promise<unknown> | undefined;
-      pending?.catch?.(() => {});
-    } catch {
-      // Prefetch is only a head start; the photo still loads when shown.
-    }
-  }, [nextUri]);
+    // Prefetch is only a head start (and never throws); the photo still loads when shown.
+    const uris = upcoming.split(' ').filter(Boolean);
+    if (uris.length > 0) void prefetchStorageImages(uris);
+  }, [upcoming]);
 
   // --- navigation -------------------------------------------------------------
   const apply = useCallback(
@@ -549,13 +556,13 @@ export function StoryViewer({
     >
       <StatusBar style="light" />
 
-      {wide && stillUri ? (
+      {wide && backdropUri ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="none" testID={`${p}-backdrop`}>
-          <Image
+          <StorageImage
             testID={`${p}-backdrop-image`}
-            source={{ uri: stillUri }}
+            uri={backdropUri}
             style={styles.fill}
-            resizeMode="cover"
+            contentFit="cover"
             blurRadius={40}
             accessible={false}
           />
@@ -569,11 +576,11 @@ export function StoryViewer({
           {photo && isVideo ? (
             <>
               {posterUri ? (
-                <Image
+                <StorageImage
                   testID={`${p}-poster-${photo.id}`}
-                  source={{ uri: posterUri }}
+                  uri={posterUri}
                   style={styles.fill}
-                  resizeMode="cover"
+                  contentFit="cover"
                   accessible={false}
                 />
               ) : null}
@@ -590,12 +597,12 @@ export function StoryViewer({
               ) : null}
             </>
           ) : photo && imageKey && uri && !retrying ? (
-            <Image
+            <StorageImage
               key={imageKey}
               testID={`${p}-photo-${photo.id}`}
-              source={{ uri }}
+              uri={uri}
               style={styles.fill}
-              resizeMode="cover"
+              contentFit="cover"
               accessibilityIgnoresInvertColors
               onLoad={handleLoad}
               onError={handleError}

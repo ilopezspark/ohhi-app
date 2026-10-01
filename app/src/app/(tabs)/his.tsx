@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { SIGNED_URL_STALE_MS } from '../../storage/signedUrlCache';
 import {
   dismissHi,
   hiBack,
@@ -82,8 +83,10 @@ export default function HisScreen() {
   const photoPathsKey = [...photoPaths].sort().join('|');
   const { data: photoUrls } = useQuery({
     queryKey: ['his_photo_urls', photoPathsKey],
-    queryFn: () => signedPhotoUrls(photoPaths),
+    queryFn: () => signedPhotoUrls(photoPaths, { variant: 'thumb' }),
     enabled: photoPaths.length > 0,
+    staleTime: SIGNED_URL_STALE_MS,
+    placeholderData: keepPreviousData,
   });
 
   // Optimistic dismiss with rollback (§2/§8: "single-column, one-directional,

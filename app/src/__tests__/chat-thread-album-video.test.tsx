@@ -146,9 +146,9 @@ describe('thread — album video quote', () => {
   it('signs the poster (never the mp4), draws it with a play mark, and opens the story at the video', async () => {
     const screen = await renderScreen();
     await waitFor(() =>
-      expect(screen.getByTestId('message-quote-r1-image').props.source).toEqual({
+      expect(screen.getByTestId('message-quote-r1-image').props.source).toEqual([{
         uri: `https://signed/${THEM}/a1/v1-poster.jpg`,
-      })
+      }])
     );
     expect(screen.getByTestId('message-quote-r1-play')).toBeTruthy();
     expect(screen.getByTestId('message-quote-r1-line')).toHaveTextContent('album video');
@@ -175,7 +175,7 @@ describe('thread — album video quote', () => {
     });
     const screen = await renderScreen();
     await waitFor(() =>
-      expect(screen.getByTestId('message-quote-r1-image').props.source).toEqual({ uri: `https://signed/${THEM}/a1/p1.jpg` })
+      expect(screen.getByTestId('message-quote-r1-image').props.source).toEqual([{ uri: `https://signed/${THEM}/a1/p1.jpg` }])
     );
     expect(screen.queryByTestId('message-quote-r1-play')).toBeNull();
     expect(screen.getByTestId('message-quote-r1-line')).toHaveTextContent('album photo');

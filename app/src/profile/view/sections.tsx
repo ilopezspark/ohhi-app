@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { PhotoStatePill } from '../../photos/PhotoStatePill';
 import { TintedPlaceholder } from '../../photos/TintedPlaceholder';
 import { tintForPhoto } from '../../photos/tint';
@@ -26,6 +26,7 @@ import { BeforeYouMessageCard } from './BeforeYouMessage';
 import { beforeYouMessageItems, CARD_HEADER_ICONS, identityCardModels } from './identityCards';
 import { PHOTO_REPLY_A11Y, PROMPT_REPLY_A11Y, photoReplySubject, promptReplySubject, type ProfileReplyOptions } from './reply';
 import { ReplyAction } from './ReplyAction';
+import { StorageImage } from '../../ui/StorageImage';
 
 /**
  * The profile's detail list (`03-profile-scrolled.png`, `04-profile-full*.png`)
@@ -461,7 +462,7 @@ export function PhotoCard({
     <View style={styles.photoCard} testID={testID}>
       <View style={styles.photoFill} accessible accessibilityRole="image" accessibilityLabel={`photo ${position + 1} of ${firstName}`}>
         {url && !failed ? (
-          <Image source={{ uri: url }} style={styles.photo} resizeMode="cover" onError={() => setFailed(true)} />
+          <StorageImage uri={url} tint={tintForPhoto(userId, position)} style={styles.photo} onError={() => setFailed(true)} />
         ) : (
           <TintedPlaceholder tint={tintForPhoto(userId, position)} style={styles.photoPlaceholder} />
         )}
