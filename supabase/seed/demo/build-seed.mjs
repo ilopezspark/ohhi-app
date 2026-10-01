@@ -25,6 +25,13 @@
 //   heartbeat.generated.sql  the liveness functions only (as the seed installs
 //                            them), for an already-seeded demo.
 //
+//   node supabase/seed/demo/build-seed.mjs --only debbie
+//
+// writes only seed-debbie.generated.sql (that real account's scripted
+// activity, nothing global, for an account recreated after the seed) and
+// rehearsal-debbie.generated.sql (the same, run twice, checked, always
+// raises). No other file is touched. Any key in ACCOUNTS works.
+//
 // Every seeded row id is a UUID v5 of a fixed namespace and a content key, so
 // the seed, the unseed and the upload plan agree without a tracking table.
 // The two real accounts are never named by id here: the SQL resolves them at
@@ -765,6 +772,17 @@ function seedPlan() {
   return { people: planPeople, accounts: accts };
 }
 
+// One account's section of the plan literal (also used by --only <key>).
+function accountPlanText(a) {
+  return [
+    `{"key": ${JSON.stringify(a.key)}, "first_name": ${JSON.stringify(a.first_name)},`,
+    ` "his": [\n${a.his.map((h) => "  " + JSON.stringify(h)).join(",\n")}],`,
+    ` "conversations": [\n${a.conversations.map((c) => "  " + JSON.stringify(c)).join(",\n")}],`,
+    ` "albums": [\n${a.albums.map((x) => "  " + JSON.stringify(x)).join(",\n")}],`,
+    ` "shares": [\n${a.shares.map((x) => "  " + JSON.stringify(x)).join(",\n")}]}`,
+  ].join("\n");
+}
+
 // The plan as a dollar-quoted jsonb literal, one person / one account section
 // per line so a diff of two generations stays readable.
 function planLiteral() {
@@ -773,20 +791,124 @@ function planLiteral() {
     '{"people": [\n' +
     plan.people.map((p) => JSON.stringify(p)).join(",\n") +
     '\n], "accounts": [\n' +
-    plan.accounts
-      .map((a) =>
-        [
-          `{"key": ${JSON.stringify(a.key)}, "first_name": ${JSON.stringify(a.first_name)},`,
-          ` "his": [\n${a.his.map((h) => "  " + JSON.stringify(h)).join(",\n")}],`,
-          ` "conversations": [\n${a.conversations.map((c) => "  " + JSON.stringify(c)).join(",\n")}],`,
-          ` "albums": [\n${a.albums.map((x) => "  " + JSON.stringify(x)).join(",\n")}],`,
-          ` "shares": [\n${a.shares.map((x) => "  " + JSON.stringify(x)).join(",\n")}]}`,
-        ].join("\n")
-      )
-      .join(",\n") +
+    plan.accounts.map(accountPlanText).join(",\n") +
     "\n]}";
   if (body.includes("$plan$")) throw new Error("content contains the $plan$ delimiter");
   return `$plan$${body}$plan$::jsonb`;
+}
+
+// The real accounts' scripted activity, as plpgsql statements. Expects v_plan
+// (with an "accounts" array), v_real (account key -> user id), v_now and the
+// variables the seed body declares. Shared by the seed and --only <key>.
+function activityLoopSql() {
+  return `  -- ---------------------------------------------------------------------------
+  -- The real accounts' scripted activity. Every block is skipped when its row
+  -- already exists, so a re-run never rewrites what a real account has since
+  -- done (a dismissed hi, a reply, a revoked share).
+  -- ---------------------------------------------------------------------------
+  for v_acc in select value from jsonb_array_elements(v_plan -> 'accounts') loop
+    v_me := (v_real ->> (v_acc ->> 'key'))::uuid;
+
+    -- Hi's first: enforce_hi_rules() refuses a hi once a conversation exists.
+    -- The trigger stamps state = sent and expires_at = now() + 7 days; the
+    -- scripted state and a 7-day expiry from the scripted time follow.
+    for v_h in select value from jsonb_array_elements(v_acc -> 'his') loop
+      if not exists (select 1 from public.his where id = (v_h ->> 'id')::uuid) then
+        v_other := (v_h ->> 'demo')::uuid;
+        insert into public.his (id, from_user_id, to_user_id, created_at)
+        values ((v_h ->> 'id')::uuid,
+                case when v_h ->> 'dir' = 'received' then v_other else v_me end,
+                case when v_h ->> 'dir' = 'received' then v_me else v_other end,
+                v_now - make_interval(mins => (v_h ->> 'min')::int));
+        update public.his
+           set state = (v_h ->> 'state')::public.hi_state, expires_at = created_at + interval '7 days'
+         where id = (v_h ->> 'id')::uuid;
+      end if;
+    end loop;
+
+    -- Conversations: created directly (deterministic id, historical time) in
+    -- awaiting_reply, then every message goes through enforce_message_rules()
+    -- and advance_conversation() one statement at a time, so the opener rule,
+    -- the media-only-when-open rule and 0010's path binding all run for real.
+    for v_c in select value from jsonb_array_elements(v_acc -> 'conversations') loop
+      continue when exists (select 1 from public.conversations where id = (v_c ->> 'id')::uuid);
+      v_other := (v_c ->> 'demo')::uuid;
+      insert into public.conversations (id, user_a_id, user_b_id, opened_by_id, opened_via, state, created_at)
+      values ((v_c ->> 'id')::uuid, least(v_me, v_other), greatest(v_me, v_other),
+              case when (v_c ->> 'opener_is_me')::boolean then v_me else v_other end,
+              (v_c ->> 'via')::public.opened_via, 'awaiting_reply',
+              v_now - make_interval(mins => (v_c ->> 'created_min')::int));
+
+      for v_m in select value from jsonb_array_elements(v_c -> 'messages') with ordinality as e(value, ord) order by ord loop
+        insert into public.messages
+          (id, conversation_id, sender_id, body, media_path, media_kind, view_limit, views_used,
+           media_bytes, media_width, media_height, created_at)
+        values ((v_m ->> 'id')::uuid, (v_c ->> 'id')::uuid,
+                case when (v_m ->> 'me')::boolean then v_me else v_other end,
+                v_m ->> 'body',
+                v_m #>> '{media,path}',
+                case when v_m ? 'media' then 'photo'::public.media_kind end,
+                (v_m #>> '{media,view_limit}')::smallint,
+                coalesce((v_m #>> '{media,views_used}')::smallint, 0),
+                (v_m #>> '{media,bytes}')::int,
+                (v_m #>> '{media,width}')::smallint,
+                (v_m #>> '{media,height}')::smallint,
+                v_now - make_interval(mins => (v_m ->> 'min')::int));
+        -- Counted opens by the recipient, consistent with views_used.
+        for v_v in select value from jsonb_array_elements(coalesce(v_m #> '{media,views}', '[]')) loop
+          insert into public.message_media_views (message_id, viewer_id, ordinal, viewed_at)
+          values ((v_m ->> 'id')::uuid,
+                  case when (v_v ->> 'me')::boolean then v_me else v_other end,
+                  (v_v ->> 'ordinal')::smallint,
+                  v_now - make_interval(mins => (v_v ->> 'min')::int));
+        end loop;
+      end loop;
+
+      if v_c ->> 'state' = 'expired' then
+        update public.conversations set state = 'expired' where id = (v_c ->> 'id')::uuid;
+      end if;
+      -- advance_conversation() stamps now(); the thread's real last activity:
+      update public.conversations
+         set last_message_at = v_now - make_interval(mins => (v_c ->> 'last_min')::int)
+       where id = (v_c ->> 'id')::uuid;
+      -- The real account's read marker (no row = never opened, i.e. unread).
+      if v_c ->> 'read_min' is not null then
+        insert into public.message_reads (user_id, conversation_id, last_read_at)
+        values (v_me, (v_c ->> 'id')::uuid, v_now - make_interval(mins => (v_c ->> 'read_min')::int));
+      end if;
+
+      select state::text into v_state from public.conversations where id = (v_c ->> 'id')::uuid;
+      if v_state <> v_c ->> 'state' then
+        raise exception 'demo seed: conversation with % ended in state %, scripted %', v_c ->> 'cast', v_state, v_c ->> 'state';
+      end if;
+    end loop;
+
+    -- Albums (not moderated since migration 0013; photo_count kept by maintain_album_photo_count()).
+    for v_al in select value from jsonb_array_elements(v_acc -> 'albums') loop
+      continue when exists (select 1 from public.albums where id = (v_al ->> 'id')::uuid);
+      v_owner := case when (v_al ->> 'owner_is_me')::boolean then v_me else (v_al ->> 'owner')::uuid end;
+      insert into public.albums (id, owner_id, name, created_at)
+      values ((v_al ->> 'id')::uuid, v_owner, v_al ->> 'name', v_now - make_interval(mins => (v_al ->> 'created_min')::int));
+      insert into public.album_photos (id, album_id, storage_path, created_at)
+      select (ph ->> 'id')::uuid, (v_al ->> 'id')::uuid,
+             v_owner::text || '/' || (v_al ->> 'id') || '/' || (ph ->> 'id') || '.jpg',
+             v_now - make_interval(mins => (ph ->> 'min')::int)
+        from jsonb_array_elements(v_al -> 'photos') ph;
+    end loop;
+
+    -- Shares, both directions; enforce_share_rules() checks the album owner and
+    -- the mutual conversation.
+    for v_s in select value from jsonb_array_elements(v_acc -> 'shares') loop
+      continue when exists (select 1 from public.shares where id = (v_s ->> 'id')::uuid);
+      insert into public.shares (id, owner_id, viewer_id, subject_type, subject_id, created_at)
+      values ((v_s ->> 'id')::uuid,
+              case when (v_s ->> 'owner_is_me')::boolean then v_me else (v_s ->> 'demo')::uuid end,
+              case when (v_s ->> 'owner_is_me')::boolean then (v_s ->> 'demo')::uuid else v_me end,
+              'album', (v_s ->> 'album')::uuid,
+              v_now - make_interval(mins => (v_s ->> 'min')::int));
+    end loop;
+  end loop;
+`;
 }
 
 // The seed's main block, as a plpgsql body (the rehearsal wraps the same body
@@ -988,114 +1110,7 @@ begin
     cross join lateral jsonb_array_elements(coalesce(pp -> 'prompts', '[]'::jsonb)) with ordinality as x(value, ord)
   on conflict do nothing;
 
-  -- ---------------------------------------------------------------------------
-  -- The real accounts' scripted activity. Every block is skipped when its row
-  -- already exists, so a re-run never rewrites what a real account has since
-  -- done (a dismissed hi, a reply, a revoked share).
-  -- ---------------------------------------------------------------------------
-  for v_acc in select value from jsonb_array_elements(v_plan -> 'accounts') loop
-    v_me := (v_real ->> (v_acc ->> 'key'))::uuid;
-
-    -- Hi's first: enforce_hi_rules() refuses a hi once a conversation exists.
-    -- The trigger stamps state = sent and expires_at = now() + 7 days; the
-    -- scripted state and a 7-day expiry from the scripted time follow.
-    for v_h in select value from jsonb_array_elements(v_acc -> 'his') loop
-      if not exists (select 1 from public.his where id = (v_h ->> 'id')::uuid) then
-        v_other := (v_h ->> 'demo')::uuid;
-        insert into public.his (id, from_user_id, to_user_id, created_at)
-        values ((v_h ->> 'id')::uuid,
-                case when v_h ->> 'dir' = 'received' then v_other else v_me end,
-                case when v_h ->> 'dir' = 'received' then v_me else v_other end,
-                v_now - make_interval(mins => (v_h ->> 'min')::int));
-        update public.his
-           set state = (v_h ->> 'state')::public.hi_state, expires_at = created_at + interval '7 days'
-         where id = (v_h ->> 'id')::uuid;
-      end if;
-    end loop;
-
-    -- Conversations: created directly (deterministic id, historical time) in
-    -- awaiting_reply, then every message goes through enforce_message_rules()
-    -- and advance_conversation() one statement at a time, so the opener rule,
-    -- the media-only-when-open rule and 0010's path binding all run for real.
-    for v_c in select value from jsonb_array_elements(v_acc -> 'conversations') loop
-      continue when exists (select 1 from public.conversations where id = (v_c ->> 'id')::uuid);
-      v_other := (v_c ->> 'demo')::uuid;
-      insert into public.conversations (id, user_a_id, user_b_id, opened_by_id, opened_via, state, created_at)
-      values ((v_c ->> 'id')::uuid, least(v_me, v_other), greatest(v_me, v_other),
-              case when (v_c ->> 'opener_is_me')::boolean then v_me else v_other end,
-              (v_c ->> 'via')::public.opened_via, 'awaiting_reply',
-              v_now - make_interval(mins => (v_c ->> 'created_min')::int));
-
-      for v_m in select value from jsonb_array_elements(v_c -> 'messages') with ordinality as e(value, ord) order by ord loop
-        insert into public.messages
-          (id, conversation_id, sender_id, body, media_path, media_kind, view_limit, views_used,
-           media_bytes, media_width, media_height, created_at)
-        values ((v_m ->> 'id')::uuid, (v_c ->> 'id')::uuid,
-                case when (v_m ->> 'me')::boolean then v_me else v_other end,
-                v_m ->> 'body',
-                v_m #>> '{media,path}',
-                case when v_m ? 'media' then 'photo'::public.media_kind end,
-                (v_m #>> '{media,view_limit}')::smallint,
-                coalesce((v_m #>> '{media,views_used}')::smallint, 0),
-                (v_m #>> '{media,bytes}')::int,
-                (v_m #>> '{media,width}')::smallint,
-                (v_m #>> '{media,height}')::smallint,
-                v_now - make_interval(mins => (v_m ->> 'min')::int));
-        -- Counted opens by the recipient, consistent with views_used.
-        for v_v in select value from jsonb_array_elements(coalesce(v_m #> '{media,views}', '[]')) loop
-          insert into public.message_media_views (message_id, viewer_id, ordinal, viewed_at)
-          values ((v_m ->> 'id')::uuid,
-                  case when (v_v ->> 'me')::boolean then v_me else v_other end,
-                  (v_v ->> 'ordinal')::smallint,
-                  v_now - make_interval(mins => (v_v ->> 'min')::int));
-        end loop;
-      end loop;
-
-      if v_c ->> 'state' = 'expired' then
-        update public.conversations set state = 'expired' where id = (v_c ->> 'id')::uuid;
-      end if;
-      -- advance_conversation() stamps now(); the thread's real last activity:
-      update public.conversations
-         set last_message_at = v_now - make_interval(mins => (v_c ->> 'last_min')::int)
-       where id = (v_c ->> 'id')::uuid;
-      -- The real account's read marker (no row = never opened, i.e. unread).
-      if v_c ->> 'read_min' is not null then
-        insert into public.message_reads (user_id, conversation_id, last_read_at)
-        values (v_me, (v_c ->> 'id')::uuid, v_now - make_interval(mins => (v_c ->> 'read_min')::int));
-      end if;
-
-      select state::text into v_state from public.conversations where id = (v_c ->> 'id')::uuid;
-      if v_state <> v_c ->> 'state' then
-        raise exception 'demo seed: conversation with % ended in state %, scripted %', v_c ->> 'cast', v_state, v_c ->> 'state';
-      end if;
-    end loop;
-
-    -- Albums (not moderated since migration 0013; photo_count kept by maintain_album_photo_count()).
-    for v_al in select value from jsonb_array_elements(v_acc -> 'albums') loop
-      continue when exists (select 1 from public.albums where id = (v_al ->> 'id')::uuid);
-      v_owner := case when (v_al ->> 'owner_is_me')::boolean then v_me else (v_al ->> 'owner')::uuid end;
-      insert into public.albums (id, owner_id, name, created_at)
-      values ((v_al ->> 'id')::uuid, v_owner, v_al ->> 'name', v_now - make_interval(mins => (v_al ->> 'created_min')::int));
-      insert into public.album_photos (id, album_id, storage_path, created_at)
-      select (ph ->> 'id')::uuid, (v_al ->> 'id')::uuid,
-             v_owner::text || '/' || (v_al ->> 'id') || '/' || (ph ->> 'id') || '.jpg',
-             v_now - make_interval(mins => (ph ->> 'min')::int)
-        from jsonb_array_elements(v_al -> 'photos') ph;
-    end loop;
-
-    -- Shares, both directions; enforce_share_rules() checks the album owner and
-    -- the mutual conversation.
-    for v_s in select value from jsonb_array_elements(v_acc -> 'shares') loop
-      continue when exists (select 1 from public.shares where id = (v_s ->> 'id')::uuid);
-      insert into public.shares (id, owner_id, viewer_id, subject_type, subject_id, created_at)
-      values ((v_s ->> 'id')::uuid,
-              case when (v_s ->> 'owner_is_me')::boolean then v_me else (v_s ->> 'demo')::uuid end,
-              case when (v_s ->> 'owner_is_me')::boolean then (v_s ->> 'demo')::uuid else v_me end,
-              'album', (v_s ->> 'album')::uuid,
-              v_now - make_interval(mins => (v_s ->> 'min')::int));
-    end loop;
-  end loop;
-
+${activityLoopSql()}
   perform set_config('app.bypass_profiles_guard', v_prev, true);
 end;
 `;
@@ -1154,7 +1169,9 @@ function unseedSql({ wrapForRehearsal = false } = {}) {
 -- demo object is enqueued in private.storage_purge_queue and removed by the
 -- deployed purge-drain edge function (daily at 03:15 UTC, or trigger it by hand;
 -- see docs/handoff-0002.md "Deploy checklist" step 7). The notice at the end
--- reports how many were enqueued.
+-- reports how many were enqueued. Thumbnails ({stem}.thumb.jpg, migration 0027)
+-- go with them: both sweeps below enqueue whole folders, and 0027's
+-- storage_purge_queue_thumbs trigger enqueues any original's thumbnail.
 --
 -- The two real accounts' own rows are never updated: only rows the seed wrote
 -- (deterministic ids), and rows that reference a demo user, are deleted.
@@ -1822,8 +1839,263 @@ ${heartbeatSql()}`;
 }
 
 // -----------------------------------------------------------------------------
+// SQL: one real account's scripted activity only (--only <key>)
+// -----------------------------------------------------------------------------
+// For a real account that was deleted and recreated after the demo was seeded
+// (its scripted rows went with the old profile; the demo users, cron job and
+// domain are still there). Writes exactly that account's block of the seed:
+// hi's, conversations, messages, reads, chat media rows and views, albums,
+// album photos and shares, with the same deterministic ids, so
+// unseed.generated.sql still removes them. Nothing global: no demo users, no
+// cron, no domain, no heartbeat (the installed heartbeat already names these
+// ids). Idempotent like the seed: every block is skipped when its row exists.
+//
+// Unlike the full seed, a conversation or hi the account has with a demo user
+// who is NOT in its script is fine (it is left untouched); a conversation with
+// a scripted cast member other than the seeded one still raises.
+//
+// It also drops the unprocessed private.storage_purge_queue rows for the
+// objects the account's seeded rows reference (its chat media and own album
+// photos), and their thumbnails (migration 0027): deleting the old profile
+// enqueued them, and purge-drain would otherwise remove the images out from
+// under the recreated rows. The unseed enqueues them again.
+
+function onlyAccountSql(key, { rehearse = false } = {}) {
+  const A = accounts.find((x) => x.key === key);
+  const planAcct = seedPlan().accounts.find((x) => x.key === key);
+  const e = A.expect;
+  const body = '{"accounts": [\n' + accountPlanText(planAcct) + "\n]}";
+  if (body.includes("$plan$")) throw new Error("content contains the $plan$ delimiter");
+  const castIds = [...new Set([
+    ...A.his.map((h) => h.from ?? h.to),
+    ...A.conversations.map((c) => c.other),
+    ...A.albums.filter((a) => !a.ownerIsMe).map((a) => a.owner),
+    ...A.shares.map((s) => s.demoUid),
+  ])];
+  const ids = {
+    his: A.his.map((h) => h.id),
+    conversations: A.conversations.map((c) => c.id),
+    messages: A.conversations.flatMap((c) => c.messages.map((m) => m.id)),
+    albums: A.albums.map((a) => a.id),
+    albumPhotos: A.albums.flatMap((a) => a.photos.map((p) => p.id)),
+    shares: A.shares.map((s) => s.id),
+  };
+  const fnOpen = rehearse
+    ? `create function pg_temp._demo_only_${key}() returns void language plpgsql as $only$`
+    : "do $only$";
+  const fnClose = rehearse ? "$only$;" : "$only$;";
+  const block = `${fnOpen}
+declare
+  v_plan   jsonb := $plan$${body}$plan$::jsonb;
+  v_now    timestamptz := now();
+  v_prev   text := coalesce(current_setting('app.bypass_profiles_guard', true), 'off');
+  v_campus uuid;
+  v_n      integer;
+  v_state  text;
+  v_cast   uuid[] := ${arr(castIds)};
+  v_seeded_conversations uuid[] := ${arr(ids.conversations)};
+  v_real   jsonb := '{}';
+  v_me     uuid;
+  v_other  uuid;
+  v_owner  uuid;
+  v_acc    jsonb;
+  v_h      jsonb;
+  v_c      jsonb;
+  v_m      jsonb;
+  v_v      jsonb;
+  v_al     jsonb;
+  v_s      jsonb;
+begin
+  select id into v_campus from public.campuses where slug = '${CAMPUS_SLUG}';
+  if v_campus is null then
+    raise exception 'demo seed (${key}): campus ${CAMPUS_SLUG} not found';
+  end if;
+
+  -- Resolve the real account as the seed does: exactly one by first name, not
+  -- on the demo domain, active, verified, on CLC.
+  select count(*) into v_n
+    from public.profiles p join auth.users u on u.id = p.id
+   where lower(p.first_name) = lower(${q(A.firstName)}) and not (${DEMO_EMAIL_PRED("u.email")});
+  if v_n <> 1 then
+    raise exception 'demo seed (${key}): expected exactly one real account named ${A.firstName}, found %', v_n;
+  end if;
+  select p.id into v_me
+    from public.profiles p join auth.users u on u.id = p.id
+   where lower(p.first_name) = lower(${q(A.firstName)}) and not (${DEMO_EMAIL_PRED("u.email")});
+  if not exists (select 1 from public.profiles
+                  where id = v_me and status = 'active' and verification_status = 'verified' and campus_id = v_campus) then
+    raise exception 'demo seed (${key}): the real account ${A.firstName} must be active, verified and on campus ${CAMPUS_SLUG}';
+  end if;
+  v_real := jsonb_build_object(${q(key)}, v_me);
+
+  -- The demo is seeded: every cast member in the script is a demo user.
+  if (select count(*) from auth.users u where u.id = any(v_cast) and ${DEMO_EMAIL_PRED("u.email")}) <> cardinality(v_cast) then
+    raise exception 'demo seed (${key}): the ${castIds.length} scripted cast members are not all demo users on @${DEMO_DOMAIN}; is the demo seeded?';
+  end if;
+
+  -- Only the scripted cast members are checked: a conversation with any other
+  -- demo user is the account's own and is left alone.
+  if exists (
+    select 1 from public.conversations c
+     where ((c.user_a_id = v_me and c.user_b_id = any(v_cast))
+         or (c.user_b_id = v_me and c.user_a_id = any(v_cast)))
+       and not (c.id = any(v_seeded_conversations))
+  ) then
+    raise exception 'demo seed (${key}): an unexpected conversation exists between ${A.firstName} and a scripted cast member';
+  end if;
+
+  perform set_config('app.bypass_profiles_guard', 'on', true);
+${activityLoopSql()}
+  perform set_config('app.bypass_profiles_guard', v_prev, true);
+
+  -- Images the seeded rows point at must not be drained by purge-drain.
+  delete from private.storage_purge_queue q
+   where q.processed_at is null
+     and ((q.bucket_id, q.object_name) in (
+            select case when m.view_limit is null then 'chat-media' else 'chat-media-limited' end, m.media_path
+              from public.messages m
+             where m.id = any(${arr(ids.messages)}) and m.media_path is not null)
+       or (q.bucket_id, q.object_name) in (
+            select 'album-photos', ap.storage_path
+              from public.album_photos ap
+             where ap.id = any(${arr(ids.albumPhotos)}))
+       -- (migration 0027) and their thumbnails: the 0027 trigger enqueued them with their
+       -- originals. Kept chat media and album photos only; view-limited media has none.
+       or (q.bucket_id, q.object_name) in (
+            select 'chat-media', regexp_replace(m.media_path, '\\.jpg$', '.thumb.jpg')
+              from public.messages m
+             where m.id = any(${arr(ids.messages)}) and m.view_limit is null and m.media_path ~ '\\.jpg$')
+       or (q.bucket_id, q.object_name) in (
+            select 'album-photos', regexp_replace(ap.storage_path, '\\.jpg$', '.thumb.jpg')
+              from public.album_photos ap
+             where ap.id = any(${arr(ids.albumPhotos)}) and ap.storage_path ~ '\\.jpg$'));
+
+  -- Every seeded row is there (by id; states are the account's from here on).
+  if (select count(*) from public.his where id = any(${arr(ids.his)})) <> ${ids.his.length}
+     or (select count(*) from public.conversations where id = any(v_seeded_conversations)) <> ${ids.conversations.length}
+     or (select count(*) from public.messages where id = any(${arr(ids.messages)})) <> ${ids.messages.length}
+     or (select count(*) from public.albums where id = any(${arr(ids.albums)})) <> ${ids.albums.length}
+     or (select count(*) from public.album_photos where id = any(${arr(ids.albumPhotos)})) <> ${ids.albumPhotos.length}
+     or (select count(*) from public.shares where id = any(${arr(ids.shares)})) <> ${ids.shares.length} then
+    raise exception 'demo seed (${key}): seeded rows missing after the write';
+  end if;
+  if current_setting('app.bypass_profiles_guard', true) is not distinct from 'on' and v_prev <> 'on' then
+    raise exception 'demo seed (${key}): app.bypass_profiles_guard was not restored';
+  end if;
+  raise notice 'demo seed (${key}): ${ids.his.length} hi''s, ${ids.conversations.length} conversations, ${ids.messages.length} messages, ${ids.albums.length} albums (${ids.albumPhotos.length} photos), ${ids.shares.length} shares present';
+end;
+${fnClose}`;
+
+  const top = `${header(`OhHi demo: ${A.firstName}'s scripted activity only (build-seed.mjs --only ${key})`)}
+-- For ${A.firstName}'s account recreated after the demo was seeded. Writes only ${A.firstName}'s block of
+-- seed.generated.sql (same ids, so unseed.generated.sql removes it): ${ids.his.length} hi's, ${ids.conversations.length} conversations,
+-- ${ids.messages.length} messages, reads, chat media rows and ${e.mediaViews} view(s), ${ids.albums.length} albums (${ids.albumPhotos.length} photos; ones
+-- a cast member owns are skipped if they still exist), ${ids.shares.length} shares. No demo users, cron job,
+-- domain or heartbeat. Raises (changing nothing) if ${A.firstName} is missing, ambiguous, not
+-- active/verified on ${CAMPUS_SLUG.toUpperCase()}, a scripted cast member is not a demo user, or a scripted
+-- cast member already has a different conversation with ${A.firstName}. Rows with demo users
+-- outside the script are not read or written. Idempotent.
+-- Expected for a fresh account: ${e.hisReceivedTotal} hi's received (${e.hisReceivedSent} pending), ${e.hisSentTotal} sent (${e.hisSentPending} pending),
+-- ${e.unread} unread threads, owns ${e.albumsOwned} albums / ${e.albumPhotosOwned} photos, shares out ${e.sharesOut}, in ${e.sharesIn}.
+`;
+
+  if (!rehearse) {
+    return `${top}--
+-- Apply with apply_migration, then remove the history row it records:
+--   supabase migration repair --status reverted <version>
+
+${block}
+`;
+  }
+
+  // Rehearsal: baseline of the account's other rows, run twice, check, raise.
+  const me = "v_me";
+  const others = (t, cond) =>
+    `(select md5(coalesce(string_agg(x::text, '|' order by x::text), '')) from ${t} x where ${cond})`;
+  const otherHis = others("public.his", `(x.from_user_id = ${me} or x.to_user_id = ${me}) and not (x.id = any(v_his))`);
+  const otherConvs = others("public.conversations", `${me} in (x.user_a_id, x.user_b_id) and not (x.id = any(v_convs))`);
+  const otherMsgs = others("public.messages", `x.conversation_id in (select c.id from public.conversations c where ${me} in (c.user_a_id, c.user_b_id) and not (c.id = any(v_convs)))`);
+  const seededHash = `(select md5(concat_ws('#',
+      (select string_agg(x::text, '|' order by x::text) from public.his x where x.id = any(v_his)),
+      (select string_agg(x::text, '|' order by x::text) from public.conversations x where x.id = any(v_convs)),
+      (select string_agg(x::text, '|' order by x::text) from public.messages x where x.conversation_id = any(v_convs)),
+      (select string_agg(x::text, '|' order by x::text) from public.message_reads x where x.conversation_id = any(v_convs)),
+      (select string_agg(x::text, '|' order by x::text) from public.albums x where x.id = any(v_albums)),
+      (select string_agg(x::text, '|' order by x::text) from public.shares x where x.id = any(v_shares)))))`;
+  const checks = [
+    [`(select count(*) from public.his where id = any(v_his) and to_user_id = ${me} and state = 'sent') = ${e.hisReceivedSent}`, `${e.hisReceivedSent} pending hi's received`],
+    [`(select count(*) from public.his where id = any(v_his) and to_user_id = ${me}) = ${e.hisReceivedTotal}`, `${e.hisReceivedTotal} hi's received in total (incl. answered hi-backs)`],
+    [`(select count(*) from public.his where id = any(v_his) and from_user_id = ${me}) = ${e.hisSentTotal}`, `${e.hisSentTotal} hi's sent`],
+    ...A.his.map((h) => [`(select state::text = '${h.state}' and expires_at = created_at + interval '7 days' from public.his where id = '${h.id}')`, `hi ${h.dir} ${h.cast} is ${h.state}`]),
+    [`(select count(*) from public.conversations where id = any(v_convs)) = ${e.conversations}`, `${e.conversations} seeded conversations`],
+    ...A.conversations.map((c) => [`(select state::text = '${c.state}' and opened_via::text = '${c.via}' and opened_by_id = ${c.openerIsMe ? me : `'${c.other}'`} and last_message_at = (select max(created_at) from public.messages where conversation_id = c.id) from public.conversations c where id = '${c.id}')`, `${c.cast}: ${c.state}, ${c.via}, opener and last_message_at`]),
+    [`(select count(*) from public.messages where conversation_id = any(v_convs)) = ${e.messages}`, `${e.messages} messages`],
+    [`(select count(*) from public.message_media_views v join public.messages m on m.id = v.message_id where m.conversation_id = any(v_convs)) = ${e.mediaViews}`, `${e.mediaViews} counted media views`],
+    [`(select bool_and(case when view_limit is null then media_path ~ ('^' || conversation_id || '/' || id || '\\.jpg$') else media_path = conversation_id || '/' || id || '.jpg' and views_used <= view_limit and views_used = (select count(*) from public.message_media_views v where v.message_id = m.id) end) from public.messages m where media_path is not null and conversation_id = any(v_convs))`, `chat media paths bound, views_used consistent`],
+    [`(select count(*) from public.conversations c
+        left join lateral (select m.sender_id from public.messages m where m.conversation_id = c.id order by m.created_at desc limit 1) lm on true
+        left join public.message_reads r on r.conversation_id = c.id and r.user_id = ${me}
+       where c.id = any(v_convs) and c.last_message_at is not null and lm.sender_id <> ${me}
+         and (r.last_read_at is null or c.last_message_at > r.last_read_at)) = ${e.unread}`, `${e.unread} unread threads by the app's rule`],
+    [`(select count(*) from public.albums where owner_id = ${me} and id = any(v_albums)) = ${e.albumsOwned} and (select coalesce(sum(photo_count), 0) from public.albums where owner_id = ${me} and id = any(v_albums)) = ${e.albumPhotosOwned}`, `owns ${e.albumsOwned} albums with ${e.albumPhotosOwned} photos`],
+    [`(select count(*) from public.albums where id = any(v_albums) and owner_id <> ${me}) = ${A.albums.filter((a) => !a.ownerIsMe).length}`, `${A.albums.filter((a) => !a.ownerIsMe).length} cast-owned albums present`],
+    [`(select count(*) from public.shares where id = any(v_shares) and owner_id = ${me} and revoked_at is null) = ${e.sharesOut} and (select count(*) from public.shares where id = any(v_shares) and viewer_id = ${me} and revoked_at is null) = ${e.sharesIn}`, `shares out ${e.sharesOut}, in ${e.sharesIn}`],
+    [`not exists (select 1 from private.storage_purge_queue q where q.processed_at is null and ((q.bucket_id in ('chat-media', 'chat-media-limited') and split_part(q.object_name, '/', 1) = any(v_convs::text[])) or (q.bucket_id = 'album-photos' and split_part(q.object_name, '/', 2) = any(v_albums::text[]))))`, `no seeded image left in the purge queue`],
+    [`v_o1 = ${otherHis} and v_o2 = ${otherConvs} and v_o3 = ${otherMsgs}`, `${A.firstName}'s other hi's, conversations and messages are byte-identical`],
+    [`v_s1 = ${seededHash}`, `idempotent: the second run changed nothing`],
+    [`current_setting('app.bypass_profiles_guard', true) is distinct from 'on'`, `bypass flag restored`],
+  ];
+  return `${top}--
+-- REHEARSAL (tmp_demo_${key}_rehearsal): runs the block twice, checks, and ALWAYS raises, so
+-- nothing persists. Run with apply_migration; the report is in the error text.
+
+${block}
+do $rehearse$
+declare
+  v_me     uuid;
+  v_his    uuid[] := ${arr(ids.his)};
+  v_convs  uuid[] := ${arr(ids.conversations)};
+  v_albums uuid[] := ${arr(ids.albums)};
+  v_shares uuid[] := ${arr(ids.shares)};
+  v_o1 text; v_o2 text; v_o3 text; v_s1 text;
+  v_out text := '';
+  v_fail integer := 0;
+  v_total integer := 0;
+  v_ok boolean;
+begin
+  select p.id into v_me from public.profiles p join auth.users u on u.id = p.id
+   where lower(p.first_name) = lower(${q(A.firstName)}) and not (${DEMO_EMAIL_PRED("u.email")});
+  v_o1 := ${otherHis};
+  v_o2 := ${otherConvs};
+  v_o3 := ${otherMsgs};
+  perform pg_temp._demo_only_${key}();
+  v_s1 := ${seededHash};
+  perform pg_temp._demo_only_${key}();
+${checks.map(([cond, label]) => `  v_ok := coalesce((${cond}), false);
+  v_total := v_total + 1; if not v_ok then v_fail := v_fail + 1; end if;
+  v_out := v_out || case when v_ok then 'ok ' else 'NOT OK ' end || v_total || ' - ' || ${q(label)} || E'\\n';`).join("\n")}
+  raise exception E'tmp_demo_${key}_rehearsal (always rolls back)\\n%\\n% passed, % failed (of %)', v_out, v_total - v_fail, v_fail, v_total;
+end;
+$rehearse$;
+`;
+}
+
+// -----------------------------------------------------------------------------
 // Write
 // -----------------------------------------------------------------------------
+
+const onlyIdx = process.argv.indexOf("--only");
+if (onlyIdx !== -1) {
+  const key = process.argv[onlyIdx + 1];
+  if (!ACCOUNTS.some((a) => a.key === key)) {
+    throw new Error(`--only needs one of: ${ACCOUNTS.map((a) => a.key).join(", ")}`);
+  }
+  writeFileSync(join(HERE, `seed-${key}.generated.sql`), onlyAccountSql(key));
+  writeFileSync(join(HERE, `rehearsal-${key}.generated.sql`), onlyAccountSql(key, { rehearse: true }));
+  console.log(`${key}: ${JSON.stringify(accounts.find((A) => A.key === key).expect)}`);
+  console.log(`\nwrote seed-${key}.generated.sql, rehearsal-${key}.generated.sql (no other file was written)`);
+  process.exit(0);
+}
 
 writeFileSync(join(HERE, "profile-fields.generated.sql"), profileFieldsSql());
 writeFileSync(join(HERE, "about-fields.generated.sql"), aboutFieldsSql());

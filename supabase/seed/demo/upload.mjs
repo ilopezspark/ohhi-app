@@ -16,13 +16,20 @@
 // never printed, never written anywhere.
 //
 // Uploads use upsert: true, so a re-run replaces objects in place.
-// Uses @supabase/supabase-js from app/node_modules; no other dependencies.
+//
+// Thumbnails (migration 0027, docs/thumbnails.md): every image uploaded to
+// profile-photos, album-photos or chat-media also gets its {stem}.thumb.jpg
+// (480px long edge, JPEG quality 70, no metadata; supabase/scripts/thumb-spec.mjs),
+// made from the same local file and uploaded right after it, also upsert: true.
+// chat-media-limited images never get one (decision 62: no second copy).
+// Uses @supabase/supabase-js and sharp from app/node_modules; no other dependencies.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeThumb, thumbPathFor, wantsThumb } from "../../scripts/thumb-spec.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..");
@@ -59,9 +66,14 @@ if (missing.length) {
 
 const byBucket = entries.reduce((acc, e) => ((acc[e.bucket] = (acc[e.bucket] ?? 0) + 1), acc), {});
 console.log(`by bucket: ${Object.entries(byBucket).map(([b, n]) => `${b} ${n}`).join(", ")}`);
+const thumbCount = entries.filter((e) => wantsThumb(e.bucket, e.path)).length;
+console.log(`thumbnails: ${thumbCount} (one per image outside chat-media-limited)`);
 
 if (dryRun) {
-  for (const e of entries) console.log(`  ${e.bucket}/${e.path}  <-  ${e.file}${existsSync(join(REPO, e.file)) ? "" : "  (missing)"}`);
+  for (const e of entries) {
+    console.log(`  ${e.bucket}/${e.path}  <-  ${e.file}${existsSync(join(REPO, e.file)) ? "" : "  (missing)"}`);
+    if (wantsThumb(e.bucket, e.path)) console.log(`  ${e.bucket}/${thumbPathFor(e.path)}  <-  thumbnail of the above`);
+  }
   console.log(missing.length ? `\ndry run: ${missing.length} file(s) still missing` : "\ndry run: every file is present");
   process.exit(missing.length ? 2 : 0);
 }
@@ -101,11 +113,16 @@ function serviceRoleKey() {
 }
 
 const require = createRequire(join(REPO, "app", "package.json"));
-let createClient;
+let createClient, sharp;
 try {
   ({ createClient } = require("@supabase/supabase-js"));
 } catch {
   fail("@supabase/supabase-js not found in app/node_modules; run `npm install` in app/");
+}
+try {
+  sharp = require("sharp");
+} catch {
+  fail("sharp not found in app/node_modules; run `npm install` in app/");
 }
 
 const supabase = createClient(SUPABASE_URL, serviceRoleKey(), {
@@ -143,6 +160,7 @@ const objectPath = (e) => e.path.replace(/^\{(\w+)\}/, (_, k) => resolved[k]);
 // -----------------------------------------------------------------------------
 
 let done = 0;
+let thumbs = 0;
 const failures = [];
 async function uploadOne(e) {
   const path = objectPath(e);
@@ -155,8 +173,25 @@ async function uploadOne(e) {
   if (error) {
     failures.push(`${e.bucket}/${path}: ${error.message}`);
     console.log(`  [${done}/${entries.length}] FAILED ${e.name}: ${error.message}`);
-  } else {
-    console.log(`  [${done}/${entries.length}] ${e.bucket}/${path}`);
+    return;
+  }
+  console.log(`  [${done}/${entries.length}] ${e.bucket}/${path}`);
+
+  // The original first, then its thumbnail (docs/thumbnails.md).
+  if (!wantsThumb(e.bucket, path)) return;
+  const thumbPath = thumbPathFor(path);
+  try {
+    const thumb = await makeThumb(sharp, body);
+    const { error: thumbError } = await supabase.storage.from(e.bucket).upload(thumbPath, thumb, {
+      contentType: "image/jpeg",
+      upsert: true,
+    });
+    if (thumbError) throw new Error(thumbError.message);
+    thumbs++;
+    console.log(`      + ${e.bucket}/${thumbPath}`);
+  } catch (err) {
+    failures.push(`${e.bucket}/${thumbPath}: ${err.message}`);
+    console.log(`      FAILED thumbnail of ${e.name}: ${err.message}`);
   }
 }
 
@@ -172,4 +207,4 @@ if (failures.length) {
   for (const f of failures) console.error("  " + f);
   process.exit(1);
 }
-console.log(`\nuploaded ${entries.length} object(s)`);
+console.log(`\nuploaded ${entries.length} object(s) and ${thumbs} thumbnail(s)`);

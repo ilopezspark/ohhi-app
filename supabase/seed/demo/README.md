@@ -23,7 +23,9 @@ below turns it into SQL, uploads the images, keeps the demo alive, and removes i
    It also writes `profile-fields.generated.sql` (see step 7) and `about-fields.generated.sql`
    (see step 8).
 3. **`node supabase/seed/demo/upload.mjs --dry-run`**, then **`node supabase/seed/demo/upload.mjs`**:
-   uploads every planned image with the service role (`upsert: true`, `image/jpeg`). The key comes
+   uploads every planned image with the service role (`upsert: true`, `image/jpeg`), each followed
+   by its thumbnail `{stem}.thumb.jpg` (migration 0027, `docs/thumbnails.md`; none for
+   `chat-media-limited`). The key comes
    from `SUPABASE_SERVICE_ROLE_KEY` or `supabase projects api-keys --project-ref
    yvmxyynxpheudnyoveqx -o json` (the CLI reads the repo-root `.env`); it is never printed or
    written. Paths starting `{izaac}/` / `{debbie}/` (the real accounts' own albums) are resolved to
@@ -64,6 +66,22 @@ below turns it into SQL, uploads the images, keeps the demo alive, and removes i
    the cast, the counts in its header's "Expected" line, no `tags_changed` notice left), raising
    otherwise. Do not re-apply `seed.generated.sql` for this: its tag guard refuses when a demo user
    already holds tags other than the cast's.
+9. **A real account recreated after the seed** (deleted and signed up again, so its scripted
+   activity went with the old profile): **`node supabase/seed/demo/build-seed.mjs --only debbie`**
+   (or `--only izaac`) writes only `seed-<key>.generated.sql` and `rehearsal-<key>.generated.sql`
+   and touches no other file. The seed file is that account's block of the seed and nothing
+   global (no demo users, cron, domain or heartbeat; the installed heartbeat already names its
+   ids): hi's, conversations, messages, reads, chat media rows and views, albums, album photos and
+   shares, with the same ids, so `unseed.generated.sql` still removes them. Cast-owned albums that
+   survived the deletion are reused. It resolves the account like the seed (exactly one, active,
+   verified, CLC) and raises if a scripted cast member already has a different conversation with
+   it, but leaves alone anything the account did with demo users outside its script. It also drops
+   the unprocessed `private.storage_purge_queue` rows for the images its rows reference (deleting
+   the old profile enqueued them; purge-drain would otherwise delete them). Rehearse first with
+   `rehearsal-<key>.generated.sql` (name `tmp_demo_<key>_rehearsal`; always raises), then apply
+   the seed file and remove its history row as above. If the images are gone from storage too,
+   upload them with `upload.mjs` (re-uploading everything is harmless: `upsert: true`). Debbie's
+   was applied on hosted on 1 October 2026 (her objects were still in storage).
 
 ## What the seed writes
 
@@ -209,9 +227,11 @@ The sections below describe the content files.
 - `build-seed.mjs` — the generator (standard library only); writes the generated files
   (`seed`, `unseed`, `rehearsal`, `profile-fields`, `about-fields`, `heartbeat`, and
   `upload-plan.json`).
-- `upload.mjs` — the image uploader (uses `@supabase/supabase-js` from `app/node_modules`).
+- `upload.mjs` — the image uploader, thumbnails included (uses `@supabase/supabase-js` and `sharp`
+  from `app/node_modules`, and `supabase/scripts/thumb-spec.mjs`).
 - `seed.generated.sql`, `unseed.generated.sql`, `rehearsal.generated.sql`, `upload-plan.json` —
-  generated; never edit by hand.
+  generated; never edit by hand (as are `seed-<key>.generated.sql` and `rehearsal-<key>.generated.sql`
+  from `--only <key>`).
 
 ## Counts
 
